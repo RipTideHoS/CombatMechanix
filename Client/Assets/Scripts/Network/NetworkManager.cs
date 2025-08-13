@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
-//using Microsoft.AspNetCore.SignalR.Client;  // ← Comment out temporarily
+using Microsoft.AspNetCore.SignalR.Client;
 using System.Collections.Concurrent;
 using System.Linq;
 
@@ -23,71 +23,153 @@ public class NetworkManager : MonoBehaviour
     public static event Action<NetworkMessages.PlayerJoinNotification> OnPlayerJoined;
     public static event Action<NetworkMessages.SystemNotification> OnSystemNotification;
 
-    //private HubConnection _connection;  // ← Comment out temporarily
+    private HubConnection _connection;
     private bool _isConnecting = false;
     private float _lastHeartbeat = 0f;
     private Queue<Action> _mainThreadActions = new Queue<Action>();
     private object _queueLock = new object();
 
-    // Temporary placeholder properties
-    public bool IsConnected => false; // Will be: _connection?.State == HubConnectionState.Connected;
-    public string ConnectionId => "temp_connection_id"; // Will be: _connection?.ConnectionId;
+    // Connection properties
+    public bool IsConnected => _connection?.State == HubConnectionState.Connected;
+    public string ConnectionId => _connection?.ConnectionId;
 
     private void Start()
     {
-        Debug.Log("NetworkManager started (SignalR temporarily disabled)");
-        // ConnectToServer(); // Comment out for now
+        Debug.Log("NetworkManager started with SignalR");
+        ConnectToServer();
     }
 
     private void Update()
     {
         ProcessMainThreadQueue();
 
-        // Simulate connection for testing
-        if (!_isConnecting && Time.time > 2f) // After 2 seconds, simulate connection
+        // Heartbeat mechanism
+        if (IsConnected && Time.time - _lastHeartbeat > HeartbeatInterval)
         {
-            _isConnecting = true;
-            QueueMainThreadAction(() => {
-                Debug.Log("Simulating successful connection...");
-                OnConnected?.Invoke();
-            });
+            _lastHeartbeat = Time.time;
+            _ = SendHeartbeat();
         }
     }
 
-    // Placeholder methods for now
+    // SignalR Hub methods
     public async Task SendMovement(Vector3 position, Vector3 velocity, float rotation)
     {
-        Debug.Log($"SendMovement (placeholder): pos={position}, vel={velocity}, rot={rotation}");
-        await Task.CompletedTask;
+        if (!IsConnected) return;
+        
+        try
+        {
+            var message = new NetworkMessages.PlayerMovementMessage
+            {
+                PlayerId = ConnectionId,
+                Position = position,
+                Velocity = velocity,
+                Rotation = rotation,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            };
+            
+            await _connection.InvokeAsync("SendMovement", message);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send movement: {ex.Message}");
+        }
     }
 
     public async Task SendAttack(string targetId, string attackType, Vector3 position)
     {
-        Debug.Log($"SendAttack (placeholder): target={targetId}, type={attackType}, pos={position}");
-        await Task.CompletedTask;
+        if (!IsConnected) return;
+        
+        try
+        {
+            var message = new NetworkMessages.CombatActionMessage
+            {
+                AttackerId = ConnectionId,
+                TargetId = targetId,
+                AttackType = attackType,
+                Position = position,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            };
+            
+            await _connection.InvokeAsync("SendCombatAction", message);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send attack: {ex.Message}");
+        }
     }
 
     public async Task SendChatMessage(string message, string channelType, string targetId = null)
     {
-        Debug.Log($"SendChatMessage (placeholder): [{channelType}] {message}");
-        await Task.CompletedTask;
+        if (!IsConnected) return;
+        
+        try
+        {
+            var chatMessage = new NetworkMessages.ChatMessage
+            {
+                SenderId = ConnectionId,
+                Message = message,
+                ChannelType = channelType,
+                TargetId = targetId,
+                Timestamp = DateTime.UtcNow
+            };
+            
+            await _connection.InvokeAsync("SendChatMessage", chatMessage);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send chat message: {ex.Message}");
+        }
     }
 
     public async Task SendResourceGather(string resourceId, string resourceType, Vector3 position)
     {
-        Debug.Log($"SendResourceGather (placeholder): {resourceType} at {position}");
-        await Task.CompletedTask;
+        if (!IsConnected) return;
+        
+        try
+        {
+            var message = new NetworkMessages.ResourceGatherMessage
+            {
+                PlayerId = ConnectionId,
+                ResourceId = resourceId,
+                ResourceType = resourceType,
+                Position = position
+            };
+            
+            await _connection.InvokeAsync("SendResourceGather", message);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send resource gather: {ex.Message}");
+        }
     }
 
     public async Task AuthenticatePlayer(string playerId, string playerName)
     {
-        Debug.Log($"AuthenticatePlayer (placeholder): {playerName} ({playerId})");
-        await Task.Delay(1000); // Simulate network delay
+        if (!IsConnected) return;
         
-        QueueMainThreadAction(() => {
-            Debug.Log("Player authentication simulated successfully!");
-            GameManager.Instance?.OnPlayerAuthenticated();
-        });
+        try
+        {
+            await _connection.InvokeAsync("AuthenticatePlayer", playerId, playerName);
+            Debug.Log($"Player authenticated: {playerName}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to authenticate player: {ex.Message}");
+        }
+    }
+
+    private async Task SendHeartbeat()
+    {
+        if (!IsConnected) return;
+        
+        try
+        {
+            await _connection.InvokeAsync("Heartbeat");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Heartbeat failed: {ex.Message}");
+        }
     }
 
     private void QueueMainThreadAction(Action action)
@@ -117,10 +199,6 @@ public class NetworkManager : MonoBehaviour
         }
     }
 
-    /* 
-    // REAL SIGNALR CODE - COMMENTED OUT FOR NOW
-    // Uncomment this when SignalR DLLs are properly installed
-    
     public async void ConnectToServer()
     {
         if (_isConnecting || IsConnected) return;
@@ -153,5 +231,95 @@ public class NetworkManager : MonoBehaviour
             _isConnecting = false;
         }
     }
-    */
+
+    private void SetupEventHandlers()
+    {
+        // Server -> Client event handlers
+        _connection.On<NetworkMessages.PlayerMovementMessage>("ReceivePlayerMovement", (message) =>
+        {
+            QueueMainThreadAction(() => {
+                var playerState = new PlayerState
+                {
+                    PlayerId = message.PlayerId,
+                    Position = message.Position,
+                    Velocity = message.Velocity,
+                    Rotation = message.Rotation
+                };
+                OnPlayerMoved?.Invoke(playerState);
+            });
+        });
+
+        _connection.On<NetworkMessages.CombatActionMessage>("ReceiveCombatAction", (message) =>
+        {
+            QueueMainThreadAction(() => OnCombatAction?.Invoke(message));
+        });
+
+        _connection.On<NetworkMessages.ChatMessage>("ReceiveChatMessage", (message) =>
+        {
+            QueueMainThreadAction(() => OnChatMessage?.Invoke(message));
+        });
+
+        _connection.On<NetworkMessages.WorldUpdateMessage>("ReceiveWorldUpdate", (message) =>
+        {
+            QueueMainThreadAction(() => OnWorldUpdate?.Invoke(message));
+        });
+
+        _connection.On<NetworkMessages.PlayerJoinNotification>("PlayerJoined", (message) =>
+        {
+            QueueMainThreadAction(() => OnPlayerJoined?.Invoke(message));
+        });
+
+        _connection.On<NetworkMessages.SystemNotification>("SystemNotification", (message) =>
+        {
+            QueueMainThreadAction(() => OnSystemNotification?.Invoke(message));
+        });
+
+        // Connection state events
+        _connection.Closed += async (error) =>
+        {
+            QueueMainThreadAction(() => {
+                Debug.Log("Connection closed");
+                OnDisconnected?.Invoke();
+            });
+            
+            if (error != null)
+            {
+                Debug.LogError($"Connection closed with error: {error.Message}");
+                await Task.Delay(TimeSpan.FromSeconds(ReconnectDelay));
+                ConnectToServer();
+            }
+        };
+
+        _connection.Reconnecting += (error) =>
+        {
+            QueueMainThreadAction(() => {
+                Debug.Log("Attempting to reconnect...");
+                OnDisconnected?.Invoke();
+            });
+            return Task.CompletedTask;
+        };
+
+        _connection.Reconnected += (connectionId) =>
+        {
+            QueueMainThreadAction(() => {
+                Debug.Log($"Reconnected with connection ID: {connectionId}");
+                OnConnected?.Invoke();
+            });
+            return Task.CompletedTask;
+        };
+    }
+
+    public async void DisconnectFromServer()
+    {
+        if (_connection != null)
+        {
+            await _connection.DisposeAsync();
+            _connection = null;
+        }
+    }
+
+    private void OnDestroy()
+    {
+        DisconnectFromServer();
+    }
 }
