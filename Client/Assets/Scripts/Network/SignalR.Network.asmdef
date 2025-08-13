@@ -1,0 +1,31 @@
+{
+    "name": "SignalR.Network",
+    "rootNamespace": "",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "Microsoft.AspNetCore.SignalR.Client.dll",
+        "Microsoft.AspNetCore.SignalR.Common.dll",
+        "Microsoft.AspNetCore.Http.Connections.Client.dll",
+        "Microsoft.AspNetCore.Http.Connections.Common.dll",
+        "Microsoft.AspNetCore.Http.Abstractions.dll",
+        "Microsoft.AspNetCore.Http.Features.dll",
+        "Microsoft.Extensions.DependencyInjection.dll",
+        "Microsoft.Extensions.DependencyInjection.Abstractions.dll",
+        "Microsoft.Extensions.Logging.Abstractions.dll",
+        "Microsoft.Extensions.Options.dll",
+        "Microsoft.Extensions.Primitives.dll",
+        "System.Threading.Channels.dll",
+        "System.Memory.dll",
+        "System.Buffers.dll",
+        "System.Runtime.CompilerServices.Unsafe.dll",
+        "System.Text.Json.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
