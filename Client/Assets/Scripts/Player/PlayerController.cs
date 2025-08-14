@@ -76,36 +76,60 @@ public class PlayerController : MonoBehaviour
 
     private void HandleInput()
     {
-        // WASD movement input
-        float horizontal = Input.GetAxis("Horizontal");
-        float vertical = Input.GetAxis("Vertical");
+        // Enhanced WASD movement input with camera-relative movement
+        float horizontal = Input.GetAxis("Horizontal"); // A/D keys
+        float vertical = Input.GetAxis("Vertical");     // W/S keys
 
-        _inputVector = new Vector3(horizontal, 0, vertical).normalized;
-        _isMoving = _inputVector.magnitude > 0.1f;
-
-        // Mouse look rotation (optional - you can also use arrow keys)
-        if (Input.GetMouseButton(1)) // Right click to rotate
+        // Make movement relative to camera direction for 3rd person
+        Camera mainCamera = Camera.main;
+        if (mainCamera != null)
         {
-            Vector3 mousePos = Input.mousePosition;
-            if (_mainCamera != null)
-            {
-                Vector3 worldPos = _mainCamera.ScreenToWorldPoint(new Vector3(mousePos.x, mousePos.y, 10f));
-                Vector3 direction = (worldPos - transform.position).normalized;
-
-                if (direction.magnitude > 0.1f)
-                {
-                    float targetAngle = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
-                    CurrentRotation = Mathf.LerpAngle(CurrentRotation, targetAngle, RotationSpeed * Time.deltaTime);
-                    transform.rotation = Quaternion.Euler(0, CurrentRotation, 0);
-                }
-            }
+            Vector3 cameraForward = mainCamera.transform.forward;
+            Vector3 cameraRight = mainCamera.transform.right;
+            
+            // Remove Y component to keep movement on ground plane
+            cameraForward.y = 0;
+            cameraRight.y = 0;
+            cameraForward.Normalize();
+            cameraRight.Normalize();
+            
+            // Calculate camera-relative movement direction
+            Vector3 moveDirection = (cameraForward * vertical + cameraRight * horizontal).normalized;
+            _inputVector = moveDirection;
+        }
+        else
+        {
+            // Fallback to world-relative movement if no camera
+            _inputVector = new Vector3(horizontal, 0, vertical).normalized;
         }
 
-        // Arrow key rotation
-        float rotationInput = Input.GetAxis("Mouse X") * RotationSpeed * Time.deltaTime;
-        if (Mathf.Abs(rotationInput) > 0.1f)
+        _isMoving = _inputVector.magnitude > 0.1f;
+
+        // Rotate player to face movement direction for 3rd person
+        if (_isMoving && _inputVector.magnitude > 0.1f)
         {
-            CurrentRotation += rotationInput;
+            float targetAngle = Mathf.Atan2(_inputVector.x, _inputVector.z) * Mathf.Rad2Deg;
+            CurrentRotation = Mathf.LerpAngle(CurrentRotation, targetAngle, RotationSpeed * Time.deltaTime);
+            transform.rotation = Quaternion.Euler(0, CurrentRotation, 0);
+        }
+
+        // Optional: Mouse look rotation (hold right click)
+        if (Input.GetMouseButton(1))
+        {
+            float mouseX = Input.GetAxis("Mouse X") * RotationSpeed * Time.deltaTime;
+            CurrentRotation += mouseX;
+            transform.rotation = Quaternion.Euler(0, CurrentRotation, 0);
+        }
+
+        // Alternative: Q/E keys for manual rotation
+        if (Input.GetKey(KeyCode.Q))
+        {
+            CurrentRotation -= RotationSpeed * Time.deltaTime;
+            transform.rotation = Quaternion.Euler(0, CurrentRotation, 0);
+        }
+        else if (Input.GetKey(KeyCode.E))
+        {
+            CurrentRotation += RotationSpeed * Time.deltaTime;
             transform.rotation = Quaternion.Euler(0, CurrentRotation, 0);
         }
 

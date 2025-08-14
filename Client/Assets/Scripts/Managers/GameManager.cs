@@ -81,10 +81,16 @@ public class GameManager : MonoBehaviour
 
     private async void OnNetworkConnected()
     {
-        Debug.Log("Network connected, authenticating player...");
+        Debug.Log($"Network connected, authenticating player: {LocalPlayerName} ({LocalPlayerId})");
         if (NetworkManager != null)
         {
             await NetworkManager.AuthenticatePlayer(LocalPlayerId, LocalPlayerName);
+            IsAuthenticated = true;
+            Debug.Log("Player authentication sent to server");
+        }
+        else
+        {
+            Debug.LogError("NetworkManager is null during authentication!");
         }
     }
 

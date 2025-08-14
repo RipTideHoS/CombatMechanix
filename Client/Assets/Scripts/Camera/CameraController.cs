@@ -4,8 +4,8 @@ public class CameraController : MonoBehaviour
 {
     [Header("Follow Settings")]
     public Transform Target; // Will be set to LocalPlayer
-    public Vector3 Offset = new Vector3(0, 12, -8);
-    public float SmoothTime = 0.3f;
+    public Vector3 Offset = new Vector3(0, 3, -8); // Better for 3rd person
+    public float SmoothTime = 0.2f; // Faster response
     public bool FollowPlayer = true;
 
     [Header("Zoom Settings")]
@@ -94,8 +94,8 @@ public class CameraController : MonoBehaviour
                 transform.rotation = Quaternion.Euler(60, 0, 0);
                 break;
             case CameraStyle.ThirdPerson:
-                Offset = new Vector3(0, 8, -6);
-                transform.rotation = Quaternion.Euler(30, 0, 0);
+                Offset = new Vector3(0, 3, -8);
+                transform.rotation = Quaternion.Euler(15, 0, 0);
                 break;
             case CameraStyle.Strategic:
                 Offset = new Vector3(0, 20, -5);

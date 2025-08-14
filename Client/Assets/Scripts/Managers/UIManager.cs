@@ -20,6 +20,11 @@ public class UIManager : MonoBehaviour
     public Text PlayerInfoText;
     public Text NotificationText;
 
+    [Header("Login UI")]
+    public InputField PlayerNameInput;
+    public Text StatusText;
+    public Button ConnectButton;
+
     [Header("Chat UI")]
     public InputField ChatInput;
     public Text ChatDisplay;
