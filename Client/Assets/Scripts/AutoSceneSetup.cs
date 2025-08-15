@@ -16,7 +16,8 @@ public class AutoSceneSetup : MonoBehaviour
     public bool CreatePlayer = true;
     public bool SetupCamera = true;
     public bool CreateReferenceBox = true;
-    public bool CreateTestEnemy = true;
+    public bool CreateTestEnemy = false; // Disable local enemy creation - use network enemies
+    public bool SetupEnemyNetworkManager = true;
     
     private void Start()
     {
@@ -58,11 +59,15 @@ public class AutoSceneSetup : MonoBehaviour
         if (CreateReferenceBox)
             CreateReferenceBoxObject();
 
-        // 7. Create Test Enemy
+        // 7. Create Test Enemy (disabled by default - use network enemies)
         if (CreateTestEnemy)
             CreateTestEnemyObject();
 
-        // 8. Create basic UI system (after GameManager exists)
+        // 8. Setup Enemy Network Manager
+        if (SetupEnemyNetworkManager)
+            SetupEnemyNetworkManagerComponent();
+
+        // 9. Create basic UI system (after GameManager exists)
         CreateBasicUI();
 
         Debug.Log("=== Auto Scene Setup Complete ===");
@@ -324,6 +329,40 @@ public class AutoSceneSetup : MonoBehaviour
         
         Debug.Log($"TestEnemy created at position: {enemyObj.transform.position} with red color and EnemyBase component");
         Debug.Log($"Enemy stats - Level: {enemyBase.Level}, Health: {enemyBase.BaseHealth}, Damage: {enemyBase.BaseDamage}");
+    }
+
+    private void SetupEnemyNetworkManagerComponent()
+    {
+        // Check if EnemyNetworkManager already exists
+        if (FindObjectOfType<EnemyNetworkManager>() != null)
+        {
+            Debug.Log("EnemyNetworkManager already exists in scene");
+            return;
+        }
+
+        Debug.Log("Setting up EnemyNetworkManager...");
+        
+        // Add EnemyNetworkManager to the GameManager GameObject if it exists
+        GameObject gameManagerObj = GameObject.Find("GameManager");
+        if (gameManagerObj != null)
+        {
+            var enemyNetworkManager = gameManagerObj.AddComponent<EnemyNetworkManager>();
+            enemyNetworkManager.EnableDebugLogging = true;
+            Debug.Log("EnemyNetworkManager added to GameManager GameObject");
+        }
+        else
+        {
+            // Create a dedicated GameObject for EnemyNetworkManager
+            GameObject enemyManagerObj = new GameObject("EnemyNetworkManager");
+            var enemyNetworkManager = enemyManagerObj.AddComponent<EnemyNetworkManager>();
+            enemyNetworkManager.EnableDebugLogging = true;
+            
+            // Make it persistent
+            DontDestroyOnLoad(enemyManagerObj);
+            Debug.Log("EnemyNetworkManager created as standalone GameObject");
+        }
+        
+        Debug.Log("EnemyNetworkManager setup complete - ready to receive enemy data from server");
     }
 
     // Helper method to create a basic UI Canvas if needed
@@ -706,7 +745,8 @@ public class AutoSceneSetupEditor : Editor
             "• LocalPlayer with PlayerController\n" +
             "• Proper camera positioning\n" +
             "• Brown reference box with collision\n" +
-            "• Red test enemy with EnemyBase component", 
+            "• EnemyNetworkManager for server-synchronized enemies\n" +
+            "• (Optional) Local test enemy for debugging", 
             MessageType.Info);
     }
 }

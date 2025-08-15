@@ -33,6 +33,12 @@ public class NetworkManager : MonoBehaviour
     public static event Action<NetworkMessages.LevelUpMessage> OnLevelUp;
     public static event Action<NetworkMessages.HealthChangeMessage> OnHealthChange;
     public static event Action<NetworkMessages.ExperienceGainMessage> OnExperienceGain;
+    
+    // Enemy-related events
+    public static event Action<NetworkMessages.EnemySpawnMessage> OnEnemySpawn;
+    public static event Action<NetworkMessages.EnemyUpdateMessage> OnEnemyUpdate;
+    public static event Action<NetworkMessages.EnemyDamageMessage> OnEnemyDamage;
+    public static event Action<NetworkMessages.EnemyDeathMessage> OnEnemyDeath;
 
     private ClientWebSocket _webSocket;
     private CancellationTokenSource _cancellationTokenSource;
@@ -358,6 +364,26 @@ public class NetworkManager : MonoBehaviour
                             }
                         }
                     });
+                    break;
+                    
+                case "EnemySpawn":
+                    var enemySpawnMsg = JsonConvert.DeserializeObject<NetworkMessages.EnemySpawnMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => OnEnemySpawn?.Invoke(enemySpawnMsg));
+                    break;
+                    
+                case "EnemyUpdate":
+                    var enemyUpdateMsg = JsonConvert.DeserializeObject<NetworkMessages.EnemyUpdateMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => OnEnemyUpdate?.Invoke(enemyUpdateMsg));
+                    break;
+                    
+                case "EnemyDamage":
+                    var enemyDamageMsg = JsonConvert.DeserializeObject<NetworkMessages.EnemyDamageMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => OnEnemyDamage?.Invoke(enemyDamageMsg));
+                    break;
+                    
+                case "EnemyDeath":
+                    var enemyDeathMsg = JsonConvert.DeserializeObject<NetworkMessages.EnemyDeathMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => OnEnemyDeath?.Invoke(enemyDeathMsg));
                     break;
             }
         }
