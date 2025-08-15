@@ -71,6 +71,14 @@ public class GameManager : MonoBehaviour
         Debug.Log($"  NetworkManager: {(NetworkManager != null ? "found" : "null")}");
         Debug.Log($"  UIManager: {(UIManager != null ? "found" : "null")}");
         Debug.Log($"  WorldManager: {(WorldManager != null ? "found" : "null")}");
+        
+        // If NetworkManager is null, try to find it in scene as fallback
+        if (NetworkManager == null)
+        {
+            Debug.LogWarning("NetworkManager not found on GameManager GameObject, searching scene...");
+            NetworkManager = FindObjectOfType<NetworkManager>();
+            Debug.Log($"  NetworkManager (via FindObjectOfType): {(NetworkManager != null ? "found" : "still null")}");
+        }
 
         // Find LocalPlayer in scene
         LocalPlayer = FindObjectOfType<PlayerController>();

@@ -479,6 +479,7 @@ namespace CombatMechanix.Services
                 };
 
                 _players.TryAdd(connection.ConnectionId, player);
+                connection.PlayerId = player.PlayerId;
 
                 // Send authentication success response
                 await SendToConnection(connection.ConnectionId, "AuthenticationResponse", new NetworkMessages.AuthenticationResponseMessage
@@ -704,6 +705,7 @@ namespace CombatMechanix.Services
                     };
 
                     _players.TryAdd(connection.ConnectionId, player);
+                    connection.PlayerId = player.PlayerId;
 
                     // Send successful login response
                     await SendToConnection(connection.ConnectionId, "LoginResponse", new NetworkMessages.LoginResponseMessage
@@ -804,6 +806,7 @@ namespace CombatMechanix.Services
                     };
 
                     _players.TryAdd(connection.ConnectionId, player);
+                    connection.PlayerId = player.PlayerId;
 
                     // Send authentication success response (for compatibility with existing client)
                     await SendToConnection(connection.ConnectionId, "AuthenticationResponse", new NetworkMessages.AuthenticationResponseMessage
@@ -986,6 +989,7 @@ namespace CombatMechanix.Services
         public string ConnectionId { get; }
         public WebSocket WebSocket { get; }
         public DateTime ConnectedAt { get; }
+        public string? PlayerId { get; set; }
 
         public WebSocketConnection(string connectionId, WebSocket webSocket)
         {

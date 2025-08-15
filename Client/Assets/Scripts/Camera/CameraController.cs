@@ -39,8 +39,7 @@ public class CameraController : MonoBehaviour
         // Force enable rotation for debugging
         AllowRotation = true;
         
-        Debug.Log($"[Camera] Initialized - Distance: {_currentDistance}, Horizontal: {_horizontalAngle}, Vertical: {_verticalAngle}");
-        Debug.Log($"[Camera] AllowRotation: {AllowRotation}, FollowPlayer: {FollowPlayer}");
+        // Camera initialized successfully
         
         // Find the local player automatically
         if (Target == null)
@@ -49,27 +48,20 @@ public class CameraController : MonoBehaviour
             if (localPlayer != null)
             {
                 Target = localPlayer.transform;
-                Debug.Log($"[Camera] Target found: {localPlayer.name}");
+                // Target found and set
             }
             else
             {
                 Debug.LogWarning("[Camera] No PlayerController found for target!");
             }
         }
-        else
-        {
-            Debug.Log($"[Camera] Target already set: {Target.name}");
-        }
+        // Target configuration complete
     }
 
     private void LateUpdate()
     {
         if (!FollowPlayer || Target == null)
         {
-            if (!FollowPlayer)
-                Debug.Log("[Camera] LateUpdate skipped - FollowPlayer is false");
-            if (Target == null)
-                Debug.Log("[Camera] LateUpdate skipped - Target is null");
             return;
         }
 
@@ -107,28 +99,12 @@ public class CameraController : MonoBehaviour
     {
         // Mouse scroll wheel zoom - adjusts distance from player
         float scroll = Input.GetAxis("Mouse ScrollWheel");
-        if (Mathf.Abs(scroll) > 0.01f)
-        {
-            Debug.Log($"[Camera] Mouse scroll detected: {scroll}, current distance: {_currentDistance}");
-        }
-        
         _currentDistance -= scroll * ZoomSpeed;
         _currentDistance = Mathf.Clamp(_currentDistance, MinDistance, MaxDistance);
-        
-        if (Mathf.Abs(scroll) > 0.01f)
-        {
-            Debug.Log($"[Camera] New distance after zoom: {_currentDistance}");
-        }
     }
 
     private void HandleRotation()
     {
-        // Debug every few frames to avoid spam
-        if (Time.frameCount % 60 == 0)
-        {
-            Debug.Log($"[Camera] HandleRotation called - AllowRotation: {AllowRotation}");
-        }
-        
         if (!AllowRotation)
         {
             return;
@@ -138,49 +114,19 @@ public class CameraController : MonoBehaviour
         bool isOverUI = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
         if (isOverUI)
         {
-            if (Time.frameCount % 120 == 0)
-            {
-                Debug.Log("[Camera] Mouse is over UI - skipping camera rotation");
-            }
             return;
         }
 
-        // Check for right mouse button
-        bool rightMouseDown = Input.GetMouseButton(1);
-        
-        // Debug input detection every few frames
-        if (Time.frameCount % 30 == 0)
-        {
-            Debug.Log($"[Camera] Right mouse button state: {rightMouseDown}, Over UI: {isOverUI}");
-        }
-
         // Right mouse button to rotate camera
-        if (rightMouseDown)
+        if (Input.GetMouseButton(1))
         {
             float mouseX = Input.GetAxis("Mouse X");
             float mouseY = Input.GetAxis("Mouse Y");
             
-            // Only log when there's actual mouse movement
-            if (Mathf.Abs(mouseX) > 0.01f || Mathf.Abs(mouseY) > 0.01f)
-            {
-                Debug.Log($"[Camera] Mouse movement detected - X: {mouseX}, Y: {mouseY}");
-                Debug.Log($"[Camera] Current angles - Horizontal: {_horizontalAngle:F2}, Vertical: {_verticalAngle:F2}");
-                
-                // Apply rotation
-                _horizontalAngle += mouseX * RotationSpeed;
-                _verticalAngle -= mouseY * VerticalRotationSpeed;
-                _verticalAngle = Mathf.Clamp(_verticalAngle, MinVerticalAngle, MaxVerticalAngle);
-                
-                Debug.Log($"[Camera] New angles - Horizontal: {_horizontalAngle:F2}, Vertical: {_verticalAngle:F2}");
-            }
-            else if (rightMouseDown)
-            {
-                // Log when right mouse is down but no movement is detected
-                if (Time.frameCount % 30 == 0)
-                {
-                    Debug.Log("[Camera] Right mouse down but no movement detected");
-                }
-            }
+            // Apply rotation
+            _horizontalAngle += mouseX * RotationSpeed;
+            _verticalAngle -= mouseY * VerticalRotationSpeed;
+            _verticalAngle = Mathf.Clamp(_verticalAngle, MinVerticalAngle, MaxVerticalAngle);
         }
     }
 
@@ -213,7 +159,7 @@ public class CameraController : MonoBehaviour
         _horizontalAngle = Mathf.Atan2(newOffset.x, newOffset.z) * Mathf.Rad2Deg;
         _verticalAngle = Mathf.Asin(newOffset.y / _currentDistance) * Mathf.Rad2Deg;
         
-        Debug.Log($"Camera style set to: {style} with distance: {_currentDistance}");
+        // Camera style updated
     }
 }
 

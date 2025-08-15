@@ -425,7 +425,13 @@ public class NetworkManager : MonoBehaviour
 
     public async Task SendAttack(string targetId, string attackType, Vector3 position)
     {
-        if (!IsConnected) return;
+        Debug.Log($"[NetworkManager] SendAttack called - Connected: {IsConnected}, Target: {targetId}, AttackType: {attackType}");
+        
+        if (!IsConnected) 
+        {
+            Debug.LogError("[NetworkManager] Cannot send attack - not connected to server!");
+            return;
+        }
         
         try
         {
@@ -438,7 +444,9 @@ public class NetworkManager : MonoBehaviour
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
             };
             
+            Debug.Log($"[NetworkManager] Sending CombatAction message: Attacker={message.AttackerId}, Target={message.TargetId}");
             await SendMessage("CombatAction", message);
+            Debug.Log($"[NetworkManager] CombatAction message sent successfully");
         }
         catch (Exception ex)
         {

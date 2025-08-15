@@ -324,11 +324,40 @@ public class PlayerController : MonoBehaviour
                 }
             }
 
-            // Send attack to server
-            var networkManager = GameManager.Instance.NetworkManager;
+            // Debug GameManager availability
+            Debug.Log($"[PlayerController] GameManager.Instance: {(GameManager.Instance != null ? "Available" : "NULL")}");
+            
+            // Debug what's actually on the GameManager GameObject
+            if (GameManager.Instance != null)
+            {
+                var components = GameManager.Instance.GetComponents<Component>();
+                Debug.Log($"[PlayerController] GameManager has {components.Length} components:");
+                foreach (var comp in components)
+                {
+                    Debug.Log($"[PlayerController]   - {comp.GetType().Name}");
+                }
+            }
+            
+            // Try to find NetworkManager in the scene
+            var networkManagerInScene = FindObjectOfType<NetworkManager>();
+            Debug.Log($"[PlayerController] NetworkManager found in scene: {(networkManagerInScene != null ? "YES" : "NO")}");
+            if (networkManagerInScene != null)
+            {
+                Debug.Log($"[PlayerController] NetworkManager is on GameObject: {networkManagerInScene.gameObject.name}");
+            }
+            
+            // Send attack to server - use direct scene lookup since GameManager.NetworkManager is null
+            var networkManager = GameManager.Instance?.NetworkManager ?? FindObjectOfType<NetworkManager>();
+            Debug.Log($"[PlayerController] NetworkManager: {(networkManager != null ? "Available" : "NULL")}");
+            
             if (networkManager != null)
             {
+                Debug.Log($"[PlayerController] Calling networkManager.SendAttack with targetId: {targetId}");
                 _ = networkManager.SendAttack(targetId, "BasicAttack", attackPosition);
+            }
+            else
+            {
+                Debug.LogError("[PlayerController] NetworkManager is null - cannot send attack!");
             }
 
             // Play local attack animation/effect

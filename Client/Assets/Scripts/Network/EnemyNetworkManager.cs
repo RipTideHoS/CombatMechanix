@@ -109,15 +109,26 @@ public class EnemyNetworkManager : MonoBehaviour
     /// </summary>
     private void HandleEnemyDeath(EnemyDeathMessage deathMessage)
     {
+        Debug.Log($"[EnemyNetworkManager] HandleEnemyDeath called for enemy {deathMessage.EnemyId}");
+        
         if (_networkEnemies.TryGetValue(deathMessage.EnemyId, out var enemy))
         {
+            Debug.Log($"[EnemyNetworkManager] Found enemy {deathMessage.EnemyId}, applying death");
+            
             // Trigger death on the enemy (visual effects, disable collider, etc.)
             enemy.TakeDamage(1000f); // Force death with large damage amount
+            
+            // Optionally hide the enemy GameObject instead of just marking it dead
+            enemy.gameObject.SetActive(false);
             
             if (EnableDebugLogging)
             {
                 Debug.Log($"[EnemyNetworkManager] Enemy {deathMessage.EnemyId} was killed by {deathMessage.KillerId}");
             }
+        }
+        else
+        {
+            Debug.LogWarning($"[EnemyNetworkManager] Enemy {deathMessage.EnemyId} not found in _networkEnemies for death handling");
         }
     }
     
@@ -236,12 +247,22 @@ public class EnemyNetworkManager : MonoBehaviour
         if (!enemyState.IsAlive && enemy.IsAlive())
         {
             // Force death if server says enemy is dead but client thinks it's alive
+            Debug.Log($"[EnemyNetworkManager] Server says {enemyState.EnemyId} is dead, forcing death");
             enemy.TakeDamage(1000f); // Ensure death
+            enemy.gameObject.SetActive(false); // Hide the enemy
         }
         else if (enemyState.IsAlive && !enemy.IsAlive())
         {
             // Respawn if server says enemy is alive but client thinks it's dead
+            Debug.Log($"[EnemyNetworkManager] Server says {enemyState.EnemyId} is alive, respawning");
             enemy.Reset();
+            enemy.gameObject.SetActive(true); // Show the enemy again
+        }
+        else if (enemyState.IsAlive && !enemy.gameObject.activeInHierarchy)
+        {
+            // Make sure alive enemies are visible
+            Debug.Log($"[EnemyNetworkManager] Ensuring alive enemy {enemyState.EnemyId} is visible");
+            enemy.gameObject.SetActive(true);
         }
     }
     
