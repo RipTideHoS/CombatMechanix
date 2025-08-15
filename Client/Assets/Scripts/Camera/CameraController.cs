@@ -4,13 +4,13 @@ public class CameraController : MonoBehaviour
 {
     [Header("Follow Settings")]
     public Transform Target; // Will be set to LocalPlayer
-    public Vector3 Offset = new Vector3(0, 3, -8); // Better for 3rd person
-    public float SmoothTime = 0.2f; // Faster response
+    public Vector3 Offset = new Vector3(0, 35, -25); // Very high and far back for maximum wide view
+    public float SmoothTime = 0.15f; // Faster response
     public bool FollowPlayer = true;
 
     [Header("Zoom Settings")]
     public float MinZoom = 5f;
-    public float MaxZoom = 20f;
+    public float MaxZoom = 60f; // Allow zooming out much further for wide view
     public float ZoomSpeed = 2f;
 
     [Header("Rotation Settings")]
@@ -53,6 +53,14 @@ public class CameraController : MonoBehaviour
         
         // Smoothly move camera
         transform.position = Vector3.SmoothDamp(transform.position, desiredPosition, ref _velocity, SmoothTime);
+        
+        // Look at the player
+        Vector3 lookDirection = Target.position - transform.position;
+        if (lookDirection != Vector3.zero)
+        {
+            Quaternion targetRotation = Quaternion.LookRotation(lookDirection);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 2f);
+        }
     }
 
     private void HandleZoom()
@@ -90,18 +98,18 @@ public class CameraController : MonoBehaviour
         switch (style)
         {
             case CameraStyle.TopDown:
-                Offset = new Vector3(0, 15, -10);
-                transform.rotation = Quaternion.Euler(60, 0, 0);
+                Offset = new Vector3(0, 40, -10); // Very high for maximum overview
                 break;
             case CameraStyle.ThirdPerson:
-                Offset = new Vector3(0, 3, -8);
-                transform.rotation = Quaternion.Euler(15, 0, 0);
+                Offset = new Vector3(0, 35, -25); // Maximum wide view
                 break;
             case CameraStyle.Strategic:
-                Offset = new Vector3(0, 20, -5);
-                transform.rotation = Quaternion.Euler(75, 0, 0);
+                Offset = new Vector3(0, 50, -15); // Ultra-wide strategic view
                 break;
         }
+        
+        // Camera will automatically look at player due to HandleCameraFollow changes
+        Debug.Log($"Camera style set to: {style} with offset: {Offset}");
     }
 }
 

@@ -134,8 +134,8 @@ public class GameStartup : MonoBehaviour
            CreatePlayerVisual(localPlayerObj);
        }
        
-       // Set initial position
-       localPlayerObj.transform.position = Vector3.zero;
+       // Set initial position so CharacterController bottom sits on ground
+       localPlayerObj.transform.position = new Vector3(0, 1f, 0);
        
        Debug.Log("GameStartup: Created LocalPlayer");
    }
@@ -146,9 +146,10 @@ public class GameStartup : MonoBehaviour
        var visualObj = GameObject.CreatePrimitive(PrimitiveType.Capsule);
        visualObj.name = "PlayerModel";
        visualObj.transform.SetParent(playerObj.transform);
-       visualObj.transform.localPosition = Vector3.zero;
+       // Visual mesh should align with CharacterController center (which is now at transform origin)
+       visualObj.transform.localPosition = new Vector3(0, 0f, 0);
        
-       // Remove the capsule collider (we use CharacterController instead)
+       // Remove the capsule collider (CharacterController handles collision)
        var capsuleCollider = visualObj.GetComponent<Collider>();
        if (capsuleCollider != null)
        {
@@ -230,9 +231,9 @@ public class GameStartup : MonoBehaviour
        var camera = cameraObj.AddComponent<Camera>();
        cameraObj.tag = "MainCamera";
        
-       // Set up camera for ARPG view (top-down angled)
-       cameraObj.transform.position = new Vector3(0, 10, -10);
-       cameraObj.transform.rotation = Quaternion.Euler(30, 0, 0);
+       // Set up camera for maximum wide angled view of player
+       cameraObj.transform.position = new Vector3(0, 35, -25);
+       cameraObj.transform.LookAt(new Vector3(0, 1, 0)); // Look at player spawn point
        
        // Add AudioListener
        cameraObj.AddComponent<AudioListener>();

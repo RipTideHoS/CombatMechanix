@@ -217,7 +217,7 @@ namespace CombatMechanix.Services
             {
                 PlayerId = connection.ConnectionId, // Use connection ID as player ID for simplicity
                 PlayerName = authData.PlayerName,
-                Position = System.Numerics.Vector3.Zero,
+                Position = new Vector3Data(0, 0, 0),
                 Health = 100,
                 IsOnline = true,
                 LastUpdate = DateTime.UtcNow

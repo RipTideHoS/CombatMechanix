@@ -66,6 +66,12 @@ public class GameManager : MonoBehaviour
         CombatSystem = GetComponent<CombatSystem>();
         InventoryManager = GetComponent<InventoryManager>();
 
+        // Debug component initialization
+        Debug.Log($"GameManager component initialization:");
+        Debug.Log($"  NetworkManager: {(NetworkManager != null ? "found" : "null")}");
+        Debug.Log($"  UIManager: {(UIManager != null ? "found" : "null")}");
+        Debug.Log($"  WorldManager: {(WorldManager != null ? "found" : "null")}");
+
         // Find LocalPlayer in scene
         LocalPlayer = FindObjectOfType<PlayerController>();
 

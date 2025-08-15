@@ -105,12 +105,6 @@ public class UIManager : MonoBehaviour
             }
         }
 
-        // Toggle inventory
-        if (Input.GetKeyDown(KeyCode.I))
-        {
-            ToggleInventory();
-        }
-
         // Toggle chat
         if (Input.GetKeyDown(KeyCode.T))
         {
@@ -275,11 +269,42 @@ private void OnLoginButtonClicked()
         ShowNotification(message, Color.white);
     }
 
-    private void ToggleInventory()
+    public void ToggleInventory()
     {
         if (InventoryPanel != null)
         {
-            InventoryPanel.SetActive(!InventoryPanel.activeSelf);
+            bool currentState = InventoryPanel.activeSelf;
+            InventoryPanel.SetActive(!currentState);
+            
+            // Debug information
+            if (!currentState) // Panel is now visible
+            {
+                var rectTransform = InventoryPanel.GetComponent<RectTransform>();
+                var canvas = InventoryPanel.GetComponentInParent<Canvas>();
+                Debug.Log($"Inventory panel shown - Active: {InventoryPanel.activeSelf}");
+                Debug.Log($"Panel position: {rectTransform.anchoredPosition}, Size: {rectTransform.rect.size}");
+                Debug.Log($"Canvas: {(canvas != null ? canvas.name : "null")}, RenderMode: {(canvas != null ? canvas.renderMode.ToString() : "null")}");
+            }
+            else
+            {
+                Debug.Log($"Inventory panel hidden");
+            }
+        }
+        else
+        {
+            // Try to find the inventory panel if not assigned
+            GameObject foundPanel = GameObject.Find("InventoryPanel");
+            if (foundPanel != null)
+            {
+                InventoryPanel = foundPanel; // Cache the reference
+                bool currentState = InventoryPanel.activeSelf;
+                InventoryPanel.SetActive(!currentState);
+                Debug.Log($"Found and toggled inventory panel: {!currentState}");
+            }
+            else
+            {
+                Debug.LogWarning("InventoryPanel not found! Make sure it exists in the scene.");
+            }
         }
     }
 
@@ -338,6 +363,45 @@ private void OnLoginButtonClicked()
         }
 
         Destroy(textObj);
+    }
+
+    // ===============================================
+    // INVENTORY UI METHODS
+    // ===============================================
+
+    public void ShowInventory()
+    {
+        if (InventoryPanel != null)
+        {
+            InventoryPanel.SetActive(true);
+        }
+        else
+        {
+            // Try to find the inventory panel if not assigned
+            GameObject foundPanel = GameObject.Find("InventoryPanel");
+            if (foundPanel != null)
+            {
+                InventoryPanel = foundPanel; // Cache the reference
+                InventoryPanel.SetActive(true);
+                Debug.Log("Found and showed inventory panel");
+            }
+            else
+            {
+                Debug.LogWarning("InventoryPanel not found! Make sure it exists in the scene.");
+            }
+        }
+    }
+
+    public void HideInventory()
+    {
+        if (InventoryPanel != null)
+        {
+            InventoryPanel.SetActive(false);
+        }
+        else
+        {
+            Debug.LogWarning("InventoryPanel reference is null");
+        }
     }
 
     private void OnDestroy()

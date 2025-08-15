@@ -25,6 +25,11 @@ public class PlayerController : MonoBehaviour
     private Vector3 _inputVector;
     private Vector3 _moveDirection;
     private bool _isMoving;
+    
+    // Gravity and ground handling
+    private float _verticalVelocity = 0f;
+    private float _gravity = -9.81f;
+    private bool _isGrounded;
 
     // Networking
     private Vector3 _lastSentPosition;
@@ -48,7 +53,9 @@ public class PlayerController : MonoBehaviour
             _characterController = gameObject.AddComponent<CharacterController>();
             _characterController.radius = 0.5f;
             _characterController.height = 2f;
-            _characterController.center = new Vector3(0, 1, 0);
+            _characterController.center = new Vector3(0, 0f, 0); // Center at transform origin
+            _characterController.skinWidth = 0.08f; // Prevents sticking to surfaces
+            _characterController.minMoveDistance = 0.001f; // Allows small movements
         }
     }
 
@@ -60,14 +67,31 @@ public class PlayerController : MonoBehaviour
             _mainCamera = FindObjectOfType<Camera>();
         }
 
-        // Set initial position from spawn point
-        transform.position = Vector3.zero; // Will be set by server
+        // Set initial position so CharacterController bottom sits on ground
+        // CharacterController center is at (0,0,0) relative to transform  
+        // CharacterController height is 2, so bottom is at center.y - height/2 = 0 - 1 = -1 relative to transform
+        // To put bottom at ground level (world y=0), transform should be at y=1
+        transform.position = new Vector3(0, 1f, 0); // Transform at y=1 puts CC bottom at ground level
         CurrentRotation = transform.eulerAngles.y;
+        
+        Debug.Log($"Player positioned at: {transform.position}, CharacterController center: {_characterController.center}, height: {_characterController.height}");
     }
 
     private void Update()
     {
-        if (!GameManager.Instance.IsInGame) return;
+        if (GameManager.Instance == null)
+        {
+            Debug.LogError("GameManager.Instance is null!");
+            return;
+        }
+        
+        if (!GameManager.Instance.IsInGame) 
+        {
+            // Only log this occasionally to avoid spam
+            if (Time.frameCount % 300 == 0) // Log every 5 seconds at 60fps
+                Debug.LogWarning("Player movement blocked - GameManager.IsInGame is false");
+            return;
+        }
 
         HandleInput();
         HandleMovement();
@@ -79,6 +103,9 @@ public class PlayerController : MonoBehaviour
         // Enhanced WASD movement input with camera-relative movement
         float horizontal = Input.GetAxis("Horizontal"); // A/D keys
         float vertical = Input.GetAxis("Vertical");     // W/S keys
+        
+        if (horizontal != 0 || vertical != 0)
+            Debug.Log($"Input detected: H={horizontal:F2}, V={vertical:F2}");
 
         // Make movement relative to camera direction for 3rd person
         Camera mainCamera = Camera.main;
@@ -104,6 +131,11 @@ public class PlayerController : MonoBehaviour
         }
 
         _isMoving = _inputVector.magnitude > 0.1f;
+        
+        if (_isMoving)
+        {
+            Debug.Log($"Movement calculated: InputVector={_inputVector}, IsMoving={_isMoving}");
+        }
 
         // Rotate player to face movement direction for 3rd person
         if (_isMoving && _inputVector.magnitude > 0.1f)
@@ -156,30 +188,64 @@ public class PlayerController : MonoBehaviour
                 uiManager.ChatInput.ActivateInputField();
             }
         }
+
+        // Inventory toggle (I key)
+        if (Input.GetKeyDown(KeyCode.I))
+        {
+            HandleInventoryToggle();
+        }
     }
 
     private void HandleMovement()
     {
+        // Check if grounded
+        _isGrounded = _characterController != null ? _characterController.isGrounded : true;
+
+        // Handle gravity
+        if (_isGrounded && _verticalVelocity < 0)
+        {
+            _verticalVelocity = -2f; // Small downward force to keep grounded
+        }
+        else
+        {
+            _verticalVelocity += _gravity * Time.deltaTime; // Apply gravity
+        }
+
+        // Calculate horizontal movement
+        Vector3 horizontalMovement = Vector3.zero;
         if (_isMoving)
         {
-            // Calculate movement direction relative to current rotation
-            _moveDirection = transform.TransformDirection(_inputVector) * MovementSpeed;
-            CurrentVelocity = _moveDirection;
-
-            // Apply movement with collision detection
-            if (_characterController != null)
-            {
-                _characterController.Move(_moveDirection * Time.deltaTime);
-            }
-            else
-            {
-                // Fallback if no CharacterController
-                transform.Translate(_moveDirection * Time.deltaTime, Space.World);
-            }
+            // Use camera-relative movement direction directly (already calculated in HandleInput)
+            horizontalMovement = _inputVector * MovementSpeed;
+            CurrentVelocity = horizontalMovement;
         }
         else
         {
             CurrentVelocity = Vector3.zero;
+        }
+
+        // Combine horizontal movement with vertical velocity
+        Vector3 finalMovement = horizontalMovement;
+        finalMovement.y = _verticalVelocity;
+
+        // Apply movement with collision detection
+        if (_characterController != null)
+        {
+            _characterController.Move(finalMovement * Time.deltaTime);
+            
+            if (_isMoving)
+            {
+                Debug.Log($"Movement applied via CharacterController: H={horizontalMovement}, V={_verticalVelocity:F2}, Grounded={_isGrounded}");
+            }
+        }
+        else
+        {
+            // Fallback if no CharacterController (only horizontal movement)
+            if (_isMoving)
+            {
+                transform.Translate(horizontalMovement * Time.deltaTime, Space.World);
+                Debug.Log($"Movement applied via Transform: {horizontalMovement * Time.deltaTime}");
+            }
         }
 
         // Store position history for reconciliation
@@ -294,6 +360,46 @@ public class PlayerController : MonoBehaviour
                 Debug.Log($"Gathering {resource.ResourceType} from {resource.ResourceId}");
                 break; // Only gather from one resource at a time
             }
+        }
+    }
+
+    private void HandleInventoryToggle()
+    {
+        Debug.Log($"HandleInventoryToggle called - GameManager.Instance: {(GameManager.Instance != null ? "exists" : "null")}");
+        
+        // Try UIManager first
+        var uiManager = GameManager.Instance?.UIManager;
+        if (uiManager != null)
+        {
+            Debug.Log("Using UIManager.ToggleInventory()");
+            uiManager.ToggleInventory();
+            return;
+        }
+        
+        Debug.LogWarning($"UIManager not available via GameManager - GameManager: {(GameManager.Instance != null ? "exists" : "null")}, UIManager: {(uiManager != null ? "exists" : "null")}");
+        
+        // Fallback 1: Try to find UIManager directly
+        UIManager directUIManager = FindObjectOfType<UIManager>();
+        if (directUIManager != null)
+        {
+            Debug.Log("Found UIManager directly, using ToggleInventory()");
+            directUIManager.ToggleInventory();
+            return;
+        }
+        
+        Debug.LogWarning("No UIManager found via FindObjectOfType either");
+        
+        // Fallback 2: Direct panel toggle
+        GameObject inventoryPanel = GameObject.Find("InventoryPanel");
+        if (inventoryPanel != null)
+        {
+            bool currentState = inventoryPanel.activeSelf;
+            inventoryPanel.SetActive(!currentState);
+            Debug.Log($"Inventory panel toggled (direct fallback): {!currentState}");
+        }
+        else
+        {
+            Debug.LogError("No inventory panel found with GameObject.Find either - UI system may be broken");
         }
     }
 

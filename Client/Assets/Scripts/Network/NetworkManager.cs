@@ -202,6 +202,15 @@ public class NetworkManager : MonoBehaviour
                     var connData = JsonConvert.DeserializeObject<ConnectionData>(wrapper.Data.ToString());
                     ConnectionId = connData.ConnectionId;
                     Debug.Log($"Server assigned connection ID: {ConnectionId}");
+                    
+                    // Trigger authentication completion
+                    QueueMainThreadAction(() => {
+                        var gameManager = GameManager.Instance;
+                        if (gameManager != null)
+                        {
+                            gameManager.OnPlayerAuthenticated();
+                        }
+                    });
                     break;
             }
         }
@@ -226,13 +235,14 @@ public class NetworkManager : MonoBehaviour
             var message = new NetworkMessages.PlayerMovementMessage
             {
                 PlayerId = ConnectionId,
-                Position = position,
-                Velocity = velocity,
+                Position = new Vector3Data(position),
+                Velocity = new Vector3Data(velocity),
                 Rotation = rotation,
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
             };
             
             await SendMessage("PlayerMovement", message);
+            Debug.Log($"Movement sent: Pos={position}, Vel={velocity}, Rot={rotation}");
         }
         catch (Exception ex)
         {
@@ -251,7 +261,7 @@ public class NetworkManager : MonoBehaviour
                 AttackerId = ConnectionId,
                 TargetId = targetId,
                 AttackType = attackType,
-                Position = position,
+                Position = new Vector3Data(position),
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
             };
             
@@ -297,7 +307,7 @@ public class NetworkManager : MonoBehaviour
                 PlayerId = ConnectionId,
                 ResourceId = resourceId,
                 ResourceType = resourceType,
-                Position = position
+                Position = new Vector3Data(position)
             };
             
             await SendMessage("ResourceGather", message);
