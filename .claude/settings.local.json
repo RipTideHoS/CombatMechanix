@@ -4,7 +4,11 @@
       "Bash(git add:*)",
       "Bash(git push:*)",
       "Bash(dotnet run:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(dotnet build)",
+      "Bash(taskkill:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": [],
