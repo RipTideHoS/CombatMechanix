@@ -217,9 +217,173 @@ namespace CombatMechanix.Services
 
             _logger.LogInformation($"Combat action: {combatData.AttackType} from {combatData.AttackerId} to {combatData.TargetId}");
 
-            // Process combat logic here (damage calculation, etc.)
-            // For now, just broadcast the action
+            // Validate attack
+            if (!ValidateAttack(connection, combatData))
+            {
+                _logger.LogWarning($"Invalid attack from {connection.PlayerId} to {combatData.TargetId}");
+                return;
+            }
+
+            // Route to appropriate handler based on target type
+            if (!string.IsNullOrEmpty(combatData.TargetId) && combatData.TargetId.StartsWith("enemy_"))
+            {
+                await HandleEnemyAttack(connection, combatData);
+            }
+            else if (!string.IsNullOrEmpty(combatData.TargetId))
+            {
+                await HandlePlayerAttack(connection, combatData);
+            }
+            else
+            {
+                // Ground attack or area effect - just broadcast for now
+                await BroadcastToAll("CombatAction", combatData);
+            }
+        }
+
+        private async Task HandleEnemyAttack(WebSocketConnection connection, NetworkMessages.CombatActionMessage combatData)
+        {
+            if (_enemyManager == null)
+            {
+                _logger.LogError("EnemyManager not available for enemy attack processing");
+                return;
+            }
+
+            // Calculate player damage based on stats
+            float damage = CalculatePlayerDamage(connection.PlayerId, combatData.AttackType);
+            
+            _logger.LogInformation($"Player {connection.PlayerId} attacking enemy {combatData.TargetId} for {damage} damage");
+
+            // Apply damage to enemy via EnemyManager
+            bool success = await _enemyManager.DamageEnemy(combatData.TargetId, damage, connection.PlayerId);
+            
+            if (success)
+            {
+                // Update combat data with calculated damage
+                combatData.Damage = damage;
+                combatData.AttackerId = connection.PlayerId;
+                
+                // Broadcast attack effects to all clients
+                await BroadcastToAll("CombatAction", combatData);
+                
+                // Handle potential rewards (experience, loot)
+                await HandleCombatRewards(connection.PlayerId, combatData.TargetId, damage);
+            }
+            else
+            {
+                _logger.LogWarning($"Failed to damage enemy {combatData.TargetId}");
+            }
+        }
+
+        private async Task HandlePlayerAttack(WebSocketConnection connection, NetworkMessages.CombatActionMessage combatData)
+        {
+            // For now, just broadcast player-vs-player attacks
+            // TODO: Add player-vs-player damage calculation and validation
+            combatData.AttackerId = connection.PlayerId;
             await BroadcastToAll("CombatAction", combatData);
+        }
+
+        private float CalculatePlayerDamage(string playerId, string attackType)
+        {
+            // Find player by connection ID (playerId in this context is connection.PlayerId)
+            var connection = _connections.Values.FirstOrDefault(c => c.PlayerId == playerId);
+            if (connection != null && _players.TryGetValue(connection.ConnectionId, out var player))
+            {
+                float baseDamage = 10f; // Base attack damage
+                float strengthBonus = player.Strength * 0.5f; // Strength scaling
+                float levelBonus = player.Level * 2f; // Level scaling
+                
+                // Attack type modifiers
+                float typeMultiplier = attackType switch
+                {
+                    "BasicAttack" => 1.0f,
+                    "PowerAttack" => 1.5f,
+                    "CriticalStrike" => 2.0f,
+                    _ => 1.0f
+                };
+                
+                float totalDamage = (baseDamage + strengthBonus + levelBonus) * typeMultiplier;
+                
+                _logger.LogDebug($"Damage calculation for {playerId}: Base={baseDamage}, Str={strengthBonus}, Level={levelBonus}, Type={typeMultiplier}, Total={totalDamage}");
+                
+                return totalDamage;
+            }
+            
+            _logger.LogWarning($"Could not find player {playerId} for damage calculation");
+            return 10f; // Default damage
+        }
+
+        private bool ValidateAttack(WebSocketConnection connection, NetworkMessages.CombatActionMessage combatData)
+        {
+            // Basic validation
+            if (string.IsNullOrEmpty(connection.PlayerId))
+            {
+                _logger.LogWarning("Attack validation failed: No player ID");
+                return false;
+            }
+
+            // Range validation for enemy attacks
+            if (!string.IsNullOrEmpty(combatData.TargetId) && combatData.TargetId.StartsWith("enemy_"))
+            {
+                if (_enemyManager != null)
+                {
+                    bool isValid = _enemyManager.ValidateAttackOnEnemy(
+                        combatData.TargetId, 
+                        connection.PlayerId, 
+                        combatData.Position
+                    );
+                    
+                    if (!isValid)
+                    {
+                        _logger.LogWarning($"Enemy attack validation failed: {connection.PlayerId} -> {combatData.TargetId}");
+                    }
+                    
+                    return isValid;
+                }
+            }
+            
+            // Add more validation as needed (cooldowns, resources, etc.)
+            return true;
+        }
+
+        private async Task HandleCombatRewards(string playerId, string enemyId, float damageDealt)
+        {
+            var enemy = _enemyManager?.GetEnemy(enemyId);
+            if (enemy != null && !enemy.IsAlive)
+            {
+                // Enemy was killed - award experience
+                long expGain = enemy.Level * 25; // 25 exp per enemy level
+                
+                _logger.LogInformation($"Player {playerId} killed enemy {enemyId} (Level {enemy.Level}) - awarding {expGain} experience");
+                
+                // Send experience gain message
+                var expMessage = new NetworkMessages.ExperienceGainMessage
+                {
+                    PlayerId = playerId,
+                    ExperienceGained = expGain,
+                    Source = $"Killed {enemy.EnemyName}"
+                };
+                
+                // Find connection by player ID
+                var connection = _connections.Values.FirstOrDefault(c => c.PlayerId == playerId);
+                if (connection != null)
+                {
+                    await SendToConnection(connection.ConnectionId, "ExperienceGain", expMessage);
+                    
+                    // Update player stats in database
+                    try
+                    {
+                        using var scope = _serviceProvider.CreateScope();
+                        var playerStatsService = scope.ServiceProvider.GetRequiredService<IPlayerStatsService>();
+                        await playerStatsService.AddExperienceAsync(playerId, expGain);
+                        
+                        _logger.LogInformation($"Added {expGain} experience to player {playerId}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"Failed to update experience for player {playerId}");
+                    }
+                }
+            }
         }
 
         private async Task HandleChatMessage(WebSocketConnection connection, object? data)

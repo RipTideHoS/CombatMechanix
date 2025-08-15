@@ -302,12 +302,26 @@ public class PlayerController : MonoBehaviour
         {
             Vector3 attackPosition = hit.point;
             string targetId = null;
+            string targetType = "Ground";
 
-            // Check if we hit another player
-            var targetPlayer = hit.collider.GetComponent<RemotePlayer>();
-            if (targetPlayer != null)
+            // Check for enemy targets first
+            var targetEnemy = hit.collider.GetComponent<EnemyBase>();
+            if (targetEnemy != null)
             {
-                targetId = targetPlayer.PlayerId;
+                targetId = targetEnemy.EnemyId;
+                targetType = "Enemy";
+                Debug.Log($"[PlayerController] Targeting enemy: {targetEnemy.EnemyName} (ID: {targetId})");
+            }
+            else
+            {
+                // Check if we hit another player
+                var targetPlayer = hit.collider.GetComponent<RemotePlayer>();
+                if (targetPlayer != null)
+                {
+                    targetId = targetPlayer.PlayerId;
+                    targetType = "Player";
+                    Debug.Log($"[PlayerController] Targeting player: {targetPlayer.PlayerId}");
+                }
             }
 
             // Send attack to server
