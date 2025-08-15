@@ -21,9 +21,10 @@ public class UIManager : MonoBehaviour
     public Text NotificationText;
 
     [Header("Login UI")]
-    public InputField PlayerNameInput;
-    public Text StatusText;
-    public Button ConnectButton;
+    public LoginUI LoginUIComponent;
+    public InputField PlayerNameInput; // Legacy - for backward compatibility
+    public Text StatusText; // Legacy - for backward compatibility
+    public Button ConnectButton; // Legacy - for backward compatibility
 
     [Header("Chat UI")]
     public InputField ChatInput;
@@ -42,9 +43,11 @@ public class UIManager : MonoBehaviour
         NetworkManager.OnChatMessage += HandleChatMessage;
         NetworkManager.OnSystemNotification += HandleSystemNotification;
 
-        // Initialize UI
+        // Initialize UI - Always start with login screen
         ShowLoginPanel();
         SetupChatUI();
+        
+        Debug.Log("UIManager initialized - Login screen should be visible");
     }
 
     public void ShowLoginPanel()
@@ -52,6 +55,12 @@ public class UIManager : MonoBehaviour
         if (LoginPanel != null) LoginPanel.SetActive(true);
         if (GameUI != null) GameUI.SetActive(false);
         if (ConnectionLostPanel != null) ConnectionLostPanel.SetActive(false);
+        
+        // Notify LoginUI component
+        if (LoginUIComponent != null)
+        {
+            LoginUIComponent.ShowLoginPanel();
+        }
     }
 
     public void ShowGameUI()
@@ -59,6 +68,12 @@ public class UIManager : MonoBehaviour
         if (LoginPanel != null) LoginPanel.SetActive(false);
         if (GameUI != null) GameUI.SetActive(true);
         if (ConnectionLostPanel != null) ConnectionLostPanel.SetActive(false);
+        
+        // Notify LoginUI component
+        if (LoginUIComponent != null)
+        {
+            LoginUIComponent.HideLoginPanel();
+        }
         
         UpdatePlayerInfo();
     }
@@ -114,34 +129,17 @@ public class UIManager : MonoBehaviour
 
 private void OnLoginButtonClicked()
 {
-    // Get player name from input
-    string playerName = PlayerNameInput?.text?.Trim();
+    // Legacy login method - DISABLED
+    // New authentication is handled by LoginUI component
+    Debug.LogWarning("Legacy login button clicked - redirecting to new authentication system");
     
-    if (string.IsNullOrEmpty(playerName))
+    if (LoginUIComponent != null)
     {
-        if (StatusText != null)
-            StatusText.text = "Please enter a player name";
-        return;
+        LoginUIComponent.ShowLoginPanel();
     }
-    
-    // Set player name in GameManager
-    if (GameManager.Instance != null)
+    else
     {
-        GameManager.Instance.SetLocalPlayerName(playerName);
-    }
-    
-    // Update status
-    if (StatusText != null)
-        StatusText.text = "Connecting...";
-    
-    // Disable button to prevent multiple clicks
-    if (ConnectButton != null)
-        ConnectButton.interactable = false;
-    
-    // Start connection
-    if (GameManager.Instance?.NetworkManager != null)
-    {
-        GameManager.Instance.NetworkManager.ConnectToServer();
+        Debug.LogError("LoginUI component not found! Please assign it in the inspector.");
     }
 }
 
@@ -229,7 +227,16 @@ private void OnLoginButtonClicked()
     {
         if (PlayerInfoText != null)
         {
-            PlayerInfoText.text = $"Player: {GameManager.Instance.LocalPlayerName}\nLevel: 1\nExperience: 0";
+            // Try to get stats from ClientPlayerStats component
+            var playerStats = FindObjectOfType<ClientPlayerStats>();
+            if (playerStats != null)
+            {
+                PlayerInfoText.text = $"Player: {GameManager.Instance.LocalPlayerName}\nLevel: {playerStats.Level}\nExperience: {playerStats.Experience}\nHealth: {playerStats.Health}/{playerStats.MaxHealth}";
+            }
+            else
+            {
+                PlayerInfoText.text = $"Player: {GameManager.Instance.LocalPlayerName}\nLevel: Loading...\nExperience: Loading...";
+            }
         }
     }
 

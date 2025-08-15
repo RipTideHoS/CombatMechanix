@@ -171,6 +171,9 @@ public class AutoSceneSetup : MonoBehaviour
         // Add the PlayerController component
         PlayerController playerController = player.AddComponent<PlayerController>();
         
+        // Add the ClientPlayerStats component for server-authoritative stats
+        ClientPlayerStats playerStats = player.AddComponent<ClientPlayerStats>();
+        
         // Make the player blue so it's easily visible
         Renderer renderer = player.GetComponent<Renderer>();
         if (renderer != null)
@@ -279,8 +282,11 @@ public class AutoSceneSetup : MonoBehaviour
         // Create the inventory panel
         GameObject inventoryPanel = CreateInventoryPanel(canvasObj);
         
-        // Connect the inventory panel to UIManager
-        ConnectUIManagerReferences(inventoryPanel);
+        // Create the login panel
+        GameObject loginPanel = CreateLoginPanel(canvasObj);
+        
+        // Connect the panels to UIManager
+        ConnectUIManagerReferences(inventoryPanel, loginPanel);
         
         // Force Canvas to update
         Canvas.ForceUpdateCanvases();
@@ -354,28 +360,244 @@ public class AutoSceneSetup : MonoBehaviour
         return inventoryPanel;
     }
 
-    private void ConnectUIManagerReferences(GameObject inventoryPanel)
+    private GameObject CreateLoginPanel(GameObject canvasObj)
+    {
+        // Create login panel
+        GameObject loginPanel = new GameObject("LoginPanel");
+        loginPanel.transform.SetParent(canvasObj.transform, false);
+        
+        // Add Image component for background
+        var image = loginPanel.AddComponent<UnityEngine.UI.Image>();
+        image.color = new Color(0.1f, 0.1f, 0.1f, 0.95f); // Dark semi-transparent background
+        image.raycastTarget = true;
+        
+        // Set up RectTransform for full screen coverage
+        var rectTransform = loginPanel.GetComponent<RectTransform>();
+        rectTransform.anchorMin = Vector2.zero;
+        rectTransform.anchorMax = Vector2.one;
+        rectTransform.anchoredPosition = Vector2.zero;
+        rectTransform.sizeDelta = Vector2.zero;
+        rectTransform.offsetMin = Vector2.zero;
+        rectTransform.offsetMax = Vector2.zero;
+        
+        // Create main login container (centered)
+        GameObject loginContainer = new GameObject("LoginContainer");
+        loginContainer.transform.SetParent(loginPanel.transform, false);
+        
+        var containerImage = loginContainer.AddComponent<UnityEngine.UI.Image>();
+        containerImage.color = new Color(0.2f, 0.2f, 0.2f, 0.9f);
+        
+        var containerRect = loginContainer.GetComponent<RectTransform>();
+        containerRect.anchorMin = new Vector2(0.35f, 0.3f);
+        containerRect.anchorMax = new Vector2(0.65f, 0.7f);
+        containerRect.anchoredPosition = Vector2.zero;
+        containerRect.sizeDelta = Vector2.zero;
+        
+        // Create title
+        GameObject titleObj = new GameObject("Title");
+        titleObj.transform.SetParent(loginContainer.transform, false);
+        var titleText = titleObj.AddComponent<UnityEngine.UI.Text>();
+        titleText.text = "COMBAT MECHANIX LOGIN";
+        titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        titleText.fontSize = 24;
+        titleText.color = Color.white;
+        titleText.alignment = TextAnchor.MiddleCenter;
+        titleText.fontStyle = FontStyle.Bold;
+        
+        var titleRect = titleObj.GetComponent<RectTransform>();
+        titleRect.anchorMin = new Vector2(0, 0.8f);
+        titleRect.anchorMax = new Vector2(1, 1f);
+        titleRect.anchoredPosition = Vector2.zero;
+        titleRect.sizeDelta = Vector2.zero;
+        
+        // Create username input field
+        GameObject usernameField = CreateInputField(loginContainer, "UsernameField", "Username", 0.55f, 0.7f);
+        var usernameInput = usernameField.GetComponent<UnityEngine.UI.InputField>();
+        usernameInput.placeholder.GetComponent<UnityEngine.UI.Text>().text = "Enter username...";
+        
+        // Create password input field  
+        GameObject passwordField = CreateInputField(loginContainer, "PasswordField", "Password", 0.4f, 0.55f);
+        var passwordInput = passwordField.GetComponent<UnityEngine.UI.InputField>();
+        passwordInput.contentType = UnityEngine.UI.InputField.ContentType.Password;
+        passwordInput.placeholder.GetComponent<UnityEngine.UI.Text>().text = "Enter password...";
+        
+        // Create login button
+        GameObject loginButton = CreateButton(loginContainer, "LoginButton", "LOGIN", 0.25f, 0.4f);
+        
+        // Create status text
+        GameObject statusObj = new GameObject("StatusText");
+        statusObj.transform.SetParent(loginContainer.transform, false);
+        var statusText = statusObj.AddComponent<UnityEngine.UI.Text>();
+        statusText.text = "Enter your credentials to login";
+        statusText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        statusText.fontSize = 16;
+        statusText.color = Color.yellow;
+        statusText.alignment = TextAnchor.MiddleCenter;
+        
+        var statusRect = statusObj.GetComponent<RectTransform>();
+        statusRect.anchorMin = new Vector2(0.05f, 0.05f);
+        statusRect.anchorMax = new Vector2(0.95f, 0.2f);
+        statusRect.anchoredPosition = Vector2.zero;
+        statusRect.sizeDelta = Vector2.zero;
+        
+        // Add LoginUI component to the loginPanel
+        var loginUIComponent = loginPanel.AddComponent<LoginUI>();
+        
+        // Set references in LoginUI component using reflection (since fields might be private)
+        SetFieldValue(loginUIComponent, "LoginPanel", loginPanel);
+        SetFieldValue(loginUIComponent, "UsernameInput", usernameInput);
+        SetFieldValue(loginUIComponent, "PasswordInput", passwordInput);
+        SetFieldValue(loginUIComponent, "LoginButton", loginButton.GetComponent<UnityEngine.UI.Button>());
+        SetFieldValue(loginUIComponent, "StatusText", statusText);
+        
+        // Start with panel visible (login should show first)
+        loginPanel.SetActive(true);
+        
+        Debug.Log("Login panel created with username/password fields and LoginUI component");
+        return loginPanel;
+    }
+    
+    private GameObject CreateInputField(GameObject parent, string name, string labelText, float minY, float maxY)
+    {
+        GameObject fieldObj = new GameObject(name);
+        fieldObj.transform.SetParent(parent.transform, false);
+        
+        // Add background image
+        var image = fieldObj.AddComponent<UnityEngine.UI.Image>();
+        image.color = new Color(0.8f, 0.8f, 0.8f, 1f);
+        
+        var fieldRect = fieldObj.GetComponent<RectTransform>();
+        fieldRect.anchorMin = new Vector2(0.1f, minY);
+        fieldRect.anchorMax = new Vector2(0.9f, maxY);
+        fieldRect.anchoredPosition = Vector2.zero;
+        fieldRect.sizeDelta = Vector2.zero;
+        
+        // Add InputField component
+        var inputField = fieldObj.AddComponent<UnityEngine.UI.InputField>();
+        
+        // Create text component
+        GameObject textObj = new GameObject("Text");
+        textObj.transform.SetParent(fieldObj.transform, false);
+        var text = textObj.AddComponent<UnityEngine.UI.Text>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 16;
+        text.color = Color.black;
+        text.alignment = TextAnchor.MiddleLeft;
+        
+        var textRect = textObj.GetComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.anchoredPosition = Vector2.zero;
+        textRect.sizeDelta = Vector2.zero;
+        textRect.offsetMin = new Vector2(10, 0);
+        textRect.offsetMax = new Vector2(-10, 0);
+        
+        // Create placeholder
+        GameObject placeholderObj = new GameObject("Placeholder");
+        placeholderObj.transform.SetParent(fieldObj.transform, false);
+        var placeholder = placeholderObj.AddComponent<UnityEngine.UI.Text>();
+        placeholder.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        placeholder.fontSize = 16;
+        placeholder.color = new Color(0.5f, 0.5f, 0.5f, 1f);
+        placeholder.alignment = TextAnchor.MiddleLeft;
+        placeholder.text = $"Enter {labelText.ToLower()}...";
+        
+        var placeholderRect = placeholderObj.GetComponent<RectTransform>();
+        placeholderRect.anchorMin = Vector2.zero;
+        placeholderRect.anchorMax = Vector2.one;
+        placeholderRect.anchoredPosition = Vector2.zero;
+        placeholderRect.sizeDelta = Vector2.zero;
+        placeholderRect.offsetMin = new Vector2(10, 0);
+        placeholderRect.offsetMax = new Vector2(-10, 0);
+        
+        // Connect components
+        inputField.textComponent = text;
+        inputField.placeholder = placeholder;
+        
+        return fieldObj;
+    }
+    
+    private GameObject CreateButton(GameObject parent, string name, string buttonText, float minY, float maxY)
+    {
+        GameObject buttonObj = new GameObject(name);
+        buttonObj.transform.SetParent(parent.transform, false);
+        
+        // Add background image
+        var image = buttonObj.AddComponent<UnityEngine.UI.Image>();
+        image.color = new Color(0.2f, 0.6f, 0.2f, 1f); // Green button
+        
+        var buttonRect = buttonObj.GetComponent<RectTransform>();
+        buttonRect.anchorMin = new Vector2(0.25f, minY);
+        buttonRect.anchorMax = new Vector2(0.75f, maxY);
+        buttonRect.anchoredPosition = Vector2.zero;
+        buttonRect.sizeDelta = Vector2.zero;
+        
+        // Add Button component
+        var button = buttonObj.AddComponent<UnityEngine.UI.Button>();
+        button.targetGraphic = image;
+        
+        // Create text
+        GameObject textObj = new GameObject("Text");
+        textObj.transform.SetParent(buttonObj.transform, false);
+        var text = textObj.AddComponent<UnityEngine.UI.Text>();
+        text.text = buttonText;
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 18;
+        text.color = Color.white;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.fontStyle = FontStyle.Bold;
+        
+        var textRect = textObj.GetComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.anchoredPosition = Vector2.zero;
+        textRect.sizeDelta = Vector2.zero;
+        
+        return buttonObj;
+    }
+    
+    private void SetFieldValue(object target, string fieldName, object value)
+    {
+        var field = target.GetType().GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        if (field != null)
+        {
+            field.SetValue(target, value);
+            Debug.Log($"Set {fieldName} field in {target.GetType().Name}");
+        }
+        else
+        {
+            Debug.LogWarning($"Could not find field {fieldName} in {target.GetType().Name}");
+        }
+    }
+
+    private void ConnectUIManagerReferences(GameObject inventoryPanel, GameObject loginPanel)
     {
         // Find the UIManager component
         UIManager uiManager = FindObjectOfType<UIManager>();
         
         if (uiManager != null)
         {
-            // Use reflection to set the InventoryPanel field since it might be private
-            var field = typeof(UIManager).GetField("InventoryPanel");
-            if (field != null)
+            // Set the InventoryPanel field
+            SetFieldValue(uiManager, "InventoryPanel", inventoryPanel);
+            
+            // Set the LoginPanel field  
+            SetFieldValue(uiManager, "LoginPanel", loginPanel);
+            
+            // Set the LoginUIComponent field
+            var loginUIComponent = loginPanel.GetComponent<LoginUI>();
+            if (loginUIComponent != null)
             {
-                field.SetValue(uiManager, inventoryPanel);
-                Debug.Log("InventoryPanel reference connected to UIManager");
+                SetFieldValue(uiManager, "LoginUIComponent", loginUIComponent);
+                Debug.Log("LoginUI component connected to UIManager");
             }
             else
             {
-                Debug.LogWarning("Could not find InventoryPanel field in UIManager");
+                Debug.LogWarning("LoginUI component not found on login panel");
             }
         }
         else
         {
-            Debug.LogWarning("UIManager not found - inventory panel will not be connected");
+            Debug.LogWarning("UIManager not found - panels will not be connected");
         }
     }
 }

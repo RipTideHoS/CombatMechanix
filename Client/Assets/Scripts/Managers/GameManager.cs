@@ -87,17 +87,9 @@ public class GameManager : MonoBehaviour
 
     private async void OnNetworkConnected()
     {
-        Debug.Log($"Network connected, authenticating player: {LocalPlayerName} ({LocalPlayerId})");
-        if (NetworkManager != null)
-        {
-            await NetworkManager.AuthenticatePlayer(LocalPlayerId, LocalPlayerName);
-            IsAuthenticated = true;
-            Debug.Log("Player authentication sent to server");
-        }
-        else
-        {
-            Debug.LogError("NetworkManager is null during authentication!");
-        }
+        Debug.Log($"Network connected - authentication will be handled by login system");
+        // Note: Authentication is now handled by the new login system (LoginUI)
+        // The old automatic authentication is disabled to enforce proper login
     }
 
     private void OnNetworkDisconnected()

@@ -78,6 +78,76 @@ namespace CombatMechanix.Models
         {
             public long Timestamp { get; set; }
         }
+
+        public class AuthenticationResponseMessage
+        {
+            public bool Success { get; set; }
+            public string PlayerId { get; set; } = string.Empty;
+            public string PlayerName { get; set; } = string.Empty;
+            public string Message { get; set; } = string.Empty;
+        }
+
+        public class PlayerStatsUpdateMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public int Level { get; set; }
+            public long Experience { get; set; }
+            public int Health { get; set; }
+            public int MaxHealth { get; set; }
+            public int Strength { get; set; }
+            public int Defense { get; set; }
+            public int Speed { get; set; }
+            public long ExperienceToNextLevel { get; set; }
+        }
+
+        public class ExperienceGainMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public long ExperienceGained { get; set; }
+            public string Source { get; set; } = string.Empty; // "Combat", "Quest", "Resource", etc.
+        }
+
+        public class LevelUpMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public int NewLevel { get; set; }
+            public int StatPointsGained { get; set; }
+            public PlayerStatsUpdateMessage NewStats { get; set; } = new();
+        }
+
+        public class HealthChangeMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public int NewHealth { get; set; }
+            public int HealthChange { get; set; } // Positive for healing, negative for damage
+            public string Source { get; set; } = string.Empty; // "Combat", "Potion", "Regeneration", etc.
+        }
+
+        public class LoginMessage
+        {
+            public string Username { get; set; } = string.Empty;
+            public string ClientHashedPassword { get; set; } = string.Empty;
+        }
+
+        public class LoginResponseMessage
+        {
+            public bool Success { get; set; }
+            public string PlayerId { get; set; } = string.Empty;
+            public string PlayerName { get; set; } = string.Empty;
+            public string? SessionToken { get; set; }
+            public string ErrorMessage { get; set; } = string.Empty;
+            public PlayerStatsUpdateMessage? PlayerStats { get; set; }
+        }
+
+        public class SessionValidationMessage
+        {
+            public string SessionToken { get; set; } = string.Empty;
+        }
+
+        public class LogoutMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+        }
     }
 
     public class PlayerState
@@ -90,6 +160,10 @@ namespace CombatMechanix.Models
         public int Health { get; set; } = 100;
         public int MaxHealth { get; set; } = 100;
         public int Level { get; set; } = 1;
+        public long Experience { get; set; } = 0;
+        public int Strength { get; set; } = 10;
+        public int Defense { get; set; } = 10;
+        public int Speed { get; set; } = 10;
         public bool IsOnline { get; set; } = true;
         public DateTime LastUpdate { get; set; } = DateTime.UtcNow;
     }

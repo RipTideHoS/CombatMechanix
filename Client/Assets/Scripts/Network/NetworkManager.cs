@@ -27,6 +27,12 @@ public class NetworkManager : MonoBehaviour
     public static event Action<NetworkMessages.WorldUpdateMessage> OnWorldUpdate;
     public static event Action<NetworkMessages.PlayerJoinNotification> OnPlayerJoined;
     public static event Action<NetworkMessages.SystemNotification> OnSystemNotification;
+    
+    // New stat-related events
+    public static event Action<NetworkMessages.PlayerStatsUpdateMessage> OnPlayerStatsUpdate;
+    public static event Action<NetworkMessages.LevelUpMessage> OnLevelUp;
+    public static event Action<NetworkMessages.HealthChangeMessage> OnHealthChange;
+    public static event Action<NetworkMessages.ExperienceGainMessage> OnExperienceGain;
 
     private ClientWebSocket _webSocket;
     private CancellationTokenSource _cancellationTokenSource;
@@ -41,8 +47,9 @@ public class NetworkManager : MonoBehaviour
 
     private void Start()
     {
-        Debug.Log($"NetworkManager started with WebSockets - Connecting to: {ServerUrl}");
-        ConnectToServer();
+        Debug.Log($"NetworkManager started with WebSockets - Server URL: {ServerUrl}");
+        Debug.Log("Connection will be initiated by the login system, not automatically");
+        // Note: ConnectToServer() is no longer called automatically to enforce proper authentication
     }
 
     private void Update()
@@ -86,12 +93,13 @@ public class NetworkManager : MonoBehaviour
             Debug.LogError($"Failed to connect to WebSocket server: {ex.Message}");
             QueueMainThreadAction(() => OnDisconnected?.Invoke());
             
-            // Auto-reconnect after delay
-            await Task.Delay(TimeSpan.FromSeconds(ReconnectDelay));
-            if (!IsConnected)
-            {
-                ConnectToServer();
-            }
+            // Auto-reconnect disabled - login system will handle reconnection
+            Debug.Log("Connection failed, auto-reconnect disabled. Use login system to reconnect.");
+            // await Task.Delay(TimeSpan.FromSeconds(ReconnectDelay));
+            // if (!IsConnected)
+            // {
+            //     ConnectToServer();
+            // }
         }
         finally
         {
@@ -140,12 +148,13 @@ public class NetworkManager : MonoBehaviour
             Debug.LogError($"WebSocket receive error: {ex.Message}");
             QueueMainThreadAction(() => OnDisconnected?.Invoke());
             
-            // Auto-reconnect after delay
-            await Task.Delay(TimeSpan.FromSeconds(ReconnectDelay));
-            if (!IsConnected)
-            {
-                ConnectToServer();
-            }
+            // Auto-reconnect disabled - login system will handle reconnection
+            Debug.Log("Connection failed, auto-reconnect disabled. Use login system to reconnect.");
+            // await Task.Delay(TimeSpan.FromSeconds(ReconnectDelay));
+            // if (!IsConnected)
+            // {
+            //     ConnectToServer();
+            // }
         }
     }
 
@@ -197,18 +206,156 @@ public class NetworkManager : MonoBehaviour
                     QueueMainThreadAction(() => OnSystemNotification?.Invoke(sysMsg));
                     break;
                     
+                case "PlayerStatsUpdate":
+                    var statsMsg = JsonConvert.DeserializeObject<NetworkMessages.PlayerStatsUpdateMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => OnPlayerStatsUpdate?.Invoke(statsMsg));
+                    break;
+                    
+                case "AuthenticationResponse":
+                    var authResponse = JsonConvert.DeserializeObject<NetworkMessages.AuthenticationResponseMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => {
+                        if (authResponse.Success)
+                        {
+                            Debug.Log($"Authentication successful for player: {authResponse.PlayerName}");
+                            var gameManager = GameManager.Instance;
+                            if (gameManager != null)
+                            {
+                                gameManager.OnPlayerAuthenticated();
+                            }
+                        }
+                        else
+                        {
+                            Debug.LogError($"Authentication failed: {authResponse.Message}");
+                        }
+                    });
+                    break;
+                    
+                case "LoginResponse":
+                    var loginResponse = JsonConvert.DeserializeObject<NetworkMessages.LoginResponseMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => {
+                        var loginUI = FindObjectOfType<LoginUI>();
+                        if (loginResponse.Success)
+                        {
+                            Debug.Log($"Login successful for player: {loginResponse.PlayerName}");
+                            
+                            // Set player information in GameManager
+                            var gameManager = GameManager.Instance;
+                            if (gameManager != null)
+                            {
+                                gameManager.SetLocalPlayerName(loginResponse.PlayerName);
+                                gameManager.LocalPlayerId = loginResponse.PlayerId;
+                            }
+                            
+                            // Notify LoginUI of success
+                            if (loginUI != null)
+                            {
+                                loginUI.OnLoginSuccess(loginResponse.SessionToken, 
+                                    PlayerPrefs.GetString("PendingUsername", ""),
+                                    loginResponse.PlayerName, 
+                                    loginResponse.PlayerId);
+                            }
+                            
+                            // Trigger authenticated event for compatibility
+                            if (gameManager != null)
+                            {
+                                gameManager.OnPlayerAuthenticated();
+                            }
+                        }
+                        else
+                        {
+                            Debug.LogError($"Login failed: {loginResponse.ErrorMessage}");
+                            if (loginUI != null)
+                            {
+                                loginUI.OnLoginFailed(loginResponse.ErrorMessage);
+                            }
+                        }
+                        
+                        // Clean up pending credentials
+                        PlayerPrefs.DeleteKey("PendingUsername");
+                        PlayerPrefs.DeleteKey("PendingPasswordHash");
+                    });
+                    break;
+                    
+                case "LevelUp":
+                    var levelUpMsg = JsonConvert.DeserializeObject<NetworkMessages.LevelUpMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => OnLevelUp?.Invoke(levelUpMsg));
+                    break;
+                    
+                case "HealthChange":
+                    var healthMsg = JsonConvert.DeserializeObject<NetworkMessages.HealthChangeMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => OnHealthChange?.Invoke(healthMsg));
+                    break;
+                    
+                case "ExperienceGain":
+                    var expMsg = JsonConvert.DeserializeObject<NetworkMessages.ExperienceGainMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => OnExperienceGain?.Invoke(expMsg));
+                    break;
+                    
                 case "ConnectionConfirmed":
                     // Server confirmed our connection and assigned us an ID
                     var connData = JsonConvert.DeserializeObject<ConnectionData>(wrapper.Data.ToString());
                     ConnectionId = connData.ConnectionId;
                     Debug.Log($"Server assigned connection ID: {ConnectionId}");
                     
-                    // Trigger authentication completion
-                    QueueMainThreadAction(() => {
-                        var gameManager = GameManager.Instance;
-                        if (gameManager != null)
+                    // Check authentication method based on available data
+                    QueueMainThreadAction(async () => {
+                        // Check if we have pending login credentials
+                        string pendingUsername = PlayerPrefs.GetString("PendingUsername", "");
+                        string pendingPasswordHash = PlayerPrefs.GetString("PendingPasswordHash", "");
+                        
+                        if (!string.IsNullOrEmpty(pendingUsername) && !string.IsNullOrEmpty(pendingPasswordHash))
                         {
-                            gameManager.OnPlayerAuthenticated();
+                            // Handle login authentication
+                            Debug.Log($"Sending login credentials for user: {pendingUsername}");
+                            var loginMessage = new
+                            {
+                                Username = pendingUsername,
+                                ClientHashedPassword = pendingPasswordHash
+                            };
+                            await SendMessage("Login", loginMessage);
+                        }
+                        else
+                        {
+                            // Check for session token (automatic reconnection)
+                            string sessionToken = ClientUtilities.SessionManager.GetValidSessionToken();
+                            if (!string.IsNullOrEmpty(sessionToken))
+                            {
+                                Debug.Log("Attempting session token validation for reconnection");
+                                var sessionMessage = new
+                                {
+                                    SessionToken = sessionToken
+                                };
+                                await SendMessage("SessionValidation", sessionMessage);
+                            }
+                            else
+                            {
+                                // No valid session token - require login
+                                Debug.Log("No valid session token found, showing login UI");
+                                
+                                // Don't disconnect immediately - just show login UI
+                                // The connection will be closed naturally when no authentication happens
+                                
+                                // Show login UI using multiple approaches
+                                var uiManager = FindObjectOfType<UIManager>();
+                                var loginUI = FindObjectOfType<LoginUI>();
+                                
+                                if (uiManager != null)
+                                {
+                                    Debug.Log("Found UIManager, showing login panel");
+                                    uiManager.ShowLoginPanel();
+                                }
+                                
+                                if (loginUI != null)
+                                {
+                                    Debug.Log("Found LoginUI, showing login panel");
+                                    loginUI.ShowLoginPanel();
+                                }
+                                
+                                if (uiManager == null && loginUI == null)
+                                {
+                                    Debug.LogError("Neither UIManager nor LoginUI found!");
+                                }
+                            }
                         }
                     });
                     break;
@@ -354,7 +501,7 @@ public class NetworkManager : MonoBehaviour
         }
     }
 
-    private async Task SendMessage(string messageType, object messageData)
+    public async Task SendMessage(string messageType, object messageData)
     {
         if (!IsConnected) return;
 
@@ -365,6 +512,7 @@ public class NetworkManager : MonoBehaviour
             var bytes = Encoding.UTF8.GetBytes(json);
             
             await _webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cancellationTokenSource.Token);
+            Debug.Log($"Message sent: {messageType}");
         }
         catch (Exception ex)
         {
@@ -422,7 +570,9 @@ public class NetworkManager : MonoBehaviour
         }
         else
         {
-            ConnectToServer();
+            // Auto-reconnect on unpause disabled - login system will handle reconnection
+            Debug.Log("Application unpaused - use login system to reconnect if needed");
+            // ConnectToServer();
         }
     }
 
