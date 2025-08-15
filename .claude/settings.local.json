@@ -9,7 +9,8 @@
       "Bash(dotnet build)",
       "Bash(taskkill:*)",
       "Bash(curl:*)",
-      "Bash(start http://localhost:5207/status)"
+      "Bash(start http://localhost:5207/status)",
+      "Bash(dotnet build:*)"
     ],
     "deny": [],
     "ask": [],

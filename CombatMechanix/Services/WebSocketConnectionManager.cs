@@ -13,11 +13,20 @@ namespace CombatMechanix.Services
         private readonly ConcurrentDictionary<string, PlayerState> _players = new();
         private readonly ILogger<WebSocketConnectionManager> _logger;
         private readonly IServiceProvider _serviceProvider;
+        private EnemyManager? _enemyManager;
 
         public WebSocketConnectionManager(ILogger<WebSocketConnectionManager> logger, IServiceProvider serviceProvider)
         {
             _logger = logger;
             _serviceProvider = serviceProvider;
+        }
+
+        /// <summary>
+        /// Set the enemy manager reference (called after both services are initialized)
+        /// </summary>
+        public void SetEnemyManager(EnemyManager enemyManager)
+        {
+            _enemyManager = enemyManager;
         }
 
         public async Task HandleWebSocketAsync(HttpContext context, WebSocket webSocket)
@@ -565,6 +574,12 @@ namespace CombatMechanix.Services
                     // Send current world state to the new player
                     await SendWorldUpdate(connection.ConnectionId);
 
+                    // Send enemy states to the new player
+                    if (_enemyManager != null)
+                    {
+                        await _enemyManager.SendEnemyStatesToClient(connection.ConnectionId);
+                    }
+
                     _logger.LogInformation($"Player {result.PlayerName} logged in successfully with Level {result.PlayerStats.Level}");
                 }
                 else
@@ -661,6 +676,12 @@ namespace CombatMechanix.Services
                     // Send current world state to the reconnected player
                     await SendWorldUpdate(connection.ConnectionId);
 
+                    // Send enemy states to the reconnected player
+                    if (_enemyManager != null)
+                    {
+                        await _enemyManager.SendEnemyStatesToClient(connection.ConnectionId);
+                    }
+
                     _logger.LogInformation($"Player {result.PlayerName} reconnected successfully via session token");
                 }
                 else
@@ -735,7 +756,7 @@ namespace CombatMechanix.Services
 
         #region Broadcasting Methods
 
-        private async Task SendToConnection(string connectionId, string messageType, object data)
+        public async Task SendToConnection(string connectionId, string messageType, object data)
         {
             if (_connections.TryGetValue(connectionId, out var connection) && 
                 connection.WebSocket.State == WebSocketState.Open)
@@ -759,10 +780,15 @@ namespace CombatMechanix.Services
             }
         }
 
-        private async Task BroadcastToAll(string messageType, object data)
+        public async Task BroadcastToAll(string messageType, object data)
         {
             var tasks = _connections.Values.Select(conn => SendToConnection(conn.ConnectionId, messageType, data));
             await Task.WhenAll(tasks);
+        }
+
+        private async Task BroadcastToAllPrivate(string messageType, object data)
+        {
+            await BroadcastToAll(messageType, data);
         }
 
         private async Task BroadcastToOthers(string excludeConnectionId, string messageType, object data)

@@ -5,6 +5,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
 builder.Services.AddSingleton<WebSocketConnectionManager>();
+builder.Services.AddSingleton<EnemyManager>();
 builder.Services.AddScoped<IPlayerStatsRepository, SqlPlayerStatsRepository>();
 builder.Services.AddScoped<IPlayerStatsService, PlayerStatsService>();
 builder.Services.AddScoped<CombatMechanix.Services.IAuthenticationService, CombatMechanix.Services.AuthenticationService>();
@@ -39,6 +40,13 @@ using (var scope = app.Services.CreateScope())
         app.Logger.LogInformation("Check DatabaseInvestigationReport.txt for database structure details");
     }
 }
+
+// Initialize enemy system
+var enemyManager = app.Services.GetRequiredService<EnemyManager>();
+var wsManager = app.Services.GetRequiredService<WebSocketConnectionManager>();
+wsManager.SetEnemyManager(enemyManager);
+enemyManager.InitializeDefaultEnemies();
+app.Logger.LogInformation("Enemy system initialized");
 
 // Configure the HTTP request pipeline
 app.UseCors("AllowUnityClient");
