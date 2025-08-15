@@ -148,6 +148,34 @@ namespace CombatMechanix.Models
         {
             public string PlayerId { get; set; } = string.Empty;
         }
+
+        // Enemy-specific network messages
+        public class EnemySpawnMessage
+        {
+            public List<EnemyState> Enemies { get; set; } = new();
+        }
+
+        public class EnemyUpdateMessage
+        {
+            public List<EnemyState> Enemies { get; set; } = new();
+        }
+
+        public class EnemyDamageMessage
+        {
+            public string EnemyId { get; set; } = string.Empty;
+            public string AttackerId { get; set; } = string.Empty;
+            public float Damage { get; set; }
+            public Vector3Data Position { get; set; } = new();
+            public long Timestamp { get; set; }
+        }
+
+        public class EnemyDeathMessage
+        {
+            public string EnemyId { get; set; } = string.Empty;
+            public string KillerId { get; set; } = string.Empty;
+            public Vector3Data Position { get; set; } = new();
+            public long Timestamp { get; set; }
+        }
     }
 
     public class PlayerState
@@ -165,6 +193,21 @@ namespace CombatMechanix.Models
         public int Defense { get; set; } = 10;
         public int Speed { get; set; } = 10;
         public bool IsOnline { get; set; } = true;
+        public DateTime LastUpdate { get; set; } = DateTime.UtcNow;
+    }
+
+    public class EnemyState
+    {
+        public string EnemyId { get; set; } = string.Empty;
+        public string EnemyName { get; set; } = string.Empty;
+        public string EnemyType { get; set; } = string.Empty;
+        public Vector3Data Position { get; set; } = new();
+        public float Rotation { get; set; }
+        public int Health { get; set; } = 100;
+        public int MaxHealth { get; set; } = 100;
+        public int Level { get; set; } = 1;
+        public float Damage { get; set; } = 10f;
+        public bool IsAlive { get; set; } = true;
         public DateTime LastUpdate { get; set; } = DateTime.UtcNow;
     }
 

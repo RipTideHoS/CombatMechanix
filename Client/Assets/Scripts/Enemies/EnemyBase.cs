@@ -14,6 +14,7 @@ public class EnemyBase : MonoBehaviour
     public float DamagePerLevel = 2.5f;
     
     [Header("Enemy Info")]
+    public string EnemyId = string.Empty;
     public string EnemyName = "Enemy";
     public string EnemyType = "Basic";
     
@@ -45,6 +46,12 @@ public class EnemyBase : MonoBehaviour
     
     private void InitializeEnemy()
     {
+        // Generate unique ID if not set
+        if (string.IsNullOrEmpty(EnemyId))
+        {
+            EnemyId = $"enemy_{System.Guid.NewGuid().ToString()}";
+        }
+        
         // Get components
         _renderer = GetComponent<Renderer>();
         _collider = GetComponent<Collider>();
@@ -59,7 +66,7 @@ public class EnemyBase : MonoBehaviour
         _currentHealth = _maxHealth;
         _currentDamage = BaseDamage + (DamagePerLevel * (Level - 1));
         
-        Debug.Log($"[EnemyBase] {EnemyName} Level {Level} initialized - Health: {_maxHealth}, Damage: {_currentDamage}");
+        Debug.Log($"[EnemyBase] {EnemyName} (ID: {EnemyId}) Level {Level} initialized - Health: {_maxHealth}, Damage: {_currentDamage}");
         
         // Trigger initial health event
         OnHealthChanged?.Invoke(_currentHealth, _maxHealth);
