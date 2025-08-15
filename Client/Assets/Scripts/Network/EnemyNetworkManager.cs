@@ -39,23 +39,20 @@ public class EnemyNetworkManager : MonoBehaviour
     
     private void SubscribeToEnemyEvents()
     {
-        // Subscribe to enemy-related network events
-        _networkManager.OnEnemySpawn += HandleEnemySpawn;
-        _networkManager.OnEnemyUpdate += HandleEnemyUpdate;
-        _networkManager.OnEnemyDamage += HandleEnemyDamage;
-        _networkManager.OnEnemyDeath += HandleEnemyDeath;
+        // Subscribe to enemy-related network events (static events)
+        NetworkManager.OnEnemySpawn += HandleEnemySpawn;
+        NetworkManager.OnEnemyUpdate += HandleEnemyUpdate;
+        NetworkManager.OnEnemyDamage += HandleEnemyDamage;
+        NetworkManager.OnEnemyDeath += HandleEnemyDeath;
     }
     
     private void OnDestroy()
     {
-        // Unsubscribe from events
-        if (_networkManager != null)
-        {
-            _networkManager.OnEnemySpawn -= HandleEnemySpawn;
-            _networkManager.OnEnemyUpdate -= HandleEnemyUpdate;
-            _networkManager.OnEnemyDamage -= HandleEnemyDamage;
-            _networkManager.OnEnemyDeath -= HandleEnemyDeath;
-        }
+        // Unsubscribe from events (static events)
+        NetworkManager.OnEnemySpawn -= HandleEnemySpawn;
+        NetworkManager.OnEnemyUpdate -= HandleEnemyUpdate;
+        NetworkManager.OnEnemyDamage -= HandleEnemyDamage;
+        NetworkManager.OnEnemyDeath -= HandleEnemyDeath;
     }
     
     /// <summary>
