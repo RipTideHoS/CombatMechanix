@@ -16,6 +16,7 @@ public class AutoSceneSetup : MonoBehaviour
     public bool CreatePlayer = true;
     public bool SetupCamera = true;
     public bool CreateReferenceBox = true;
+    public bool CreateTestEnemy = true;
     
     private void Start()
     {
@@ -57,7 +58,11 @@ public class AutoSceneSetup : MonoBehaviour
         if (CreateReferenceBox)
             CreateReferenceBoxObject();
 
-        // 7. Create basic UI system (after GameManager exists)
+        // 7. Create Test Enemy
+        if (CreateTestEnemy)
+            CreateTestEnemyObject();
+
+        // 8. Create basic UI system (after GameManager exists)
         CreateBasicUI();
 
         Debug.Log("=== Auto Scene Setup Complete ===");
@@ -246,6 +251,79 @@ public class AutoSceneSetup : MonoBehaviour
         ReferenceBox referenceBox = referenceBoxObj.AddComponent<ReferenceBox>();
         
         Debug.Log("ReferenceBox created with collision and positioned relative to player/camera");
+    }
+
+    private void CreateTestEnemyObject()
+    {
+        // Check if TestEnemy already exists
+        if (GameObject.Find("TestEnemy") != null)
+        {
+            Debug.Log("TestEnemy already exists in scene");
+            return;
+        }
+
+        Debug.Log("Creating TestEnemy GameObject...");
+        
+        // Create the enemy GameObject
+        GameObject enemyObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        enemyObj.name = "TestEnemy";
+        
+        // Add the EnemyBase component
+        EnemyBase enemyBase = enemyObj.AddComponent<EnemyBase>();
+        
+        // Configure enemy stats
+        enemyBase.EnemyName = "Test Enemy";
+        enemyBase.EnemyType = "Basic";
+        enemyBase.Level = 1;
+        enemyBase.BaseHealth = 100f;
+        enemyBase.BaseDamage = 15f;
+        
+        // Make it red
+        Renderer enemyRenderer = enemyObj.GetComponent<Renderer>();
+        if (enemyRenderer != null)
+        {
+            Material redMaterial = new Material(Shader.Find("Standard"));
+            redMaterial.color = Color.red;
+            enemyRenderer.material = redMaterial;
+        }
+        
+        // Position it next to the reference box
+        GameObject referenceBox = GameObject.Find("ReferenceBox");
+        if (referenceBox != null)
+        {
+            // Position enemy 3 units to the right of reference box
+            Vector3 enemyPosition = referenceBox.transform.position + Vector3.right * 3f;
+            enemyObj.transform.position = enemyPosition;
+        }
+        else
+        {
+            // Fallback position if reference box doesn't exist
+            GameObject localPlayer = GameObject.Find("LocalPlayer");
+            if (localPlayer != null)
+            {
+                Vector3 enemyPosition = localPlayer.transform.position + new Vector3(5f, 0f, 5f);
+                enemyObj.transform.position = enemyPosition;
+            }
+            else
+            {
+                enemyObj.transform.position = new Vector3(5f, 0.5f, 5f);
+            }
+        }
+        
+        // Make sure it's on the ground
+        Vector3 pos = enemyObj.transform.position;
+        pos.y = 0.5f; // Half cube height above ground
+        enemyObj.transform.position = pos;
+        
+        // Ensure collision is enabled (cube primitive already has a BoxCollider)
+        BoxCollider enemyCollider = enemyObj.GetComponent<BoxCollider>();
+        if (enemyCollider != null)
+        {
+            enemyCollider.isTrigger = false; // Solid collision
+        }
+        
+        Debug.Log($"TestEnemy created at position: {enemyObj.transform.position} with red color and EnemyBase component");
+        Debug.Log($"Enemy stats - Level: {enemyBase.Level}, Health: {enemyBase.BaseHealth}, Damage: {enemyBase.BaseDamage}");
     }
 
     // Helper method to create a basic UI Canvas if needed
@@ -627,7 +705,8 @@ public class AutoSceneSetupEditor : Editor
             "• Ground plane for visual reference\n" +
             "• LocalPlayer with PlayerController\n" +
             "• Proper camera positioning\n" +
-            "• Brown reference box with collision", 
+            "• Brown reference box with collision\n" +
+            "• Red test enemy with EnemyBase component", 
             MessageType.Info);
     }
 }

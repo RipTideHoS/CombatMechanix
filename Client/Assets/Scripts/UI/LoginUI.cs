@@ -111,6 +111,45 @@ public class LoginUI : MonoBehaviour
         }
     }
 
+    private void Update()
+    {
+        // Handle Tab navigation between input fields
+        if (Input.GetKeyDown(KeyCode.Tab) && !Input.GetKey(KeyCode.LeftShift) && !Input.GetKey(KeyCode.RightShift))
+        {
+            HandleTabNavigation();
+        }
+    }
+
+    private void HandleTabNavigation()
+    {
+        // If username field is focused, move to password
+        if (UsernameInput != null && UsernameInput.isFocused)
+        {
+            if (PasswordInput != null)
+            {
+                PasswordInput.Select();
+                PasswordInput.ActivateInputField();
+            }
+        }
+        // If password field is focused, move to login button
+        else if (PasswordInput != null && PasswordInput.isFocused)
+        {
+            if (LoginButton != null)
+            {
+                LoginButton.Select();
+            }
+        }
+        // If no field is focused, focus username field
+        else
+        {
+            if (UsernameInput != null)
+            {
+                UsernameInput.Select();
+                UsernameInput.ActivateInputField();
+            }
+        }
+    }
+
     private void OnUsernameEndEdit(string value)
     {
         // Move to password field when Enter is pressed

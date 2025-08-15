@@ -145,13 +145,7 @@ public class PlayerController : MonoBehaviour
             transform.rotation = Quaternion.Euler(0, CurrentRotation, 0);
         }
 
-        // Optional: Mouse look rotation (hold right click)
-        if (Input.GetMouseButton(1))
-        {
-            float mouseX = Input.GetAxis("Mouse X") * RotationSpeed * Time.deltaTime;
-            CurrentRotation += mouseX;
-            transform.rotation = Quaternion.Euler(0, CurrentRotation, 0);
-        }
+        // Mouse look rotation removed - now handled by CameraController
 
         // Alternative: Q/E keys for manual rotation
         if (Input.GetKey(KeyCode.Q))
