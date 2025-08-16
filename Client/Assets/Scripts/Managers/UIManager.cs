@@ -282,6 +282,42 @@ private void OnLoginButtonClicked()
         }
     }
 
+    /// <summary>
+    /// Show floating damage text for enemies using the new damage text system
+    /// This integrates with the EnemyDamageTextManager for better performance and features
+    /// </summary>
+    public void ShowEnemyFloatingDamage(EnemyBase enemy, float damage, bool isHealing = false)
+    {
+        var damageTextManager = FindObjectOfType<EnemyDamageTextManager>();
+        if (damageTextManager != null)
+        {
+            damageTextManager.ShowDamageText(enemy, damage, isHealing);
+        }
+        else
+        {
+            // Fallback to regular floating damage system
+            Vector3 worldPosition = enemy.transform.position + Vector3.up * 3f;
+            ShowFloatingDamage(worldPosition, damage);
+        }
+    }
+
+    /// <summary>
+    /// Show floating damage text at a specific world position with type
+    /// </summary>
+    public void ShowFloatingDamageWithType(Vector3 worldPosition, float damage, DamageType damageType)
+    {
+        var damageTextManager = FindObjectOfType<EnemyDamageTextManager>();
+        if (damageTextManager != null)
+        {
+            damageTextManager.ShowDamageAtWorldPosition(worldPosition, damage, damageType);
+        }
+        else
+        {
+            // Fallback to regular system
+            ShowFloatingDamage(worldPosition, damage);
+        }
+    }
+
     public void ShowMessage(string message)
     {
         ShowNotification(message, Color.white);

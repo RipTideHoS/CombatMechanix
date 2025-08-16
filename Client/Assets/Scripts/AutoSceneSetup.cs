@@ -148,25 +148,37 @@ public class AutoSceneSetup : MonoBehaviour
 
     private void CreateGroundPlane()
     {
+        GameObject ground = GameObject.Find("Ground");
+        
         // Check if ground already exists
-        if (GameObject.Find("Ground") != null)
+        if (ground != null)
         {
-            Debug.Log("Ground already exists in scene");
+            Debug.Log("Ground already exists in scene - updating color to grey");
+            
+            // Update existing ground color
+            Renderer existingRenderer = ground.GetComponent<Renderer>();
+            if (existingRenderer != null)
+            {
+                existingRenderer.material.color = new Color(0.5f, 0.5f, 0.5f); // Grey ground for better contrast
+                Debug.Log("Updated existing ground color to grey");
+            }
             return;
         }
 
         Debug.Log("Creating Ground plane...");
-        GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
         ground.name = "Ground";
         ground.transform.position = Vector3.zero;
         ground.transform.localScale = new Vector3(10, 1, 10); // 100x100 units
 
         // Add a simple material/color
-        Renderer renderer = ground.GetComponent<Renderer>();
-        if (renderer != null)
+        Renderer newRenderer = ground.GetComponent<Renderer>();
+        if (newRenderer != null)
         {
-            renderer.material.color = new Color(0.3f, 0.7f, 0.3f); // Green ground
+            newRenderer.material.color = new Color(0.5f, 0.5f, 0.5f); // Grey ground for better contrast
         }
+        
+        Debug.Log("Created new grey ground plane");
     }
 
     private void CreateLocalPlayer()
@@ -620,11 +632,18 @@ public class AutoSceneSetup : MonoBehaviour
             // 7. Add health bar tester for visibility debugging
             SetupHealthBarTester();
 
+            // 8. Setup Enemy Damage Text Manager
+            Debug.Log("*** ABOUT TO CALL SetupEnemyDamageTextManager ***");
+            SetupEnemyDamageTextManager();
+            Debug.Log("*** FINISHED CALLING SetupEnemyDamageTextManager ***");
+
             Debug.Log("Health Bar System setup complete!");
             Debug.Log("- Enemy health bars will appear automatically above enemies");
             Debug.Log("- Player health bar is integrated into main UI");
             Debug.Log("- Health bars are performance optimized with pooling");
             Debug.Log("- HealthBarDebugger added - press E to create test enemies, D to damage them");
+            Debug.Log("- EnemyDamageTextManager added - floating damage text with color coding");
+            Debug.Log("- FloatingDamageTextTester added - press 1/2/3/4 keys to test damage text");
         }
         catch (System.Exception ex)
         {
@@ -1569,6 +1588,71 @@ public class AutoSceneSetup : MonoBehaviour
         Debug.Log($"Container test parent: {containerTest.transform.parent?.name}");
         Debug.Log($"Container test active: {containerTest.activeInHierarchy}");
         Debug.Log($"PlayerHealthContainer active: {playerHealthContainer.activeInHierarchy}");
+    }
+    
+    private void SetupEnemyDamageTextManager()
+    {
+        Debug.Log("Setting up Enemy Damage Text Manager...");
+
+        // Check if EnemyDamageTextManager already exists
+        if (FindObjectOfType<EnemyDamageTextManager>() != null)
+        {
+            Debug.Log("EnemyDamageTextManager already exists in scene");
+            return;
+        }
+
+        // Create GameObject for the damage text manager
+        GameObject damageTextManagerObj = new GameObject("EnemyDamageTextManager");
+        
+        // Add the EnemyDamageTextManager component
+        var damageTextManager = damageTextManagerObj.AddComponent<EnemyDamageTextManager>();
+        
+        // Configure the damage text manager
+        damageTextManager.InitialPoolSize = 20;
+        damageTextManager.MaxPoolSize = 50;
+        damageTextManager.EnablePooling = true;
+        damageTextManager.MaxActiveTexts = 30;
+        damageTextManager.EnableDebugLogging = false; // Disable debug for better performance
+        
+        // Set damage text positioning (above health bars)
+        damageTextManager.DamageTextOffset = new Vector3(0, 4f, 0); // Above health bar (which is at 3f)
+        damageTextManager.RandomSpreadX = 1f;
+        damageTextManager.RandomSpreadY = 0.5f;
+        
+        // Set critical damage threshold (25% of max health)
+        damageTextManager.CriticalDamageThreshold = 0.25f;
+        
+        // Make persistent
+        DontDestroyOnLoad(damageTextManagerObj);
+        
+        Debug.Log("EnemyDamageTextManager created and configured");
+        Debug.Log("- Object pooling enabled with 20 initial texts");
+        Debug.Log("- Damage text will appear 4 units above enemies");
+        Debug.Log("- Critical damage threshold set to 25% of enemy max health");
+        Debug.Log("- Color coding: Red (critical), Orange (regular), Green (healing)");
+        
+        // Add testing component for easy testing
+        SetupFloatingDamageTextTester(damageTextManagerObj);
+    }
+    
+    private void SetupFloatingDamageTextTester(GameObject parentObject)
+    {
+        Debug.Log("Setting up Floating Damage Text Tester...");
+        
+        // Add the tester component to the damage text manager object
+        var tester = parentObject.AddComponent<FloatingDamageTextTester>();
+        
+        // Configure test settings
+        tester.EnableTestMode = true;
+        tester.TestDamageAmount = 25f;
+        tester.TestHealAmount = 15f;
+        tester.TestCriticalDamage = 75f;
+        
+        Debug.Log("FloatingDamageTextTester added");
+        Debug.Log("- Press 1 for regular damage, 2 for critical, 3 for healing");
+        Debug.Log("- Press 4 for random damage at mouse position");
+        Debug.Log("- Press 9 to show damage text system statistics");
+        Debug.Log("- GUI buttons also available in top-left corner");
     }
     
     private void SetFieldValue(object target, string fieldName, object value)
