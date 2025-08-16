@@ -160,9 +160,89 @@ public class EnemyDamageTextManager : MonoBehaviour
     
     private void SubscribeToEnemyEvents()
     {
-        // We'll hook into the existing enemy damage system in Phase 4
-        // For now, create the subscription mechanism
-        Debug.Log("[EnemyDamageTextManager] Ready to subscribe to enemy damage events");
+        // Hook into the network enemy damage system
+        NetworkManager.OnEnemyDamage += HandleNetworkEnemyDamage;
+        
+        // Also monitor for new enemies being created so we can subscribe to their damage events
+        StartCoroutine(MonitorForNewEnemies());
+        
+        Debug.Log("[EnemyDamageTextManager] Subscribed to network enemy damage events");
+    }
+    
+    /// <summary>
+    /// Handle enemy damage messages from the network system
+    /// </summary>
+    private void HandleNetworkEnemyDamage(NetworkMessages.EnemyDamageMessage damageMessage)
+    {
+        // Find the enemy that took damage
+        var enemyNetworkManager = FindObjectOfType<EnemyNetworkManager>();
+        if (enemyNetworkManager != null)
+        {
+            var enemy = enemyNetworkManager.GetNetworkEnemy(damageMessage.EnemyId);
+            if (enemy != null)
+            {
+                // Show damage text for this enemy
+                ShowDamageText(enemy, damageMessage.Damage, false);
+                
+                if (EnableDebugLogging)
+                {
+                    Debug.Log($"[EnemyDamageTextManager] Showed damage text for {enemy.EnemyName}: {damageMessage.Damage}");
+                }
+            }
+            else if (EnableDebugLogging)
+            {
+                Debug.LogWarning($"[EnemyDamageTextManager] Enemy {damageMessage.EnemyId} not found for damage text");
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Monitor for new enemies being created and subscribe to their individual damage events
+    /// </summary>
+    private System.Collections.IEnumerator MonitorForNewEnemies()
+    {
+        HashSet<EnemyBase> subscribedEnemies = new HashSet<EnemyBase>();
+        
+        while (true)
+        {
+            // Find all enemies in the scene
+            EnemyBase[] allEnemies = FindObjectsOfType<EnemyBase>();
+            
+            foreach (var enemy in allEnemies)
+            {
+                if (!subscribedEnemies.Contains(enemy))
+                {
+                    // Subscribe to this enemy's damage events
+                    enemy.OnDamageTaken += (damage) => HandleEnemyDamageTaken(enemy, damage);
+                    subscribedEnemies.Add(enemy);
+                    
+                    if (EnableDebugLogging)
+                    {
+                        Debug.Log($"[EnemyDamageTextManager] Subscribed to damage events for {enemy.EnemyName}");
+                    }
+                }
+            }
+            
+            // Check every 2 seconds for new enemies
+            yield return new WaitForSeconds(2f);
+        }
+    }
+    
+    /// <summary>
+    /// Handle individual enemy damage events (from EnemyBase.OnDamageTaken)
+    /// </summary>
+    private void HandleEnemyDamageTaken(EnemyBase enemy, float damage)
+    {
+        if (enemy != null)
+        {
+            // Show damage text - this covers local damage events
+            ShowDamageText(enemy, damage, false);
+            
+            if (EnableDebugLogging)
+            {
+                Debug.Log($"[EnemyDamageTextManager] Local damage event: {enemy.EnemyName} took {damage} damage");
+            }
+        }
     }
     
     /// <summary>
@@ -349,8 +429,16 @@ public class EnemyDamageTextManager : MonoBehaviour
     
     private void OnDestroy()
     {
+        // Unsubscribe from network events
+        NetworkManager.OnEnemyDamage -= HandleNetworkEnemyDamage;
+        
         // Clean up
         _activeTexts.Clear();
         _textPool.Clear();
+        
+        if (EnableDebugLogging)
+        {
+            Debug.Log("[EnemyDamageTextManager] Cleaned up and unsubscribed from events");
+        }
     }
 }
