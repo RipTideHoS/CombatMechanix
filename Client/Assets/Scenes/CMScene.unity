@@ -305,6 +305,10 @@ MonoBehaviour:
   CreateGround: 1
   CreatePlayer: 1
   SetupCamera: 1
+  CreateReferenceBox: 1
+  CreateTestEnemy: 0
+  SetupEnemyNetworkManager: 1
+  SetupHealthBarSystem: 1
 --- !u!4 &600601766
 Transform:
   m_ObjectHideFlags: 0
@@ -355,11 +359,14 @@ MonoBehaviour:
   Offset: {x: 0, y: 12, z: -8}
   SmoothTime: 0.3
   FollowPlayer: 1
-  MinZoom: 5
-  MaxZoom: 20
+  MinDistance: 5
+  MaxDistance: 150
   ZoomSpeed: 2
   AllowRotation: 0
   RotationSpeed: 2
+  VerticalRotationSpeed: 1
+  MinVerticalAngle: -30
+  MaxVerticalAngle: 80
 --- !u!81 &1195801914
 AudioListener:
   m_ObjectHideFlags: 0

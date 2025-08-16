@@ -602,10 +602,14 @@ public class AutoSceneSetup : MonoBehaviour
             }
 
             // 3. Setup Health Bar Manager
+            Debug.Log("*** ABOUT TO CALL SetupHealthBarManager ***");
             SetupHealthBarManager(enemyHealthBarPrefab, playerHealthBarPrefab);
+            Debug.Log("*** FINISHED CALLING SetupHealthBarManager ***");
 
             // 4. Setup Player Health UI
+            Debug.Log("*** ABOUT TO CALL SetupPlayerHealthUI ***");
             SetupPlayerHealthUI();
+            Debug.Log("*** FINISHED CALLING SetupPlayerHealthUI ***");
 
             // 5. Connect to existing UI Manager
             ConnectHealthUIToUIManager();
@@ -898,54 +902,190 @@ public class AutoSceneSetup : MonoBehaviour
 
     private void SetupPlayerHealthUI()
     {
-        Debug.Log("Setting up Player Health UI...");
+        Debug.Log("*** SETTING UP PLAYER HEALTH UI - START ***");
 
-        // Find the main Canvas
-        Canvas mainCanvas = FindObjectOfType<Canvas>();
+        // Find the main Canvas (Screen Space Overlay only)
+        Canvas[] allCanvases = FindObjectsOfType<Canvas>();
+        Debug.Log($"[SetupPlayerHealthUI] Found {allCanvases.Length} canvases in scene:");
+        foreach (Canvas c in allCanvases)
+        {
+            Debug.Log($"  - Canvas: {c.name}, renderMode: {c.renderMode}, active: {c.gameObject.activeInHierarchy}, sortingOrder: {c.sortingOrder}");
+        }
+        
+        // Find the FIRST ScreenSpaceOverlay canvas, prioritizing the main UI canvas
+        Canvas mainCanvas = null;
+        foreach (Canvas c in allCanvases)
+        {
+            if (c.renderMode == RenderMode.ScreenSpaceOverlay && c.name == "Canvas")
+            {
+                mainCanvas = c;
+                Debug.Log($"[SetupPlayerHealthUI] Found main UI Canvas: {c.name}");
+                break;
+            }
+        }
+        
+        // If we didn't find the main "Canvas", take any ScreenSpaceOverlay canvas
         if (mainCanvas == null)
         {
-            Debug.LogError("No Canvas found for Player Health UI! Player health bar will not be created.");
+            foreach (Canvas c in allCanvases)
+            {
+                if (c.renderMode == RenderMode.ScreenSpaceOverlay)
+                {
+                    mainCanvas = c;
+                    Debug.Log($"[SetupPlayerHealthUI] Using fallback ScreenSpaceOverlay Canvas: {c.name}");
+                    break;
+                }
+            }
+        }
+        
+        if (mainCanvas == null)
+        {
+            Debug.LogError("*** EARLY RETURN: No ScreenSpaceOverlay Canvas found for Player Health UI! Player health bar will not be created.");
+            Debug.LogError("Available canvases and their render modes:");
+            foreach (Canvas c in allCanvases)
+            {
+                Debug.LogError($"  - {c.name}: {c.renderMode}");
+            }
             return;
         }
+        
+        Debug.Log($"[SetupPlayerHealthUI] Selected canvas: {mainCanvas.name} with renderMode: {mainCanvas.renderMode}, sortingOrder: {mainCanvas.sortingOrder}");
 
         // Check if PlayerHealthUI already exists
         if (FindObjectOfType<PlayerHealthUI>() != null)
         {
-            Debug.Log("PlayerHealthUI already exists in scene");
+            Debug.LogError("*** EARLY RETURN: PlayerHealthUI already exists in scene");
             return;
         }
 
-        Debug.Log($"Found Canvas: {mainCanvas.name}, proceeding with player health UI creation...");
+        // Verify canvas is truly in ScreenSpaceOverlay mode before proceeding
+        if (mainCanvas.renderMode != RenderMode.ScreenSpaceOverlay)
+        {
+            Debug.LogError($"*** EARLY RETURN: Selected canvas {mainCanvas.name} is not in ScreenSpaceOverlay mode! RenderMode: {mainCanvas.renderMode}");
+            return;
+        }
+
+        Debug.Log($"Canvas validated - proceeding with player health UI creation on {mainCanvas.name}");
 
         // Create Player Health UI container
+        Debug.Log("*** CREATING PlayerHealthUI CONTAINER ***");
         GameObject playerHealthContainer = new GameObject("PlayerHealthUI");
         playerHealthContainer.transform.SetParent(mainCanvas.transform, false);
+
+        // Set up the container's RectTransform to be properly sized and positioned
+        var containerRect = playerHealthContainer.GetComponent<RectTransform>();
+        if (containerRect == null)
+        {
+            containerRect = playerHealthContainer.AddComponent<RectTransform>();
+        }
+        
+        // Position the PlayerHealthUI container at bottom center for the health bar
+        containerRect.anchorMin = new Vector2(0.3f, 0.02f);
+        containerRect.anchorMax = new Vector2(0.7f, 0.08f);
+        containerRect.anchoredPosition = Vector2.zero;
+        containerRect.sizeDelta = Vector2.zero;
+
+        // Verify the container is parented correctly
+        Debug.Log($"PlayerHealthUI container created, parent: {playerHealthContainer.transform.parent?.name}");
+        Debug.Log($"Container anchors: {containerRect.anchorMin} to {containerRect.anchorMax}");
+        Debug.Log($"Container active: {playerHealthContainer.activeInHierarchy}");
 
         // Add PlayerHealthUI component
         var playerHealthUI = playerHealthContainer.AddComponent<PlayerHealthUI>();
 
         // Create health slider for main UI
+        Debug.Log("*** ABOUT TO CALL CreateMainUIHealthSlider ***");
         GameObject healthSliderObj = CreateMainUIHealthSlider(playerHealthContainer);
+        Debug.Log("*** FINISHED CALLING CreateMainUIHealthSlider ***");
+        
+        // Verify the health slider object was created
+        if (healthSliderObj == null)
+        {
+            Debug.LogError("Failed to create healthSliderObj in CreateMainUIHealthSlider!");
+            return;
+        }
+        
         var healthSlider = healthSliderObj.GetComponent<UnityEngine.UI.Slider>();
         var healthText = healthSliderObj.GetComponentInChildren<UnityEngine.UI.Text>();
-        var healthFillImage = healthSliderObj.GetComponentInChildren<UnityEngine.UI.Image>();
+        
+        // Find the fill image and background image from the simplified structure
+        var healthFillImage = healthSliderObj.transform.Find("HealthFill")?.GetComponent<UnityEngine.UI.Image>();
+        var backgroundImage = healthSliderObj.transform.Find("InnerBackground")?.GetComponent<UnityEngine.UI.Image>();
 
-        // Configure PlayerHealthUI component
+        // Verify components were created correctly
+        Debug.Log($"HealthSliderObj created: {healthSliderObj != null}");
+        Debug.Log($"Health slider component: {healthSlider != null}");
+        Debug.Log($"Health text component: {healthText != null}");
+        Debug.Log($"Health fill image component: {healthFillImage != null}");
+        
+        if (healthSlider == null)
+        {
+            Debug.LogError("HealthSlider component is null! Cannot configure PlayerHealthUI.");
+            return;
+        }
+
+        // Configure PlayerHealthUI component with correct field names
         SetFieldValue(playerHealthUI, "HealthSlider", healthSlider);
         SetFieldValue(playerHealthUI, "HealthText", healthText);
         SetFieldValue(playerHealthUI, "HealthFillImage", healthFillImage);
+        SetFieldValue(playerHealthUI, "HealthBackgroundImage", backgroundImage);
         SetFieldValue(playerHealthUI, "HealthBarContainer", playerHealthContainer);
+        
+        // Debug the field assignments
+        Debug.Log($"Setting HealthSlider: {healthSlider != null}");
+        Debug.Log($"Setting HealthText: {healthText != null}");
+        Debug.Log($"Setting HealthFillImage: {healthFillImage != null}");
+        Debug.Log($"Setting HealthBackgroundImage: {backgroundImage != null}");
         SetFieldValue(playerHealthUI, "ShowAbovePlayer", false); // Disabled by default - use main UI only
         SetFieldValue(playerHealthUI, "PlayerHealthBarPrefab", null); // Don't assign prefab to prevent world health bar
         SetFieldValue(playerHealthUI, "AnimateHealthChanges", true);
         SetFieldValue(playerHealthUI, "ShowDamageFlash", true);
         SetFieldValue(playerHealthUI, "EnableLowHealthWarning", true);
 
-        Debug.Log("PlayerHealthUI created with main UI health bar");
+        Debug.Log("PlayerHealthUI created with main UI health bar - checking final hierarchy...");
+        Debug.Log($"Final hierarchy: Canvas->{playerHealthContainer.name}->{healthSliderObj.name}");
+        
+        // Safe access to healthSlider properties
+        if (healthSlider != null)
+        {
+            Debug.Log($"Health slider value: {healthSlider.value}, min: {healthSlider.minValue}, max: {healthSlider.maxValue}");
+        }
+        else
+        {
+            Debug.LogError("healthSlider is null, cannot log slider values");
+        }
+        
+        // Force the PlayerHealthUI to initialize immediately using reflection (since Start() hasn't been called yet)
+        var setupMethod = playerHealthUI.GetType().GetMethod("SetupUI", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        if (setupMethod != null)
+        {
+            setupMethod.Invoke(playerHealthUI, null);
+            Debug.Log("Forced PlayerHealthUI.SetupUI() call");
+        }
+        
+        var updateMethod = playerHealthUI.GetType().GetMethod("UpdateHealthDisplay", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        if (updateMethod != null)
+        {
+            updateMethod.Invoke(playerHealthUI, null);
+            Debug.Log("Forced PlayerHealthUI.UpdateHealthDisplay() call");
+        }
+        
+        // Verify that the health UI components are all active and visible
+        Debug.Log($"PlayerHealthContainer active: {playerHealthContainer.activeInHierarchy}");
+        Debug.Log($"HealthSlider active: {healthSliderObj.activeInHierarchy}");
+        Debug.Log($"Canvas render mode: {mainCanvas.renderMode}");
+        Debug.Log($"Canvas sorting order: {mainCanvas.sortingOrder}");
+        
+        // Position test confirmed - health bar components should be visible
+        
+        // Final verification
+        Debug.Log("=== PLAYER HEALTH UI SETUP COMPLETE ===");
     }
 
     private GameObject CreateMainUIHealthSlider(GameObject parent)
     {
+        Debug.Log($"[CreateMainUIHealthSlider] *** CREATING PLAYER HEALTH BAR *** with parent: {parent.name}");
+        
         // Create health bar container positioned in top-left of screen
         GameObject healthBarObj = new GameObject("MainHealthSlider");
         healthBarObj.transform.SetParent(parent.transform, false);
@@ -956,59 +1096,46 @@ public class AutoSceneSetup : MonoBehaviour
             healthBarObj.AddComponent<RectTransform>();
         }
         var containerRect = healthBarObj.GetComponent<RectTransform>();
-        containerRect.anchorMin = new Vector2(0.02f, 0.85f);
-        containerRect.anchorMax = new Vector2(0.35f, 0.95f);
+        
+        // Fill the parent container completely (PlayerHealthUI container is already positioned)
+        containerRect.anchorMin = Vector2.zero;
+        containerRect.anchorMax = Vector2.one;
         containerRect.anchoredPosition = Vector2.zero;
         containerRect.sizeDelta = Vector2.zero;
+        
+        Debug.Log($"[CreateMainUIHealthSlider] Container rect - anchorMin: {containerRect.anchorMin}, anchorMax: {containerRect.anchorMax}");
 
-        // Add background
-        var backgroundImage = healthBarObj.AddComponent<UnityEngine.UI.Image>();
-        backgroundImage.color = new Color(0.2f, 0.2f, 0.2f, 0.8f);
+        // Add dark border background
+        var borderImage = healthBarObj.AddComponent<UnityEngine.UI.Image>();
+        borderImage.color = new Color(0.1f, 0.1f, 0.1f, 0.8f);  // Dark border
+        
+        // Create inner background container with padding for border effect
+        GameObject innerBg = new GameObject("InnerBackground");
+        innerBg.transform.SetParent(healthBarObj.transform, false);
+        
+        var innerBgImage = innerBg.AddComponent<UnityEngine.UI.Image>();
+        innerBgImage.color = new Color(0.2f, 0.2f, 0.2f, 0.9f);  // Dark background
+        
+        var innerBgRect = innerBg.GetComponent<RectTransform>();
+        // Create border by inset positioning - larger margins for visible border
+        innerBgRect.anchorMin = new Vector2(0.05f, 0.15f);
+        innerBgRect.anchorMax = new Vector2(0.95f, 0.85f);
+        innerBgRect.anchoredPosition = Vector2.zero;
+        innerBgRect.sizeDelta = Vector2.zero;
 
-        // Create health slider
-        GameObject sliderObj = new GameObject("HealthSlider");
-        sliderObj.transform.SetParent(healthBarObj.transform, false);
+        // Create fill inside the inner background (not the main container)
+        GameObject fillObj = new GameObject("HealthFill");
+        fillObj.transform.SetParent(innerBg.transform, false);
 
-        var healthSlider = sliderObj.AddComponent<UnityEngine.UI.Slider>();
-        healthSlider.minValue = 0f;
-        healthSlider.maxValue = 1f;
-        healthSlider.value = 1f;
-
-        var sliderRect = sliderObj.GetComponent<RectTransform>();
-        sliderRect.anchorMin = new Vector2(0.05f, 0.3f);
-        sliderRect.anchorMax = new Vector2(0.7f, 0.7f);
-        sliderRect.anchoredPosition = Vector2.zero;
-        sliderRect.sizeDelta = Vector2.zero;
-
-        // Create fill area and fill
-        GameObject fillArea = new GameObject("Fill Area");
-        fillArea.transform.SetParent(sliderObj.transform, false);
-
-        // Add RectTransform component (empty GameObjects need this for UI)
-        if (fillArea.GetComponent<RectTransform>() == null)
-        {
-            Debug.Log("Adding RectTransform to Fill Area");
-            fillArea.AddComponent<RectTransform>();
-        }
-        var fillAreaRect = fillArea.GetComponent<RectTransform>();
-        Debug.Log($"Fill Area RectTransform: {fillAreaRect != null}");
-        fillAreaRect.anchorMin = Vector2.zero;
-        fillAreaRect.anchorMax = Vector2.one;
-        fillAreaRect.anchoredPosition = Vector2.zero;
-        fillAreaRect.sizeDelta = Vector2.zero;
-
-        GameObject fill = new GameObject("Fill");
-        fill.transform.SetParent(fillArea.transform, false);
-
-        var fillImage = fill.AddComponent<UnityEngine.UI.Image>();
-        fillImage.color = Color.green;
+        var fillImage = fillObj.AddComponent<UnityEngine.UI.Image>();
+        fillImage.color = Color.green;  // Green health fill
         fillImage.type = UnityEngine.UI.Image.Type.Filled;
         fillImage.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
 
-        // Get RectTransform (automatically added with Image component)
-        var fillRect = fill.GetComponent<RectTransform>();
-        fillRect.anchorMin = Vector2.zero;
-        fillRect.anchorMax = Vector2.one;
+        var fillRect = fillObj.GetComponent<RectTransform>();
+        // Fill most of the inner background, leaving some padding
+        fillRect.anchorMin = new Vector2(0.05f, 0.1f);
+        fillRect.anchorMax = new Vector2(0.75f, 0.9f);
         fillRect.anchoredPosition = Vector2.zero;
         fillRect.sizeDelta = Vector2.zero;
 
@@ -1030,9 +1157,30 @@ public class AutoSceneSetup : MonoBehaviour
         textRect.anchoredPosition = Vector2.zero;
         textRect.sizeDelta = Vector2.zero;
 
-        // Connect slider components
+        // Create a simple slider component that works with the simple structure
+        var healthSlider = healthBarObj.AddComponent<UnityEngine.UI.Slider>();
+        healthSlider.minValue = 0f;
+        healthSlider.maxValue = 1f;
+        healthSlider.value = 1f;
         healthSlider.fillRect = fillRect;
         healthSlider.targetGraphic = fillImage;
+        
+        // Force everything to be active and visible
+        healthBarObj.SetActive(true);
+        innerBg.SetActive(true);
+        fillObj.SetActive(true);
+        healthTextObj.SetActive(true);
+        
+        // Verify everything is properly configured
+        Debug.Log($"[CreateMainUIHealthSlider] Health bar created - checking all components:");
+        Debug.Log($"[CreateMainUIHealthSlider] Container active: {healthBarObj.activeInHierarchy}");
+        Debug.Log($"[CreateMainUIHealthSlider] Container anchors: {containerRect.anchorMin} to {containerRect.anchorMax}");
+        Debug.Log($"[CreateMainUIHealthSlider] Fill active: {fillObj.activeInHierarchy}");
+        Debug.Log($"[CreateMainUIHealthSlider] Border color (dark): {borderImage.color}");
+        Debug.Log($"[CreateMainUIHealthSlider] Inner background color: {innerBgImage.color}");
+        Debug.Log($"[CreateMainUIHealthSlider] Fill color: {fillImage.color}");
+        Debug.Log($"[CreateMainUIHealthSlider] Slider value: {healthSlider.value}");
+        Debug.Log($"[CreateMainUIHealthSlider] Container parent: {healthBarObj.transform.parent?.name}");
 
         return healthBarObj;
     }
@@ -1233,6 +1381,194 @@ public class AutoSceneSetup : MonoBehaviour
         textRect.sizeDelta = Vector2.zero;
         
         return buttonObj;
+    }
+    
+    private void CreateVisibilityTestElement(Canvas canvas)
+    {
+        Debug.Log("Creating visibility test element to verify canvas is working...");
+        
+        // Create a bright red test rectangle that should be impossible to miss
+        GameObject testObj = new GameObject("VisibilityTest");
+        testObj.transform.SetParent(canvas.transform, false);
+        
+        var testImage = testObj.AddComponent<UnityEngine.UI.Image>();
+        testImage.color = Color.red; // Bright red
+        
+        var testRect = testObj.GetComponent<RectTransform>();
+        testRect.anchorMin = new Vector2(0.4f, 0.4f);
+        testRect.anchorMax = new Vector2(0.6f, 0.6f);
+        testRect.anchoredPosition = Vector2.zero;
+        testRect.sizeDelta = Vector2.zero;
+        
+        // Add text to the test element
+        GameObject testTextObj = new GameObject("TestText");
+        testTextObj.transform.SetParent(testObj.transform, false);
+        
+        var testText = testTextObj.AddComponent<UnityEngine.UI.Text>();
+        testText.text = "HEALTH BAR TEST - DELETE ME";
+        testText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        testText.fontSize = 20;
+        testText.color = Color.white;
+        testText.alignment = TextAnchor.MiddleCenter;
+        testText.fontStyle = FontStyle.Bold;
+        
+        var testTextRect = testTextObj.GetComponent<RectTransform>();
+        testTextRect.anchorMin = Vector2.zero;
+        testTextRect.anchorMax = Vector2.one;
+        testTextRect.anchoredPosition = Vector2.zero;
+        testTextRect.sizeDelta = Vector2.zero;
+        
+        Debug.Log($"Visibility test element created on canvas: {canvas.name}");
+        Debug.Log($"Test element active: {testObj.activeInHierarchy}");
+        Debug.Log($"Test element parent: {testObj.transform.parent?.name}");
+    }
+    
+    private void CreateHealthBarPositionTest(Canvas canvas)
+    {
+        Debug.Log("Creating health bar position test element...");
+        
+        // Create a green test rectangle in the exact position where health bar should be
+        GameObject testObj = new GameObject("HealthBarPositionTest");
+        testObj.transform.SetParent(canvas.transform, false);
+        
+        var testImage = testObj.AddComponent<UnityEngine.UI.Image>();
+        testImage.color = Color.green; // Bright green
+        
+        var testRect = testObj.GetComponent<RectTransform>();
+        // Use same positioning as health bar
+        testRect.anchorMin = new Vector2(0.02f, 0.8f);
+        testRect.anchorMax = new Vector2(0.4f, 0.98f);
+        testRect.anchoredPosition = Vector2.zero;
+        testRect.sizeDelta = Vector2.zero;
+        
+        // Add text to show this is the position test
+        GameObject testTextObj = new GameObject("TestText");
+        testTextObj.transform.SetParent(testObj.transform, false);
+        
+        var testText = testTextObj.AddComponent<UnityEngine.UI.Text>();
+        testText.text = "HEALTH BAR SHOULD BE HERE";
+        testText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        testText.fontSize = 16;
+        testText.color = Color.white;
+        testText.alignment = TextAnchor.MiddleCenter;
+        testText.fontStyle = FontStyle.Bold;
+        
+        var testTextRect = testTextObj.GetComponent<RectTransform>();
+        testTextRect.anchorMin = Vector2.zero;
+        testTextRect.anchorMax = Vector2.one;
+        testTextRect.anchoredPosition = Vector2.zero;
+        testTextRect.sizeDelta = Vector2.zero;
+        
+        Debug.Log($"Health bar position test element created on canvas: {canvas.name}");
+    }
+    
+    private void CreateSimpleHealthBarTest(Canvas canvas)
+    {
+        Debug.Log("Creating simple health bar test...");
+        
+        // Create a simple health bar with just background and fill - no complex slider
+        GameObject simpleHealthBar = new GameObject("SimpleHealthBarTest");
+        simpleHealthBar.transform.SetParent(canvas.transform, false);
+        
+        // Add blue background
+        var bgImage = simpleHealthBar.AddComponent<UnityEngine.UI.Image>();
+        bgImage.color = Color.blue;
+        
+        var bgRect = simpleHealthBar.GetComponent<RectTransform>();
+        // Position slightly below the green test box
+        bgRect.anchorMin = new Vector2(0.02f, 0.65f);
+        bgRect.anchorMax = new Vector2(0.4f, 0.75f);
+        bgRect.anchoredPosition = Vector2.zero;
+        bgRect.sizeDelta = Vector2.zero;
+        
+        // Add yellow fill inside
+        GameObject simpleFill = new GameObject("SimpleFill");
+        simpleFill.transform.SetParent(simpleHealthBar.transform, false);
+        
+        var fillImage = simpleFill.AddComponent<UnityEngine.UI.Image>();
+        fillImage.color = Color.yellow;
+        
+        var fillRect = simpleFill.GetComponent<RectTransform>();
+        fillRect.anchorMin = new Vector2(0.05f, 0.2f);
+        fillRect.anchorMax = new Vector2(0.95f, 0.8f);
+        fillRect.anchoredPosition = Vector2.zero;
+        fillRect.sizeDelta = Vector2.zero;
+        
+        // Add text
+        GameObject simpleText = new GameObject("SimpleText");
+        simpleText.transform.SetParent(simpleHealthBar.transform, false);
+        
+        var textComponent = simpleText.AddComponent<UnityEngine.UI.Text>();
+        textComponent.text = "SIMPLE HEALTH BAR";
+        textComponent.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        textComponent.fontSize = 14;
+        textComponent.color = Color.white;
+        textComponent.alignment = TextAnchor.MiddleCenter;
+        
+        var textRect = simpleText.GetComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.anchoredPosition = Vector2.zero;
+        textRect.sizeDelta = Vector2.zero;
+        
+        // Force active
+        simpleHealthBar.SetActive(true);
+        simpleFill.SetActive(true);
+        simpleText.SetActive(true);
+        
+        Debug.Log($"Simple health bar test created - should be blue with yellow fill");
+    }
+    
+    private void CreatePlayerHealthUITest(GameObject playerHealthContainer)
+    {
+        Debug.Log($"Creating PlayerHealthUI container test with parent: {playerHealthContainer?.name}");
+        
+        if (playerHealthContainer == null)
+        {
+            Debug.LogError("PlayerHealthContainer is null! This is the problem.");
+            return;
+        }
+        
+        // Create a test element directly in the PlayerHealthUI container
+        GameObject containerTest = new GameObject("PlayerHealthUIContainerTest");
+        containerTest.transform.SetParent(playerHealthContainer.transform, false);
+        
+        // Add purple background to distinguish from other tests
+        var testImage = containerTest.AddComponent<UnityEngine.UI.Image>();
+        testImage.color = Color.magenta; // Bright magenta/purple
+        
+        var testRect = containerTest.GetComponent<RectTransform>();
+        // Position in middle-left like the health bar should be
+        testRect.anchorMin = new Vector2(0.02f, 0.5f);
+        testRect.anchorMax = new Vector2(0.4f, 0.6f);
+        testRect.anchoredPosition = Vector2.zero;
+        testRect.sizeDelta = Vector2.zero;
+        
+        // Add text
+        GameObject testTextObj = new GameObject("TestText");
+        testTextObj.transform.SetParent(containerTest.transform, false);
+        
+        var testText = testTextObj.AddComponent<UnityEngine.UI.Text>();
+        testText.text = "INSIDE PLAYERHEALTHUI CONTAINER";
+        testText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        testText.fontSize = 12;
+        testText.color = Color.white;
+        testText.alignment = TextAnchor.MiddleCenter;
+        
+        var testTextRect = testTextObj.GetComponent<RectTransform>();
+        testTextRect.anchorMin = Vector2.zero;
+        testTextRect.anchorMax = Vector2.one;
+        testTextRect.anchoredPosition = Vector2.zero;
+        testTextRect.sizeDelta = Vector2.zero;
+        
+        // Force active
+        containerTest.SetActive(true);
+        testTextObj.SetActive(true);
+        
+        Debug.Log($"PlayerHealthUI container test created - should be purple/magenta");
+        Debug.Log($"Container test parent: {containerTest.transform.parent?.name}");
+        Debug.Log($"Container test active: {containerTest.activeInHierarchy}");
+        Debug.Log($"PlayerHealthContainer active: {playerHealthContainer.activeInHierarchy}");
     }
     
     private void SetFieldValue(object target, string fieldName, object value)
