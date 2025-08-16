@@ -19,6 +19,7 @@ public class UIManager : MonoBehaviour
     public Text HealthText;
     public Text PlayerInfoText;
     public Text NotificationText;
+    public PlayerHealthUI PlayerHealthUI;
 
     [Header("Login UI")]
     public LoginUI LoginUIComponent;
@@ -43,9 +44,14 @@ public class UIManager : MonoBehaviour
         NetworkManager.OnChatMessage += HandleChatMessage;
         NetworkManager.OnSystemNotification += HandleSystemNotification;
 
+        // Subscribe to player health events
+        ClientPlayerStats.OnHealthChanged += OnPlayerHealthChanged;
+        ClientPlayerStats.OnStatsUpdated += OnPlayerStatsUpdated;
+
         // Initialize UI - Always start with login screen
         ShowLoginPanel();
         SetupChatUI();
+        InitializePlayerHealthUI();
         
         Debug.Log("UIManager initialized - Login screen should be visible");
     }
@@ -206,20 +212,25 @@ private void OnLoginButtonClicked()
 
     public void UpdateHealth(float damage)
     {
-        // This would be called when local player takes damage
-        // Update health bar and text
-        if (HealthBar != null)
+        // This method is now handled by PlayerHealthUI component
+        // But we keep this for backward compatibility
+        var playerStats = FindObjectOfType<ClientPlayerStats>();
+        if (playerStats != null)
         {
-            // Get current health from game manager or player controller
-            float currentHealth = 100f; // Placeholder - get from actual player data
-            float maxHealth = 100f;
-            
+            UpdateHealthDisplay(playerStats.Health, playerStats.MaxHealth);
+        }
+    }
+
+    private void UpdateHealthDisplay(float currentHealth, float maxHealth)
+    {
+        if (HealthBar != null && maxHealth > 0)
+        {
             HealthBar.value = currentHealth / maxHealth;
         }
 
         if (HealthText != null)
         {
-            HealthText.text = $"Health: {100}/{100}"; // Placeholder
+            HealthText.text = $"Health: {currentHealth:F0}/{maxHealth:F0}";
         }
     }
 
@@ -411,10 +422,64 @@ private void OnLoginButtonClicked()
         }
     }
 
+    private void InitializePlayerHealthUI()
+    {
+        // Find PlayerHealthUI component if not assigned
+        if (PlayerHealthUI == null)
+        {
+            PlayerHealthUI = FindObjectOfType<PlayerHealthUI>();
+        }
+
+        // Setup legacy health UI elements to work with new system
+        if (PlayerHealthUI != null)
+        {
+            // Assign legacy UI elements to the new health UI component
+            if (HealthBar != null && PlayerHealthUI.HealthSlider == null)
+            {
+                PlayerHealthUI.HealthSlider = HealthBar;
+            }
+            if (HealthText != null && PlayerHealthUI.HealthText == null)
+            {
+                PlayerHealthUI.HealthText = HealthText;
+            }
+        }
+    }
+
+    private void OnPlayerHealthChanged(int newHealth, int healthChange)
+    {
+        // Update legacy health display
+        var playerStats = FindObjectOfType<ClientPlayerStats>();
+        if (playerStats != null)
+        {
+            UpdateHealthDisplay(newHealth, playerStats.MaxHealth);
+        }
+
+        // Show floating damage if enabled
+        if (healthChange < 0 && FloatingDamageText != null)
+        {
+            var playerController = FindObjectOfType<PlayerController>();
+            if (playerController != null)
+            {
+                ShowFloatingDamage(playerController.transform.position + Vector3.up * 1.5f, Mathf.Abs(healthChange));
+            }
+        }
+    }
+
+    private void OnPlayerStatsUpdated(ClientPlayerStats stats)
+    {
+        if (stats != null)
+        {
+            UpdateHealthDisplay(stats.Health, stats.MaxHealth);
+            UpdatePlayerInfo();
+        }
+    }
+
     private void OnDestroy()
     {
         // Unsubscribe from events
         NetworkManager.OnChatMessage -= HandleChatMessage;
         NetworkManager.OnSystemNotification -= HandleSystemNotification;
+        ClientPlayerStats.OnHealthChanged -= OnPlayerHealthChanged;
+        ClientPlayerStats.OnStatsUpdated -= OnPlayerStatsUpdated;
     }
 }

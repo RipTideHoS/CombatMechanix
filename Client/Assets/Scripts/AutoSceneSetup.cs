@@ -18,6 +18,7 @@ public class AutoSceneSetup : MonoBehaviour
     public bool CreateReferenceBox = true;
     public bool CreateTestEnemy = false; // Disable local enemy creation - use network enemies
     public bool SetupEnemyNetworkManager = true;
+    public bool SetupHealthBarSystem = true;
     
     private void Start()
     {
@@ -69,6 +70,10 @@ public class AutoSceneSetup : MonoBehaviour
 
         // 9. Create basic UI system (after GameManager exists)
         CreateBasicUI();
+
+        // 10. Setup Health Bar System
+        if (SetupHealthBarSystem)
+            SetupHealthBarSystemComponents();
 
         Debug.Log("=== Auto Scene Setup Complete ===");
         Debug.Log("Objects created successfully! Check the Hierarchy for new GameObjects.");
@@ -419,9 +424,9 @@ public class AutoSceneSetup : MonoBehaviour
         GameObject inventoryPanel = new GameObject("InventoryPanel");
         inventoryPanel.transform.SetParent(canvasObj.transform, false);
         
-        // Add Image component for background
+        // Add Image component for background - dark box style like HealthBarDebugger
         var image = inventoryPanel.AddComponent<UnityEngine.UI.Image>();
-        image.color = new Color(0.2f, 0.2f, 0.2f, 0.9f); // Darker, more opaque background
+        image.color = new Color(0.2f, 0.2f, 0.2f, 0.85f); // Dark transparent background like Unity's box GUI
         image.raycastTarget = true;
         
         // Set up RectTransform for positioning (right side of screen)
@@ -442,7 +447,7 @@ public class AutoSceneSetup : MonoBehaviour
         titleText.text = "INVENTORY";
         titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         titleText.fontSize = 20;
-        titleText.color = Color.white;
+        titleText.color = Color.white; // White text on dark background
         titleText.alignment = TextAnchor.MiddleCenter;
         titleText.fontStyle = FontStyle.Bold;
         
@@ -459,7 +464,7 @@ public class AutoSceneSetup : MonoBehaviour
         contentText.text = "• Inventory items will appear here\n\n• Press WASD to move player\n• Press I to toggle this panel\n\nPanel Status: Working!";
         contentText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         contentText.fontSize = 16;
-        contentText.color = Color.white;
+        contentText.color = Color.white; // White text on dark background
         contentText.alignment = TextAnchor.UpperLeft;
         
         var contentRect = contentObj.GetComponent<RectTransform>();
@@ -483,9 +488,9 @@ public class AutoSceneSetup : MonoBehaviour
         GameObject loginPanel = new GameObject("LoginPanel");
         loginPanel.transform.SetParent(canvasObj.transform, false);
         
-        // Add Image component for background
+        // Add Image component for background - dark box style like HealthBarDebugger
         var image = loginPanel.AddComponent<UnityEngine.UI.Image>();
-        image.color = new Color(0.1f, 0.1f, 0.1f, 0.95f); // Dark semi-transparent background
+        image.color = new Color(0.15f, 0.15f, 0.15f, 0.85f); // Dark transparent background like Unity's box GUI
         image.raycastTarget = true;
         
         // Set up RectTransform for full screen coverage
@@ -502,11 +507,11 @@ public class AutoSceneSetup : MonoBehaviour
         loginContainer.transform.SetParent(loginPanel.transform, false);
         
         var containerImage = loginContainer.AddComponent<UnityEngine.UI.Image>();
-        containerImage.color = new Color(0.2f, 0.2f, 0.2f, 0.9f);
+        containerImage.color = new Color(0.25f, 0.25f, 0.25f, 0.95f); // Dark box style background like Unity GUI
         
         var containerRect = loginContainer.GetComponent<RectTransform>();
-        containerRect.anchorMin = new Vector2(0.35f, 0.3f);
-        containerRect.anchorMax = new Vector2(0.65f, 0.7f);
+        containerRect.anchorMin = new Vector2(0.3f, 0.2f); // Wider and taller container
+        containerRect.anchorMax = new Vector2(0.7f, 0.8f);
         containerRect.anchoredPosition = Vector2.zero;
         containerRect.sizeDelta = Vector2.zero;
         
@@ -517,7 +522,7 @@ public class AutoSceneSetup : MonoBehaviour
         titleText.text = "COMBAT MECHANIX LOGIN";
         titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         titleText.fontSize = 24;
-        titleText.color = Color.white;
+        titleText.color = Color.white; // White text on dark background
         titleText.alignment = TextAnchor.MiddleCenter;
         titleText.fontStyle = FontStyle.Bold;
         
@@ -527,19 +532,19 @@ public class AutoSceneSetup : MonoBehaviour
         titleRect.anchoredPosition = Vector2.zero;
         titleRect.sizeDelta = Vector2.zero;
         
-        // Create username input field
+        // Create username input field - even larger height for better readability
         GameObject usernameField = CreateInputField(loginContainer, "UsernameField", "Username", 0.55f, 0.7f);
         var usernameInput = usernameField.GetComponent<UnityEngine.UI.InputField>();
         usernameInput.placeholder.GetComponent<UnityEngine.UI.Text>().text = "Enter username...";
         
-        // Create password input field  
-        GameObject passwordField = CreateInputField(loginContainer, "PasswordField", "Password", 0.4f, 0.55f);
+        // Create password input field - even larger height, positioned lower
+        GameObject passwordField = CreateInputField(loginContainer, "PasswordField", "Password", 0.35f, 0.5f);
         var passwordInput = passwordField.GetComponent<UnityEngine.UI.InputField>();
         passwordInput.contentType = UnityEngine.UI.InputField.ContentType.Password;
         passwordInput.placeholder.GetComponent<UnityEngine.UI.Text>().text = "Enter password...";
         
-        // Create login button
-        GameObject loginButton = CreateButton(loginContainer, "LoginButton", "LOGIN", 0.25f, 0.4f);
+        // Create login button - positioned lower to avoid overlap
+        GameObject loginButton = CreateButton(loginContainer, "LoginButton", "LOGIN", 0.15f, 0.28f);
         
         // Create status text
         GameObject statusObj = new GameObject("StatusText");
@@ -548,12 +553,12 @@ public class AutoSceneSetup : MonoBehaviour
         statusText.text = "Enter your credentials to login";
         statusText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         statusText.fontSize = 16;
-        statusText.color = Color.yellow;
+        statusText.color = Color.cyan; // Bright cyan text for visibility on dark background
         statusText.alignment = TextAnchor.MiddleCenter;
         
         var statusRect = statusObj.GetComponent<RectTransform>();
-        statusRect.anchorMin = new Vector2(0.05f, 0.05f);
-        statusRect.anchorMax = new Vector2(0.95f, 0.2f);
+        statusRect.anchorMin = new Vector2(0.05f, 0.02f);
+        statusRect.anchorMax = new Vector2(0.95f, 0.12f);
         statusRect.anchoredPosition = Vector2.zero;
         statusRect.sizeDelta = Vector2.zero;
         
@@ -573,15 +578,572 @@ public class AutoSceneSetup : MonoBehaviour
         Debug.Log("Login panel created with username/password fields and LoginUI component");
         return loginPanel;
     }
+
+    private void SetupHealthBarSystemComponents()
+    {
+        Debug.Log("=== Setting up Health Bar System ===");
+
+        try
+        {
+            // 1. Create Enemy Health Bar Prefab
+            GameObject enemyHealthBarPrefab = CreateEnemyHealthBarPrefab();
+            if (enemyHealthBarPrefab == null)
+            {
+                Debug.LogError("Failed to create Enemy Health Bar Prefab!");
+                return;
+            }
+
+            // 2. Create Player Health Bar Prefab
+            GameObject playerHealthBarPrefab = CreatePlayerHealthBarPrefab();
+            if (playerHealthBarPrefab == null)
+            {
+                Debug.LogError("Failed to create Player Health Bar Prefab!");
+                return;
+            }
+
+            // 3. Setup Health Bar Manager
+            SetupHealthBarManager(enemyHealthBarPrefab, playerHealthBarPrefab);
+
+            // 4. Setup Player Health UI
+            SetupPlayerHealthUI();
+
+            // 5. Connect to existing UI Manager
+            ConnectHealthUIToUIManager();
+
+            // 6. Add health bar debugger for testing
+            SetupHealthBarDebugger();
+
+            // 7. Add health bar tester for visibility debugging
+            SetupHealthBarTester();
+
+            Debug.Log("Health Bar System setup complete!");
+            Debug.Log("- Enemy health bars will appear automatically above enemies");
+            Debug.Log("- Player health bar is integrated into main UI");
+            Debug.Log("- Health bars are performance optimized with pooling");
+            Debug.Log("- HealthBarDebugger added - press E to create test enemies, D to damage them");
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Failed to setup Health Bar System: {ex.Message}");
+            Debug.LogError($"Stack trace: {ex.StackTrace}");
+        }
+    }
+
+    private GameObject CreateEnemyHealthBarPrefab()
+    {
+        Debug.Log("Creating Enemy Health Bar Prefab...");
+
+        // Create main prefab GameObject
+        GameObject prefab = new GameObject("EnemyHealthBarPrefab");
+
+        // Create Canvas for world space rendering
+        GameObject canvasObj = new GameObject("HealthBarCanvas");
+        canvasObj.transform.SetParent(prefab.transform, false);
+        
+        Canvas canvas = canvasObj.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvas.sortingOrder = 10;
+        
+        var canvasScaler = canvasObj.AddComponent<UnityEngine.UI.CanvasScaler>();
+        canvasScaler.dynamicPixelsPerUnit = 100;
+        
+        var canvasRect = canvasObj.GetComponent<RectTransform>();
+        canvasRect.sizeDelta = new Vector2(200, 20); // Reduced height by half
+        canvasObj.transform.localScale = Vector3.one * 0.02f; // Smaller, more appropriate scale
+
+        // Create Background
+        GameObject backgroundObj = new GameObject("Background");
+        backgroundObj.transform.SetParent(canvasObj.transform, false);
+        
+        var backgroundImage = backgroundObj.AddComponent<UnityEngine.UI.Image>();
+        backgroundImage.color = new Color(0.2f, 0.2f, 0.2f, 0.9f); // More visible dark background
+        
+        var backgroundRect = backgroundObj.GetComponent<RectTransform>();
+        backgroundRect.anchorMin = Vector2.zero;
+        backgroundRect.anchorMax = Vector2.one;
+        backgroundRect.anchoredPosition = Vector2.zero;
+        backgroundRect.sizeDelta = Vector2.zero;
+
+        // Create Health Slider
+        GameObject sliderObj = new GameObject("HealthSlider");
+        sliderObj.transform.SetParent(canvasObj.transform, false);
+        
+        var healthSlider = sliderObj.AddComponent<UnityEngine.UI.Slider>();
+        healthSlider.minValue = 0f;
+        healthSlider.maxValue = 1f;
+        healthSlider.value = 1f;
+        
+        var sliderRect = sliderObj.GetComponent<RectTransform>();
+        sliderRect.anchorMin = new Vector2(0.02f, 0.1f); // Very small transparent border
+        sliderRect.anchorMax = new Vector2(0.98f, 0.9f);
+        sliderRect.anchoredPosition = Vector2.zero;
+        sliderRect.sizeDelta = Vector2.zero;
+
+        // Create Slider Background
+        GameObject sliderBg = new GameObject("Background");
+        sliderBg.transform.SetParent(sliderObj.transform, false);
+        
+        var sliderBgImage = sliderBg.AddComponent<UnityEngine.UI.Image>();
+        sliderBgImage.color = new Color(0.3f, 0.3f, 0.3f, 1f); // Dark gray
+        sliderBgImage.type = UnityEngine.UI.Image.Type.Sliced;
+        
+        var sliderBgRect = sliderBg.GetComponent<RectTransform>();
+        sliderBgRect.anchorMin = Vector2.zero;
+        sliderBgRect.anchorMax = Vector2.one;
+        sliderBgRect.anchoredPosition = Vector2.zero;
+        sliderBgRect.sizeDelta = Vector2.zero;
+
+        // Create Fill Area
+        GameObject fillArea = new GameObject("Fill Area");
+        fillArea.transform.SetParent(sliderObj.transform, false);
+        
+        // Add RectTransform component (empty GameObjects need this for UI)
+        if (fillArea.GetComponent<RectTransform>() == null)
+        {
+            Debug.Log("Adding RectTransform to Fill Area");
+            fillArea.AddComponent<RectTransform>();
+        }
+        var fillAreaRect = fillArea.GetComponent<RectTransform>();
+        Debug.Log($"Fill Area RectTransform: {fillAreaRect != null}");
+        fillAreaRect.anchorMin = Vector2.zero;
+        fillAreaRect.anchorMax = Vector2.one;
+        fillAreaRect.anchoredPosition = Vector2.zero;
+        fillAreaRect.sizeDelta = Vector2.zero;
+
+        // Create Fill
+        GameObject fill = new GameObject("Fill");
+        fill.transform.SetParent(fillArea.transform, false);
+        
+        var fillImage = fill.AddComponent<UnityEngine.UI.Image>();
+        fillImage.color = Color.green; // Start with full health color
+        
+        // Use Simple type instead of Filled for slider compatibility
+        fillImage.type = UnityEngine.UI.Image.Type.Simple;
+        
+        // Get RectTransform (automatically added with Image component)
+        var fillRect = fill.GetComponent<RectTransform>();
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.anchoredPosition = Vector2.zero;
+        fillRect.sizeDelta = Vector2.zero;
+
+        // No health text - removed for cleaner appearance
+        GameObject textObj = null;
+        UnityEngine.UI.Text healthText = null;
+
+        // Connect slider components
+        healthSlider.fillRect = fillRect;
+        healthSlider.targetGraphic = fillImage;
+
+        // Add EnemyHealthBar component
+        var enemyHealthBar = prefab.AddComponent<EnemyHealthBar>();
+        SetFieldValue(enemyHealthBar, "HealthBarCanvas", canvas);
+        SetFieldValue(enemyHealthBar, "HealthSlider", healthSlider);
+        SetFieldValue(enemyHealthBar, "HealthText", healthText);
+        SetFieldValue(enemyHealthBar, "HealthFillImage", fillImage);
+        SetFieldValue(enemyHealthBar, "BackgroundImage", backgroundImage);
+
+        // Add CanvasGroup for fading
+        prefab.AddComponent<CanvasGroup>();
+
+        // Make prefab inactive so it doesn't appear in scene
+        prefab.SetActive(false);
+        
+        // Make the prefab persistent across scene loads
+        DontDestroyOnLoad(prefab);
+
+        Debug.Log("Enemy Health Bar Prefab created with Canvas, Slider, and EnemyHealthBar component");
+        return prefab;
+    }
+
+    private GameObject CreatePlayerHealthBarPrefab()
+    {
+        Debug.Log("Creating Player Health Bar Prefab...");
+
+        // This is similar to enemy health bar but designed for optional world-space display above player
+        GameObject prefab = new GameObject("PlayerHealthBarPrefab");
+
+        // Create Canvas for world space rendering
+        GameObject canvasObj = new GameObject("PlayerHealthCanvas");
+        canvasObj.transform.SetParent(prefab.transform, false);
+        
+        Canvas canvas = canvasObj.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvas.sortingOrder = 15; // Higher than enemy health bars
+        
+        var canvasRect = canvasObj.GetComponent<RectTransform>();
+        canvasRect.sizeDelta = new Vector2(250, 40); // Slightly larger for player
+        canvasObj.transform.localScale = Vector3.one * 0.008f; // Slightly smaller scale
+
+        // Create similar structure to enemy health bar but with player-specific styling
+        GameObject backgroundObj = new GameObject("Background");
+        backgroundObj.transform.SetParent(canvasObj.transform, false);
+        
+        var backgroundImage = backgroundObj.AddComponent<UnityEngine.UI.Image>();
+        backgroundImage.color = new Color(0.1f, 0.1f, 0.3f, 0.8f); // Slightly blue tint for player
+        
+        var backgroundRect = backgroundObj.GetComponent<RectTransform>();
+        backgroundRect.anchorMin = Vector2.zero;
+        backgroundRect.anchorMax = Vector2.one;
+        backgroundRect.anchoredPosition = Vector2.zero;
+        backgroundRect.sizeDelta = Vector2.zero;
+
+        // Create slider components (similar to enemy but with blue theme)
+        GameObject sliderObj = new GameObject("HealthSlider");
+        sliderObj.transform.SetParent(canvasObj.transform, false);
+        
+        var healthSlider = sliderObj.AddComponent<UnityEngine.UI.Slider>();
+        healthSlider.minValue = 0f;
+        healthSlider.maxValue = 1f;
+        healthSlider.value = 1f;
+        
+        var sliderRect = sliderObj.GetComponent<RectTransform>();
+        sliderRect.anchorMin = new Vector2(0.05f, 0.3f);
+        sliderRect.anchorMax = new Vector2(0.95f, 0.7f);
+        sliderRect.anchoredPosition = Vector2.zero;
+        sliderRect.sizeDelta = Vector2.zero;
+
+        // Add fill components
+        GameObject fillArea = new GameObject("Fill Area");
+        fillArea.transform.SetParent(sliderObj.transform, false);
+        
+        // Add RectTransform component (empty GameObjects need this for UI)
+        if (fillArea.GetComponent<RectTransform>() == null)
+        {
+            Debug.Log("Adding RectTransform to Fill Area");
+            fillArea.AddComponent<RectTransform>();
+        }
+        var fillAreaRect = fillArea.GetComponent<RectTransform>();
+        Debug.Log($"Fill Area RectTransform: {fillAreaRect != null}");
+        fillAreaRect.anchorMin = Vector2.zero;
+        fillAreaRect.anchorMax = Vector2.one;
+        fillAreaRect.anchoredPosition = Vector2.zero;
+        fillAreaRect.sizeDelta = Vector2.zero;
+
+        GameObject fill = new GameObject("Fill");
+        fill.transform.SetParent(fillArea.transform, false);
+        
+        var fillImage = fill.AddComponent<UnityEngine.UI.Image>();
+        fillImage.color = new Color(0.2f, 0.7f, 1f, 1f); // Blue for player health
+        fillImage.type = UnityEngine.UI.Image.Type.Filled;
+        fillImage.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
+        
+        // Get RectTransform (automatically added with Image component)
+        var fillRect = fill.GetComponent<RectTransform>();
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.anchoredPosition = Vector2.zero;
+        fillRect.sizeDelta = Vector2.zero;
+
+        healthSlider.fillRect = fillRect;
+        healthSlider.targetGraphic = fillImage;
+
+        // Make prefab inactive so it doesn't appear in scene
+        prefab.SetActive(false);
+        
+        // Make the prefab persistent across scene loads
+        DontDestroyOnLoad(prefab);
+
+        Debug.Log("Player Health Bar Prefab created");
+        return prefab;
+    }
+
+    private void SetupHealthBarManager(GameObject enemyHealthBarPrefab, GameObject playerHealthBarPrefab)
+    {
+        Debug.Log("Setting up Health Bar Manager...");
+
+        // Check if HealthBarManager already exists
+        if (FindObjectOfType<HealthBarManager>() != null)
+        {
+            Debug.Log("HealthBarManager already exists in scene");
+            return;
+        }
+
+        // Create HealthBarManager GameObject
+        GameObject healthBarManagerObj = new GameObject("HealthBarManager");
+        var healthBarManager = healthBarManagerObj.AddComponent<HealthBarManager>();
+
+        // Store prefabs as children of HealthBarManager to ensure they persist
+        enemyHealthBarPrefab.transform.SetParent(healthBarManagerObj.transform);
+        playerHealthBarPrefab.transform.SetParent(healthBarManagerObj.transform);
+
+        // Configure the health bar manager with direct field assignment
+        healthBarManager.EnemyHealthBarPrefab = enemyHealthBarPrefab;
+        healthBarManager.PlayerHealthBarPrefab = playerHealthBarPrefab;
+        healthBarManager.AutoManageEnemyHealthBars = true;
+        healthBarManager.EnableHealthBarPooling = true;
+        healthBarManager.InitialPoolSize = 10;
+        healthBarManager.MaxPoolSize = 30;
+        healthBarManager.UpdateRate = 0.1f;
+        healthBarManager.MaxViewDistance = 50f;
+        healthBarManager.HideWhenBehindObjects = true;
+
+        // Verify the assignment worked
+        Debug.Log($"HealthBarManager EnemyHealthBarPrefab assigned: {healthBarManager.EnemyHealthBarPrefab != null}");
+        Debug.Log($"HealthBarManager PlayerHealthBarPrefab assigned: {healthBarManager.PlayerHealthBarPrefab != null}");
+
+        // Make it persistent
+        DontDestroyOnLoad(healthBarManagerObj);
+
+        // Force initialize the health bar manager to start working immediately
+        healthBarManager.SetAutoManagement(true);
+
+        Debug.Log("HealthBarManager created and configured");
+        Debug.Log("- Auto-management enabled for enemy health bars");
+        Debug.Log("- Object pooling enabled with 10 initial, 30 max pool size");
+        Debug.Log("- 50 unit view distance with occlusion checking");
+        Debug.Log($"- Enemy prefab name: {enemyHealthBarPrefab.name}");
+        Debug.Log($"- Player prefab name: {playerHealthBarPrefab.name}");
+    }
+
+    private void SetupPlayerHealthUI()
+    {
+        Debug.Log("Setting up Player Health UI...");
+
+        // Find the main Canvas
+        Canvas mainCanvas = FindObjectOfType<Canvas>();
+        if (mainCanvas == null)
+        {
+            Debug.LogError("No Canvas found for Player Health UI! Player health bar will not be created.");
+            return;
+        }
+
+        // Check if PlayerHealthUI already exists
+        if (FindObjectOfType<PlayerHealthUI>() != null)
+        {
+            Debug.Log("PlayerHealthUI already exists in scene");
+            return;
+        }
+
+        Debug.Log($"Found Canvas: {mainCanvas.name}, proceeding with player health UI creation...");
+
+        // Create Player Health UI container
+        GameObject playerHealthContainer = new GameObject("PlayerHealthUI");
+        playerHealthContainer.transform.SetParent(mainCanvas.transform, false);
+
+        // Add PlayerHealthUI component
+        var playerHealthUI = playerHealthContainer.AddComponent<PlayerHealthUI>();
+
+        // Create health slider for main UI
+        GameObject healthSliderObj = CreateMainUIHealthSlider(playerHealthContainer);
+        var healthSlider = healthSliderObj.GetComponent<UnityEngine.UI.Slider>();
+        var healthText = healthSliderObj.GetComponentInChildren<UnityEngine.UI.Text>();
+        var healthFillImage = healthSliderObj.GetComponentInChildren<UnityEngine.UI.Image>();
+
+        // Configure PlayerHealthUI component
+        SetFieldValue(playerHealthUI, "HealthSlider", healthSlider);
+        SetFieldValue(playerHealthUI, "HealthText", healthText);
+        SetFieldValue(playerHealthUI, "HealthFillImage", healthFillImage);
+        SetFieldValue(playerHealthUI, "HealthBarContainer", playerHealthContainer);
+        SetFieldValue(playerHealthUI, "ShowAbovePlayer", false); // Disabled by default - use main UI only
+        SetFieldValue(playerHealthUI, "PlayerHealthBarPrefab", null); // Don't assign prefab to prevent world health bar
+        SetFieldValue(playerHealthUI, "AnimateHealthChanges", true);
+        SetFieldValue(playerHealthUI, "ShowDamageFlash", true);
+        SetFieldValue(playerHealthUI, "EnableLowHealthWarning", true);
+
+        Debug.Log("PlayerHealthUI created with main UI health bar");
+    }
+
+    private GameObject CreateMainUIHealthSlider(GameObject parent)
+    {
+        // Create health bar container positioned in top-left of screen
+        GameObject healthBarObj = new GameObject("MainHealthSlider");
+        healthBarObj.transform.SetParent(parent.transform, false);
+
+        // Add RectTransform component for UI GameObject
+        if (healthBarObj.GetComponent<RectTransform>() == null)
+        {
+            healthBarObj.AddComponent<RectTransform>();
+        }
+        var containerRect = healthBarObj.GetComponent<RectTransform>();
+        containerRect.anchorMin = new Vector2(0.02f, 0.85f);
+        containerRect.anchorMax = new Vector2(0.35f, 0.95f);
+        containerRect.anchoredPosition = Vector2.zero;
+        containerRect.sizeDelta = Vector2.zero;
+
+        // Add background
+        var backgroundImage = healthBarObj.AddComponent<UnityEngine.UI.Image>();
+        backgroundImage.color = new Color(0.2f, 0.2f, 0.2f, 0.8f);
+
+        // Create health slider
+        GameObject sliderObj = new GameObject("HealthSlider");
+        sliderObj.transform.SetParent(healthBarObj.transform, false);
+
+        var healthSlider = sliderObj.AddComponent<UnityEngine.UI.Slider>();
+        healthSlider.minValue = 0f;
+        healthSlider.maxValue = 1f;
+        healthSlider.value = 1f;
+
+        var sliderRect = sliderObj.GetComponent<RectTransform>();
+        sliderRect.anchorMin = new Vector2(0.05f, 0.3f);
+        sliderRect.anchorMax = new Vector2(0.7f, 0.7f);
+        sliderRect.anchoredPosition = Vector2.zero;
+        sliderRect.sizeDelta = Vector2.zero;
+
+        // Create fill area and fill
+        GameObject fillArea = new GameObject("Fill Area");
+        fillArea.transform.SetParent(sliderObj.transform, false);
+
+        // Add RectTransform component (empty GameObjects need this for UI)
+        if (fillArea.GetComponent<RectTransform>() == null)
+        {
+            Debug.Log("Adding RectTransform to Fill Area");
+            fillArea.AddComponent<RectTransform>();
+        }
+        var fillAreaRect = fillArea.GetComponent<RectTransform>();
+        Debug.Log($"Fill Area RectTransform: {fillAreaRect != null}");
+        fillAreaRect.anchorMin = Vector2.zero;
+        fillAreaRect.anchorMax = Vector2.one;
+        fillAreaRect.anchoredPosition = Vector2.zero;
+        fillAreaRect.sizeDelta = Vector2.zero;
+
+        GameObject fill = new GameObject("Fill");
+        fill.transform.SetParent(fillArea.transform, false);
+
+        var fillImage = fill.AddComponent<UnityEngine.UI.Image>();
+        fillImage.color = Color.green;
+        fillImage.type = UnityEngine.UI.Image.Type.Filled;
+        fillImage.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
+
+        // Get RectTransform (automatically added with Image component)
+        var fillRect = fill.GetComponent<RectTransform>();
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.anchoredPosition = Vector2.zero;
+        fillRect.sizeDelta = Vector2.zero;
+
+        // Create health text
+        GameObject healthTextObj = new GameObject("HealthText");
+        healthTextObj.transform.SetParent(healthBarObj.transform, false);
+
+        var healthText = healthTextObj.AddComponent<UnityEngine.UI.Text>();
+        healthText.text = "100/100";
+        healthText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        healthText.fontSize = 16;
+        healthText.color = Color.white;
+        healthText.alignment = TextAnchor.MiddleCenter;
+        healthText.fontStyle = FontStyle.Bold;
+
+        var textRect = healthTextObj.GetComponent<RectTransform>();
+        textRect.anchorMin = new Vector2(0.72f, 0);
+        textRect.anchorMax = new Vector2(1f, 1f);
+        textRect.anchoredPosition = Vector2.zero;
+        textRect.sizeDelta = Vector2.zero;
+
+        // Connect slider components
+        healthSlider.fillRect = fillRect;
+        healthSlider.targetGraphic = fillImage;
+
+        return healthBarObj;
+    }
+
+    private void ConnectHealthUIToUIManager()
+    {
+        Debug.Log("Connecting Health UI to UIManager...");
+
+        // Find UIManager
+        UIManager uiManager = FindObjectOfType<UIManager>();
+        if (uiManager == null)
+        {
+            Debug.LogWarning("UIManager not found - health UI integration skipped");
+            return;
+        }
+
+        // Find PlayerHealthUI
+        PlayerHealthUI playerHealthUI = FindObjectOfType<PlayerHealthUI>();
+        if (playerHealthUI != null)
+        {
+            // Connect PlayerHealthUI to UIManager
+            SetFieldValue(uiManager, "PlayerHealthUI", playerHealthUI);
+
+            // Also connect the slider and text to legacy fields for backward compatibility
+            if (playerHealthUI.HealthSlider != null)
+            {
+                SetFieldValue(uiManager, "HealthBar", playerHealthUI.HealthSlider);
+            }
+            if (playerHealthUI.HealthText != null)
+            {
+                SetFieldValue(uiManager, "HealthText", playerHealthUI.HealthText);
+            }
+
+            Debug.Log("PlayerHealthUI connected to UIManager with backward compatibility");
+        }
+        else
+        {
+            Debug.LogWarning("PlayerHealthUI not found - UIManager integration incomplete");
+        }
+    }
+
+    private void SetupHealthBarDebugger()
+    {
+        Debug.Log("Setting up Health Bar Debugger...");
+
+        // Check if debugger already exists
+        if (FindObjectOfType<HealthBarDebugger>() != null)
+        {
+            Debug.Log("HealthBarDebugger already exists in scene");
+            return;
+        }
+
+        // Add debugger to the GameManager or create dedicated GameObject
+        GameObject gameManagerObj = GameObject.Find("GameManager");
+        if (gameManagerObj != null)
+        {
+            var debugger = gameManagerObj.AddComponent<HealthBarDebugger>();
+            debugger.EnableDebugLogs = false; // Disabled by default for production
+            debugger.ShowGUI = false; // Disabled by default for production
+            Debug.Log("HealthBarDebugger added to GameManager GameObject (disabled by default - press F1 to enable)");
+        }
+        else
+        {
+            GameObject debuggerObj = new GameObject("HealthBarDebugger");
+            var debugger = debuggerObj.AddComponent<HealthBarDebugger>();
+            debugger.EnableDebugLogs = false; // Disabled by default for production
+            debugger.ShowGUI = false; // Disabled by default for production
+            Debug.Log("HealthBarDebugger created as standalone GameObject (disabled by default - press F1 to enable)");
+        }
+
+        Debug.Log("HealthBarDebugger setup complete - use E to create test enemies, D to damage them");
+    }
+
+    private void SetupHealthBarTester()
+    {
+        Debug.Log("Setting up Health Bar Tester...");
+
+        // Check if tester already exists
+        if (FindObjectOfType<HealthBarTester>() != null)
+        {
+            Debug.Log("HealthBarTester already exists in scene");
+            return;
+        }
+
+        // Add tester to the GameManager or create dedicated GameObject
+        GameObject gameManagerObj = GameObject.Find("GameManager");
+        if (gameManagerObj != null)
+        {
+            var tester = gameManagerObj.AddComponent<HealthBarTester>();
+            tester.EnableTester = false; // Disabled by default for production
+            Debug.Log("HealthBarTester added to GameManager GameObject (disabled by default - press F2 to enable)");
+        }
+        else
+        {
+            GameObject testerObj = new GameObject("HealthBarTester");
+            var tester = testerObj.AddComponent<HealthBarTester>();
+            tester.EnableTester = false; // Disabled by default for production
+            Debug.Log("HealthBarTester created as standalone GameObject (disabled by default - press F2 to enable)");
+        }
+
+        Debug.Log("HealthBarTester setup complete - press F2 to enable, then T to create test health bar");
+    }
     
     private GameObject CreateInputField(GameObject parent, string name, string labelText, float minY, float maxY)
     {
         GameObject fieldObj = new GameObject(name);
         fieldObj.transform.SetParent(parent.transform, false);
         
-        // Add background image
+        // Add background image - dark box style like HealthBarDebugger
         var image = fieldObj.AddComponent<UnityEngine.UI.Image>();
-        image.color = new Color(0.8f, 0.8f, 0.8f, 1f);
+        image.color = new Color(0.3f, 0.3f, 0.3f, 1f); // Dark gray background for better contrast
         
         var fieldRect = fieldObj.GetComponent<RectTransform>();
         fieldRect.anchorMin = new Vector2(0.1f, minY);
@@ -597,8 +1159,8 @@ public class AutoSceneSetup : MonoBehaviour
         textObj.transform.SetParent(fieldObj.transform, false);
         var text = textObj.AddComponent<UnityEngine.UI.Text>();
         text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = 16;
-        text.color = Color.black;
+        text.fontSize = 20; // Larger font for better readability
+        text.color = Color.white; // White text on dark background
         text.alignment = TextAnchor.MiddleLeft;
         
         var textRect = textObj.GetComponent<RectTransform>();
@@ -614,8 +1176,8 @@ public class AutoSceneSetup : MonoBehaviour
         placeholderObj.transform.SetParent(fieldObj.transform, false);
         var placeholder = placeholderObj.AddComponent<UnityEngine.UI.Text>();
         placeholder.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        placeholder.fontSize = 16;
-        placeholder.color = new Color(0.5f, 0.5f, 0.5f, 1f);
+        placeholder.fontSize = 20; // Larger placeholder font to match input text
+        placeholder.color = new Color(0.7f, 0.7f, 0.7f, 1f); // Lighter gray placeholder text for better visibility
         placeholder.alignment = TextAnchor.MiddleLeft;
         placeholder.text = $"Enter {labelText.ToLower()}...";
         
@@ -639,9 +1201,9 @@ public class AutoSceneSetup : MonoBehaviour
         GameObject buttonObj = new GameObject(name);
         buttonObj.transform.SetParent(parent.transform, false);
         
-        // Add background image
+        // Add background image - dark button style like HealthBarDebugger
         var image = buttonObj.AddComponent<UnityEngine.UI.Image>();
-        image.color = new Color(0.2f, 0.6f, 0.2f, 1f); // Green button
+        image.color = new Color(0.4f, 0.4f, 0.4f, 1f); // Dark gray button like Unity's GUI buttons
         
         var buttonRect = buttonObj.GetComponent<RectTransform>();
         buttonRect.anchorMin = new Vector2(0.25f, minY);
@@ -746,6 +1308,7 @@ public class AutoSceneSetupEditor : Editor
             "• Proper camera positioning\n" +
             "• Brown reference box with collision\n" +
             "• EnemyNetworkManager for server-synchronized enemies\n" +
+            "• Health Bar System (enemy health bars + player health UI)\n" +
             "• (Optional) Local test enemy for debugging", 
             MessageType.Info);
     }
