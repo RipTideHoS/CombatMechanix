@@ -34,6 +34,9 @@ public class EnemyDamageTextManager : MonoBehaviour
     // UI Canvas reference
     private Canvas _uiCanvas;
     
+    // Track previous health for healing detection
+    private Dictionary<EnemyBase, float> _enemyPreviousHealth = new Dictionary<EnemyBase, float>();
+    
     // Stats
     private int _totalTextsCreated = 0;
     private int _poolHits = 0;
@@ -160,13 +163,76 @@ public class EnemyDamageTextManager : MonoBehaviour
     
     private void SubscribeToEnemyEvents()
     {
-        // Hook into the network enemy damage system
+        // Hook into the network enemy damage system - server is authoritative
         NetworkManager.OnEnemyDamage += HandleNetworkEnemyDamage;
         
-        // Also monitor for new enemies being created so we can subscribe to their damage events
-        StartCoroutine(MonitorForNewEnemies());
+        // Also subscribe to existing enemies' health change events for healing detection
+        SubscribeToExistingEnemies();
         
-        Debug.Log("[EnemyDamageTextManager] Subscribed to network enemy damage events");
+        Debug.Log("[EnemyDamageTextManager] Subscribed to server-authoritative enemy damage events and healing detection");
+    }
+    
+    /// <summary>
+    /// Subscribe to existing enemies' health change events for healing detection
+    /// </summary>
+    private void SubscribeToExistingEnemies()
+    {
+        EnemyBase[] existingEnemies = FindObjectsOfType<EnemyBase>();
+        foreach (var enemy in existingEnemies)
+        {
+            SubscribeToEnemyHealthChanges(enemy);
+        }
+        
+        if (EnableDebugLogging)
+        {
+            Debug.Log($"[EnemyDamageTextManager] Subscribed to {existingEnemies.Length} existing enemies for healing detection");
+        }
+    }
+    
+    /// <summary>
+    /// Subscribe to a specific enemy's health change events
+    /// </summary>
+    private void SubscribeToEnemyHealthChanges(EnemyBase enemy)
+    {
+        if (enemy == null) return;
+        
+        // Store the previous health to detect healing
+        if (!_enemyPreviousHealth.ContainsKey(enemy))
+        {
+            _enemyPreviousHealth[enemy] = enemy.GetHealthPercentage() * (enemy.BaseHealth + (enemy.HealthPerLevel * (enemy.Level - 1)));
+        }
+        
+        // Subscribe to health change events
+        enemy.OnHealthChanged += (currentHealth, maxHealth) => HandleEnemyHealthChanged(enemy, currentHealth, maxHealth);
+    }
+    
+    /// <summary>
+    /// Handle enemy health changes to detect healing
+    /// </summary>
+    private void HandleEnemyHealthChanged(EnemyBase enemy, float currentHealth, float maxHealth)
+    {
+        if (enemy == null) return;
+        
+        // Get previous health
+        if (_enemyPreviousHealth.TryGetValue(enemy, out float previousHealth))
+        {
+            // Check if health increased (healing)
+            if (currentHealth > previousHealth)
+            {
+                float healAmount = currentHealth - previousHealth;
+                
+                // Show healing text
+                ShowDamageText(enemy, healAmount, true);
+                
+                if (EnableDebugLogging)
+                {
+                    Debug.Log($"[EnemyDamageTextManager] Detected healing on {enemy.EnemyName}: +{healAmount:F1}");
+                }
+            }
+        }
+        
+        // Update previous health
+        _enemyPreviousHealth[enemy] = currentHealth;
     }
     
     /// <summary>
@@ -196,54 +262,6 @@ public class EnemyDamageTextManager : MonoBehaviour
         }
     }
     
-    /// <summary>
-    /// Monitor for new enemies being created and subscribe to their individual damage events
-    /// </summary>
-    private System.Collections.IEnumerator MonitorForNewEnemies()
-    {
-        HashSet<EnemyBase> subscribedEnemies = new HashSet<EnemyBase>();
-        
-        while (true)
-        {
-            // Find all enemies in the scene
-            EnemyBase[] allEnemies = FindObjectsOfType<EnemyBase>();
-            
-            foreach (var enemy in allEnemies)
-            {
-                if (!subscribedEnemies.Contains(enemy))
-                {
-                    // Subscribe to this enemy's damage events
-                    enemy.OnDamageTaken += (damage) => HandleEnemyDamageTaken(enemy, damage);
-                    subscribedEnemies.Add(enemy);
-                    
-                    if (EnableDebugLogging)
-                    {
-                        Debug.Log($"[EnemyDamageTextManager] Subscribed to damage events for {enemy.EnemyName}");
-                    }
-                }
-            }
-            
-            // Check every 2 seconds for new enemies
-            yield return new WaitForSeconds(2f);
-        }
-    }
-    
-    /// <summary>
-    /// Handle individual enemy damage events (from EnemyBase.OnDamageTaken)
-    /// </summary>
-    private void HandleEnemyDamageTaken(EnemyBase enemy, float damage)
-    {
-        if (enemy != null)
-        {
-            // Show damage text - this covers local damage events
-            ShowDamageText(enemy, damage, false);
-            
-            if (EnableDebugLogging)
-            {
-                Debug.Log($"[EnemyDamageTextManager] Local damage event: {enemy.EnemyName} took {damage} damage");
-            }
-        }
-    }
     
     /// <summary>
     /// Show floating damage text for an enemy
@@ -405,7 +423,7 @@ public class EnemyDamageTextManager : MonoBehaviour
     }
     
     /// <summary>
-    /// Clean up active texts that have finished animating
+    /// Clean up active texts that have finished animating and detect new enemies
     /// </summary>
     private void Update()
     {
@@ -415,6 +433,30 @@ public class EnemyDamageTextManager : MonoBehaviour
             if (_activeTexts[i] == null || !_activeTexts[i].IsAnimating)
             {
                 _activeTexts.RemoveAt(i);
+            }
+        }
+        
+        // Check for new enemies that need health change subscription
+        CheckForNewEnemies();
+    }
+    
+    /// <summary>
+    /// Check for newly spawned enemies and subscribe to their health changes
+    /// </summary>
+    private void CheckForNewEnemies()
+    {
+        EnemyBase[] allEnemies = FindObjectsOfType<EnemyBase>();
+        
+        foreach (var enemy in allEnemies)
+        {
+            if (!_enemyPreviousHealth.ContainsKey(enemy))
+            {
+                SubscribeToEnemyHealthChanges(enemy);
+                
+                if (EnableDebugLogging)
+                {
+                    Debug.Log($"[EnemyDamageTextManager] Subscribed to new enemy: {enemy.EnemyName}");
+                }
             }
         }
     }
@@ -432,9 +474,19 @@ public class EnemyDamageTextManager : MonoBehaviour
         // Unsubscribe from network events
         NetworkManager.OnEnemyDamage -= HandleNetworkEnemyDamage;
         
+        // Unsubscribe from enemy health events
+        foreach (var enemy in _enemyPreviousHealth.Keys)
+        {
+            if (enemy != null)
+            {
+                enemy.OnHealthChanged -= (currentHealth, maxHealth) => HandleEnemyHealthChanged(enemy, currentHealth, maxHealth);
+            }
+        }
+        
         // Clean up
         _activeTexts.Clear();
         _textPool.Clear();
+        _enemyPreviousHealth.Clear();
         
         if (EnableDebugLogging)
         {
