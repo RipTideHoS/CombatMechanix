@@ -27,6 +27,9 @@ public class LootDropManager : MonoBehaviour
     
     // Player reference for distance calculations
     private Transform _playerTransform;
+    
+    // Floating text manager reference
+    private LootTextManager _lootTextManager;
 
     private void Start()
     {
@@ -43,6 +46,13 @@ public class LootDropManager : MonoBehaviour
         else
         {
             Debug.LogWarning("[LootDropManager] PlayerController not found - loot pickup range validation will be disabled");
+        }
+        
+        // Find loot text manager
+        _lootTextManager = FindObjectOfType<LootTextManager>();
+        if (_lootTextManager == null)
+        {
+            Debug.LogWarning("[LootDropManager] LootTextManager not found - no floating text feedback will be shown");
         }
 
         Debug.Log("[LootDropManager] Initialized and subscribed to network events");
@@ -87,7 +97,11 @@ public class LootDropManager : MonoBehaviour
                     // Successfully added to inventory
                     Debug.Log($"Successfully picked up and added to inventory: {response.Item.ItemName}");
                     
-                    // TODO: In Phase 5, we'll add positive floating text feedback here
+                    // Show pickup floating text
+                    if (_lootTextManager != null && _playerTransform != null)
+                    {
+                        _lootTextManager.ShowItemPickupText(response.Item, _playerTransform.position);
+                    }
                 }
                 else
                 {
@@ -100,7 +114,11 @@ public class LootDropManager : MonoBehaviour
                         GameManager.Instance.UIManager.ShowMessage($"Inventory full! Lost {response.Item.ItemName}");
                     }
                     
-                    // TODO: In Phase 5, we'll show "Inventory Full" floating text
+                    // Show inventory full floating text
+                    if (_lootTextManager != null && _playerTransform != null)
+                    {
+                        _lootTextManager.ShowItemLostText(response.Item, _playerTransform.position);
+                    }
                 }
             }
             else
@@ -116,7 +134,11 @@ public class LootDropManager : MonoBehaviour
             // Show error message to player
             Debug.LogWarning($"Failed to pick up loot: {response.Message}");
             
-            // TODO: In Phase 5, we'll show this as floating text
+            // Show error floating text
+            if (_lootTextManager != null && _playerTransform != null)
+            {
+                _lootTextManager.ShowInventoryFullText(_playerTransform.position);
+            }
         }
     }
 
@@ -213,6 +235,12 @@ public class LootDropManager : MonoBehaviour
             if (distance > PickupRange)
             {
                 Debug.Log($"[LootDropManager] Loot {lootId} is too far away (distance: {distance:F1}m, max: {PickupRange}m)");
+                
+                // Show "Too far away" floating text
+                if (_lootTextManager != null)
+                {
+                    _lootTextManager.ShowTooFarAwayText(_playerTransform.position);
+                }
                 return;
             }
         }
