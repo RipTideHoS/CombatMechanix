@@ -34,7 +34,9 @@ public class FloatingLootText : MonoBehaviour
     
     private void Awake()
     {
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Awake called, initializing components");
         InitializeComponents();
+        EnsureAnimationCurves();
     }
     
     private void InitializeComponents()
@@ -71,6 +73,32 @@ public class FloatingLootText : MonoBehaviour
         _startScale = transform.localScale;
     }
     
+    private void EnsureAnimationCurves()
+    {
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Ensuring animation curves are properly initialized");
+        
+        // Create default curves if they're null or empty
+        if (MovementCurve == null || MovementCurve.keys.Length == 0)
+        {
+            Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Creating default MovementCurve");
+            MovementCurve = new AnimationCurve(new Keyframe(0, 0, 0, 2), new Keyframe(1, 1, 0, 0));
+        }
+        
+        if (FadeCurve == null || FadeCurve.keys.Length == 0)
+        {
+            Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Creating default FadeCurve");
+            FadeCurve = AnimationCurve.Linear(0, 1, 1, 0);
+        }
+        
+        if (ScaleCurve == null || ScaleCurve.keys.Length == 0)
+        {
+            Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Creating default ScaleCurve");
+            ScaleCurve = new AnimationCurve(new Keyframe(0, 1.2f), new Keyframe(0.2f, 1f), new Keyframe(1, 0.8f));
+        }
+        
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Animation curves initialized - Movement keys: {MovementCurve.keys.Length}, Fade keys: {FadeCurve.keys.Length}, Scale keys: {ScaleCurve.keys.Length}");
+    }
+    
     /// <summary>
     /// Initialize and start the floating loot text animation
     /// </summary>
@@ -81,6 +109,8 @@ public class FloatingLootText : MonoBehaviour
     /// <param name="manager">Manager to return to when complete</param>
     public void Initialize(string text, Vector3 screenPosition, Color color, float duration, LootTextManager manager)
     {
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Initialize called with text: '{text}', duration: {duration}");
+        
         if (_isAnimating)
         {
             Debug.LogWarning("[FloatingLootText] Already animating, forcing completion of previous animation");
@@ -93,6 +123,10 @@ public class FloatingLootText : MonoBehaviour
         _duration = duration;
         _manager = manager;
         
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Manager assigned: {_manager != null}");
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Text component text set to: '{_textComponent.text}'");
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Screen position: {screenPosition}");
+        
         // Set initial position
         _rectTransform.position = screenPosition;
         _startPosition = screenPosition;
@@ -102,8 +136,24 @@ public class FloatingLootText : MonoBehaviour
         _canvasGroup.alpha = 1f;
         transform.localScale = _startScale;
         
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Starting animation coroutine");
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Component state - enabled: {enabled}, gameObject active: {gameObject.activeInHierarchy}");
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** GameObject name: {gameObject.name}, parent: {transform.parent?.name ?? "NULL"}");
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Animation curves - Movement: {MovementCurve != null}, Fade: {FadeCurve != null}, Scale: {ScaleCurve != null}");
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Duration: {_duration}, StartPos: {_startPosition}, EndPos: {_endPosition}");
+        
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Attempting to start coroutine...");
+        
         // Start animation
-        StartCoroutine(AnimateFloatingText());
+        try
+        {
+            StartCoroutine(AnimateFloatingText());
+            Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Coroutine started successfully!");
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Exception starting coroutine: {ex.Message}");
+        }
     }
     
     /// <summary>
@@ -111,6 +161,8 @@ public class FloatingLootText : MonoBehaviour
     /// </summary>
     private IEnumerator AnimateFloatingText()
     {
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** AnimateFloatingText coroutine started for text: '{_textComponent.text}'");
+        
         _isAnimating = true;
         float elapsed = 0f;
         
@@ -133,6 +185,8 @@ public class FloatingLootText : MonoBehaviour
             elapsed += Time.deltaTime;
             yield return null;
         }
+        
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Animation completed for text: '{_textComponent.text}', calling ReturnToPool");
         
         // Ensure final state
         _canvasGroup.alpha = 0f;
@@ -166,12 +220,16 @@ public class FloatingLootText : MonoBehaviour
     /// </summary>
     private void ReturnToPool()
     {
+        Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** ReturnToPool called for text: '{_textComponent.text}', Manager available: {_manager != null}");
+        
         if (_manager != null)
         {
+            Debug.Log($"[FloatingLootText] *** FLOATING TEXT DEBUG *** Calling manager.ReturnToPool");
             _manager.ReturnToPool(this);
         }
         else
         {
+            Debug.LogWarning($"[FloatingLootText] *** FLOATING TEXT DEBUG *** No manager available, destroying GameObject");
             // No manager available, destroy
             Destroy(gameObject);
         }

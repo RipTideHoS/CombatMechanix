@@ -141,17 +141,28 @@ namespace CombatMechanix.Services
                     return false;
                 }
 
-                // Server-side validation passed, send the item to client for inventory validation
-                // The client will handle inventory space checking and confirm the pickup
-                
-                // For now, we'll assume the pickup is successful and let the client handle inventory full cases
-                // In a full implementation, we would have server-side inventory tracking
+                // Server-side inventory management - add item to database
+                bool inventoryAddSuccess;
+                using (var scope = _serviceProvider.CreateScope())
+                {
+                    var inventoryRepository = scope.ServiceProvider.GetRequiredService<IPlayerInventoryRepository>();
+                    inventoryAddSuccess = await inventoryRepository.AddItemToInventoryAsync(playerId, lootDrop.Item);
+                }
+
+                if (!inventoryAddSuccess)
+                {
+                    await SendPickupResponse(playerId, lootId, false, "Inventory is full", null);
+                    return false;
+                }
                 
                 // Remove loot from active collection (server authoritative)
                 _activeLoot.TryRemove(lootId, out _);
 
                 // Send success response with the item data
                 await SendPickupResponse(playerId, lootId, true, "Item picked up successfully", lootDrop.Item);
+
+                // Send updated inventory to refresh client inventory panel
+                await SendUpdatedInventory(playerId);
 
                 _logger.LogInformation("Player {PlayerId} picked up loot: {ItemName} (ID: {LootId})", 
                     playerId, lootDrop.Item.ItemName, lootId);
@@ -181,6 +192,37 @@ namespace CombatMechanix.Services
             };
 
             await _connectionManager.SendToPlayer(playerId, "LootPickupResponse", response);
+        }
+
+        /// <summary>
+        /// Send updated inventory to player after successful pickup
+        /// </summary>
+        private async Task SendUpdatedInventory(string playerId)
+        {
+            try
+            {
+                // Get updated inventory from database
+                using var scope = _serviceProvider.CreateScope();
+                var inventoryRepository = scope.ServiceProvider.GetRequiredService<IPlayerInventoryRepository>();
+                var inventoryItems = await inventoryRepository.GetPlayerInventoryAsync(playerId);
+
+                // Send inventory update to player
+                var inventoryResponse = new NetworkMessages.InventoryResponseMessage
+                {
+                    PlayerId = playerId,
+                    Items = inventoryItems,
+                    Success = true
+                };
+
+                await _connectionManager.SendToPlayer(playerId, "InventoryResponse", inventoryResponse);
+                
+                _logger.LogDebug("Sent inventory update to player {PlayerId} with {Count} items after pickup", 
+                    playerId, inventoryItems.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending inventory update to player {PlayerId}", playerId);
+            }
         }
 
         /// <summary>

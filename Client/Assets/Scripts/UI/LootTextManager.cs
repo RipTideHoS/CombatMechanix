@@ -246,6 +246,13 @@ public class LootTextManager : MonoBehaviour
         // Get text object from pool
         FloatingLootText lootText = GetPooledText();
         
+        Debug.Log($"[LootTextManager] *** FLOATING TEXT DEBUG *** Got pooled text, GameObject active before activation: {lootText.gameObject.activeInHierarchy}");
+        
+        // IMPORTANT: Activate the GameObject BEFORE calling Initialize() so coroutines can start
+        lootText.gameObject.SetActive(true);
+        
+        Debug.Log($"[LootTextManager] *** FLOATING TEXT DEBUG *** GameObject activated, now active: {lootText.gameObject.activeInHierarchy}");
+        
         // Convert world position to screen position
         Vector3 screenPosition = GetScreenPosition(worldPosition);
         
@@ -253,9 +260,10 @@ public class LootTextManager : MonoBehaviour
         screenPosition.x += Random.Range(-RandomSpreadX * 50f, RandomSpreadX * 50f);
         screenPosition.y += Random.Range(-RandomSpreadY * 50f, RandomSpreadY * 50f);
         
-        // Initialize the floating text
+        Debug.Log($"[LootTextManager] *** FLOATING TEXT DEBUG *** About to call Initialize on active GameObject: {lootText.gameObject.activeInHierarchy}");
+        
+        // Initialize the floating text (now that GameObject is active)
         lootText.Initialize(text, screenPosition, color, TextDuration, this);
-        lootText.gameObject.SetActive(true);
         
         // Track active text
         _activeTexts.Add(lootText);
@@ -322,20 +330,35 @@ public class LootTextManager : MonoBehaviour
     /// </summary>
     public void ReturnToPool(FloatingLootText lootText)
     {
-        if (lootText == null) return;
+        Debug.Log($"[LootTextManager] *** FLOATING TEXT DEBUG *** ReturnToPool called for text: '{lootText?.GetText() ?? "NULL"}'");
+        
+        if (lootText == null)
+        {
+            Debug.LogWarning($"[LootTextManager] *** FLOATING TEXT DEBUG *** Attempted to return null lootText to pool");
+            return;
+        }
+        
+        Debug.Log($"[LootTextManager] *** FLOATING TEXT DEBUG *** Removing from active list. Active count before: {_activeTexts.Count}");
         
         // Remove from active list
         _activeTexts.Remove(lootText);
         
+        Debug.Log($"[LootTextManager] *** FLOATING TEXT DEBUG *** Active count after removal: {_activeTexts.Count}");
+        
         // Reset and return to pool
         lootText.gameObject.SetActive(false);
         
+        Debug.Log($"[LootTextManager] *** FLOATING TEXT DEBUG *** GameObject deactivated. EnablePooling: {EnablePooling}, Pool count: {_textPool.Count}, Max pool size: {MaxPoolSize}");
+        
         if (EnablePooling && _textPool.Count < MaxPoolSize)
         {
+            Debug.Log($"[LootTextManager] *** FLOATING TEXT DEBUG *** Adding to pool");
             _textPool.Enqueue(lootText);
+            Debug.Log($"[LootTextManager] *** FLOATING TEXT DEBUG *** Pool count after enqueue: {_textPool.Count}");
         }
         else
         {
+            Debug.Log($"[LootTextManager] *** FLOATING TEXT DEBUG *** Destroying GameObject (pool full or pooling disabled)");
             // Destroy if pool is full or pooling is disabled
             Destroy(lootText.gameObject);
         }

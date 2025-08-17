@@ -10,6 +10,7 @@ builder.Services.AddSingleton<LootManager>();
 builder.Services.AddScoped<IPlayerStatsRepository, SqlPlayerStatsRepository>();
 builder.Services.AddScoped<IPlayerStatsService, PlayerStatsService>();
 builder.Services.AddScoped<IItemRepository, ItemRepository>();
+builder.Services.AddScoped<IPlayerInventoryRepository, PlayerInventoryRepository>();
 builder.Services.AddScoped<CombatMechanix.Services.IAuthenticationService, CombatMechanix.Services.AuthenticationService>();
 builder.Services.AddLogging();
 

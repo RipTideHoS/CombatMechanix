@@ -47,14 +47,18 @@ public class ItemIconManager : MonoBehaviour
     /// </summary>
     public Sprite GetItemIcon(string iconName)
     {
+        Debug.Log($"[ItemIconManager] 🎯 GetItemIcon called with iconName: '{iconName}'");
+        
         if (string.IsNullOrEmpty(iconName))
         {
+            Debug.Log("[ItemIconManager] Icon name is null/empty, using default placeholder");
             return GetPlaceholderIcon("default");
         }
         
         // Check cache first
         if (_iconCache.TryGetValue(iconName, out Sprite cachedIcon))
         {
+            Debug.Log($"[ItemIconManager] Found cached icon for: {iconName}");
             return cachedIcon;
         }
         
@@ -68,6 +72,7 @@ public class ItemIconManager : MonoBehaviour
         
         // Fall back to placeholder
         string itemType = ExtractItemTypeFromIconName(iconName);
+        Debug.Log($"[ItemIconManager] Using placeholder for iconName: '{iconName}', detected itemType: '{itemType}'");
         Sprite placeholder = GetPlaceholderIcon(itemType);
         _iconCache[iconName] = placeholder; // Cache the placeholder too
         
@@ -79,13 +84,23 @@ public class ItemIconManager : MonoBehaviour
     /// </summary>
     private Sprite LoadRealIcon(string iconName)
     {
+        Debug.Log($"[ItemIconManager] TRYING TO LOAD ICON: {iconName} from path: Icons/{iconName}");
+        
         // Try to load from Resources/Icons/ folder
         Sprite icon = Resources.Load<Sprite>($"Icons/{iconName}");
         
         if (icon != null)
         {
-            Debug.Log($"[ItemIconManager] Loaded real icon: {iconName}");
+            Debug.Log($"[ItemIconManager] ✅ SUCCESS: Loaded real icon: {iconName}");
             return icon;
+        }
+        else
+        {
+            Debug.LogWarning($"[ItemIconManager] ❌ FAILED: Could not load icon: {iconName} from Resources/Icons/{iconName}");
+            
+            // Try to debug what's actually in the Resources/Icons folder
+            var allIcons = Resources.LoadAll<Sprite>("Icons");
+            Debug.Log($"[ItemIconManager] Available icons in Resources/Icons: {string.Join(", ", System.Array.ConvertAll(allIcons, icon => icon.name))}");
         }
         
         // Could also try alternative paths or formats here

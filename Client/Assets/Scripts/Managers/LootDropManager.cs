@@ -15,6 +15,12 @@ public class LootDropManager : MonoBehaviour
     public float BobSpeed = 2f; // Speed of bobbing animation
     public float BobAmount = 0.2f; // Amount of vertical bobbing
     
+    // Constructor for debugging
+    public LootDropManager()
+    {
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Constructor called - Component being created");
+    }
+    
     [Header("Rarity Colors")]
     public Color CommonColor = Color.white;
     public Color UncommonColor = Color.green;
@@ -31,38 +37,85 @@ public class LootDropManager : MonoBehaviour
     // Floating text manager reference
     private LootTextManager _lootTextManager;
 
+    private bool _isSubscribed = false;
+
+    private void OnEnable()
+    {
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** OnEnable called - subscribing to NetworkManager events");
+        SubscribeToEvents();
+    }
+
     private void Start()
     {
-        // Subscribe to network events
-        NetworkManager.OnLootDrop += HandleLootDrop;
-        NetworkManager.OnLootPickupResponse += HandleLootPickupResponse;
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Starting LootDropManager initialization");
+        
+        // Ensure we're subscribed (backup in case OnEnable didn't work)
+        SubscribeToEvents();
         
         // Find player transform
         var player = FindObjectOfType<PlayerController>();
         if (player != null)
         {
             _playerTransform = player.transform;
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** PlayerController found at position: {_playerTransform.position}");
         }
         else
         {
-            Debug.LogWarning("[LootDropManager] PlayerController not found - loot pickup range validation will be disabled");
+            Debug.LogError("[LootDropManager] *** LOOT DEBUG *** PlayerController not found - loot pickup range validation will be disabled");
         }
         
         // Find loot text manager
         _lootTextManager = FindObjectOfType<LootTextManager>();
         if (_lootTextManager == null)
         {
-            Debug.LogWarning("[LootDropManager] LootTextManager not found - no floating text feedback will be shown");
+            Debug.LogError("[LootDropManager] *** LOOT DEBUG *** LootTextManager not found - no floating text feedback will be shown");
+        }
+        else
+        {
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** LootTextManager found");
         }
 
-        Debug.Log("[LootDropManager] Initialized and subscribed to network events");
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Initialization complete. Active loot drops: {_activeLootDrops.Count}");
+    }
+
+    private void SubscribeToEvents()
+    {
+        if (!_isSubscribed)
+        {
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Subscribing to NetworkManager events");
+            NetworkManager.OnLootDrop += HandleLootDrop;
+            NetworkManager.OnLootPickupResponse += HandleLootPickupResponse;
+            _isSubscribed = true;
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Successfully subscribed to NetworkManager events");
+        }
+        else
+        {
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Already subscribed to events");
+        }
+    }
+
+    private void OnDisable()
+    {
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** OnDisable called - unsubscribing from events");
+        UnsubscribeFromEvents();
     }
 
     private void OnDestroy()
     {
-        // Unsubscribe from network events
-        NetworkManager.OnLootDrop -= HandleLootDrop;
-        NetworkManager.OnLootPickupResponse -= HandleLootPickupResponse;
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** OnDestroy called - unsubscribing from events");
+        UnsubscribeFromEvents();
+    }
+
+    private void UnsubscribeFromEvents()
+    {
+        if (_isSubscribed)
+        {
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Unsubscribing from NetworkManager events");
+            NetworkManager.OnLootDrop -= HandleLootDrop;
+            NetworkManager.OnLootPickupResponse -= HandleLootPickupResponse;
+            _isSubscribed = false;
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Successfully unsubscribed from NetworkManager events");
+        }
     }
 
     /// <summary>
@@ -70,10 +123,35 @@ public class LootDropManager : MonoBehaviour
     /// </summary>
     private void HandleLootDrop(NetworkMessages.LootDropMessage lootMessage)
     {
-        Debug.Log($"[LootDropManager] Creating loot drop: {lootMessage.Item.ItemName} at ({lootMessage.Position.X}, {lootMessage.Position.Y}, {lootMessage.Position.Z})");
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** HandleLootDrop called");
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Loot details: ID={lootMessage.LootId}, Item={lootMessage.Item?.ItemName}, Position=({lootMessage.Position?.X}, {lootMessage.Position?.Y}, {lootMessage.Position?.Z})");
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Item rarity: {lootMessage.Item?.Rarity}, Current active loot count: {_activeLootDrops.Count}");
+        
+        // Validate message data
+        if (lootMessage == null)
+        {
+            Debug.LogError($"[LootDropManager] *** LOOT DEBUG *** Received null loot message!");
+            return;
+        }
+        
+        if (lootMessage.Item == null)
+        {
+            Debug.LogError($"[LootDropManager] *** LOOT DEBUG *** Received loot message with null item!");
+            return;
+        }
+        
+        if (lootMessage.Position == null)
+        {
+            Debug.LogError($"[LootDropManager] *** LOOT DEBUG *** Received loot message with null position!");
+            return;
+        }
+        
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Message validation passed, calling CreateLootDropVisual");
         
         // Create visual representation of the loot
         CreateLootDropVisual(lootMessage);
+        
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** HandleLootDrop completed. New active loot count: {_activeLootDrops.Count}");
     }
 
     /// <summary>
@@ -88,6 +166,7 @@ public class LootDropManager : MonoBehaviour
             // Server confirmed the pickup - we must remove the loot visual regardless
             // Try to add the item to the player's inventory
             var inventoryManager = FindObjectOfType<InventoryManager>();
+            
             if (inventoryManager != null)
             {
                 bool addedToInventory = inventoryManager.AddItem(response.Item);
@@ -147,54 +226,86 @@ public class LootDropManager : MonoBehaviour
     /// </summary>
     private void CreateLootDropVisual(NetworkMessages.LootDropMessage lootMessage)
     {
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** CreateLootDropVisual started for LootId: {lootMessage.LootId}");
+        
         // Check if we already have this loot drop (shouldn't happen, but safety check)
         if (_activeLootDrops.ContainsKey(lootMessage.LootId))
         {
-            Debug.LogWarning($"[LootDropManager] Loot drop {lootMessage.LootId} already exists, skipping creation");
+            Debug.LogWarning($"[LootDropManager] *** LOOT DEBUG *** Loot drop {lootMessage.LootId} already exists, skipping creation");
             return;
         }
+        
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Loot ID unique, proceeding with creation");
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** LootDropPrefab assigned: {LootDropPrefab != null}");
 
         // Create loot drop object
         GameObject lootObject;
         if (LootDropPrefab != null)
         {
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Instantiating LootDropPrefab");
             lootObject = Instantiate(LootDropPrefab);
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** LootDropPrefab instantiated successfully: {lootObject != null}");
         }
         else
         {
             // Fallback: create a simple cube if no prefab is assigned
+            Debug.LogWarning($"[LootDropManager] *** LOOT DEBUG *** No LootDropPrefab assigned, creating default cube");
             lootObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
             lootObject.transform.localScale = Vector3.one * 0.3f;
-            Debug.LogWarning("[LootDropManager] No LootDropPrefab assigned, using default cube");
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Default cube created: {lootObject != null}");
         }
 
         // Position the loot object
         Vector3 worldPosition = new Vector3(lootMessage.Position.X, lootMessage.Position.Y + HoverHeight, lootMessage.Position.Z);
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Setting loot position to: {worldPosition} (original: {lootMessage.Position.X}, {lootMessage.Position.Y}, {lootMessage.Position.Z}, hover height: {HoverHeight})");
         lootObject.transform.position = worldPosition;
         lootObject.name = $"LootDrop_{lootMessage.Item.ItemName}_{lootMessage.LootId[..8]}";
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Loot object positioned and named: {lootObject.name}");
 
         // Add LootDropVisual component
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Adding LootDropVisual component");
         var lootVisual = lootObject.AddComponent<LootDropVisual>();
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** LootDropVisual component added: {lootVisual != null}");
+        
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Initializing LootDropVisual with message data");
         lootVisual.Initialize(lootMessage, this);
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** LootDropVisual initialized successfully");
 
         // Set color based on rarity
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Setting rarity color for: {lootMessage.Item.Rarity}");
         var renderer = lootObject.GetComponent<Renderer>();
         if (renderer != null)
         {
-            renderer.material.color = GetRarityColor(lootMessage.Item.Rarity);
+            Color rarityColor = GetRarityColor(lootMessage.Item.Rarity);
+            renderer.material.color = rarityColor;
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Rarity color set to: {rarityColor} for rarity: {lootMessage.Item.Rarity}");
+        }
+        else
+        {
+            Debug.LogWarning($"[LootDropManager] *** LOOT DEBUG *** No Renderer component found on loot object!");
         }
 
         // Add collider for click detection if not already present
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Checking for collider component");
         if (lootObject.GetComponent<Collider>() == null)
         {
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** No collider found, adding BoxCollider");
             var collider = lootObject.AddComponent<BoxCollider>();
             collider.isTrigger = true; // Make it a trigger for easier interaction
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** BoxCollider added as trigger");
+        }
+        else
+        {
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Existing collider found, keeping it");
         }
 
         // Store reference
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Adding loot to active drops dictionary");
         _activeLootDrops[lootMessage.LootId] = lootVisual;
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Loot added to dictionary. Total active loot: {_activeLootDrops.Count}");
 
-        Debug.Log($"[LootDropManager] Created loot visual for {lootMessage.Item.ItemName} ({lootMessage.Item.Rarity})");
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** CreateLootDropVisual completed successfully for {lootMessage.Item.ItemName} ({lootMessage.Item.Rarity})");
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Final loot object state - Position: {lootObject.transform.position}, Active: {lootObject.activeInHierarchy}, Name: {lootObject.name}");
     }
 
     /// <summary>
@@ -297,5 +408,55 @@ public class LootDropManager : MonoBehaviour
         
         _activeLootDrops.Clear();
         Debug.Log("[LootDropManager] Cleared all loot drops");
+    }
+
+    /// <summary>
+    /// Update method to ensure subscription is maintained
+    /// </summary>
+    private void Update()
+    {
+        // Periodically check if we're still subscribed (every 5 seconds)
+        if (Time.time % 5f < 0.1f && !_isSubscribed)
+        {
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Update detected unsubscribed state, attempting to resubscribe");
+            SubscribeToEvents();
+        }
+    }
+
+    /// <summary>
+    /// Public method to check subscription status and force subscription if needed
+    /// </summary>
+    public void CheckAndForceSubscription()
+    {
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** CheckAndForceSubscription called - Current subscription status: {_isSubscribed}");
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Component enabled: {enabled}, GameObject active: {gameObject.activeInHierarchy}");
+        
+        if (!_isSubscribed)
+        {
+            Debug.Log($"[LootDropManager] *** LOOT DEBUG *** Not subscribed, forcing subscription");
+            SubscribeToEvents();
+        }
+        
+        // Check subscriber count
+        var onLootDropEvent = typeof(NetworkManager).GetEvent("OnLootDrop");
+        if (onLootDropEvent != null)
+        {
+            var field = typeof(NetworkManager).GetField("OnLootDrop", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
+            if (field != null)
+            {
+                var eventDelegate = (System.Action<NetworkMessages.LootDropMessage>)field.GetValue(null);
+                int subscriberCount = eventDelegate?.GetInvocationList()?.Length ?? 0;
+                Debug.Log($"[LootDropManager] *** LOOT DEBUG *** NetworkManager.OnLootDrop has {subscriberCount} subscribers");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Called from console or other components to test event system
+    /// </summary>
+    public void TestEventSubscription()
+    {
+        Debug.Log($"[LootDropManager] *** LOOT DEBUG *** TestEventSubscription called");
+        CheckAndForceSubscription();
     }
 }

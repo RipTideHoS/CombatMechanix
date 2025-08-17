@@ -167,9 +167,15 @@ public class InventoryManager : MonoBehaviour
                 };
                 
                 _inventorySlots[i] = slotItem;
+                Debug.Log($"[InventoryManager] *** UI DEBUG *** Added {item.ItemName} (x{item.Quantity}) to slot {i}");
+                Debug.Log($"[InventoryManager] *** UI DEBUG *** Slots used after addition: {_inventorySlots.Count(slot => slot != null)} / {_inventorySlots.Count}");
+                
                 OnInventoryChanged?.Invoke();
+                Debug.Log($"[InventoryManager] *** UI DEBUG *** OnInventoryChanged event invoked");
+                
                 UpdateInventoryUI();
-                Debug.Log($"Added {item.ItemName} (x{item.Quantity}) to slot {i}");
+                Debug.Log($"[InventoryManager] *** UI DEBUG *** UpdateInventoryUI() called");
+                
                 return true;
             }
         }
@@ -282,12 +288,23 @@ public class InventoryManager : MonoBehaviour
 
     private void UpdateInventoryUI()
     {
-        if (_slotUIElements.Count != _inventorySlots.Count) return;
+        Debug.Log($"[InventoryManager] *** UI DEBUG *** UpdateInventoryUI called");
+        Debug.Log($"[InventoryManager] *** UI DEBUG *** _slotUIElements.Count: {_slotUIElements.Count}, _inventorySlots.Count: {_inventorySlots.Count}");
+        
+        if (_slotUIElements.Count != _inventorySlots.Count)
+        {
+            Debug.LogWarning($"[InventoryManager] *** UI DEBUG *** UI Elements count mismatch! UI Elements: {_slotUIElements.Count}, Inventory Slots: {_inventorySlots.Count} - RETURNING EARLY");
+            return;
+        }
+
+        Debug.Log($"[InventoryManager] *** UI DEBUG *** Updating {_inventorySlots.Count} slots");
 
         for (int i = 0; i < _inventorySlots.Count; i++)
         {
             var slotUI = _slotUIElements[i];
             var item = _inventorySlots[i];
+
+            Debug.Log($"[InventoryManager] *** UI DEBUG *** Updating slot {i}: {(item != null ? item.ItemName : "EMPTY")}");
 
             // Get UI components
             var text = slotUI.GetComponentInChildren<UnityEngine.UI.Text>();
@@ -295,20 +312,33 @@ public class InventoryManager : MonoBehaviour
 
             if (item != null)
             {
+                Debug.Log($"[InventoryManager] *** UI DEBUG *** Setting slot {i} to show: {item.ItemType} x{item.Quantity}");
+                
                 // Show item info
                 if (text != null)
                 {
                     text.text = $"{item.ItemType}\nx{item.Quantity}";
+                    Debug.Log($"[InventoryManager] *** UI DEBUG *** Text component updated for slot {i}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[InventoryManager] *** UI DEBUG *** No Text component found in slot {i}");
                 }
 
                 // Set item icon (you would load actual item icons here)
                 if (image != null)
                 {
                     image.color = GetItemColor(item.ItemType);
+                    Debug.Log($"[InventoryManager] *** UI DEBUG *** Image color set for slot {i}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[InventoryManager] *** UI DEBUG *** No Image component found in slot {i}");
                 }
             }
             else
             {
+                Debug.Log($"[InventoryManager] *** UI DEBUG *** Setting slot {i} to empty");
                 // Empty slot
                 if (text != null)
                 {

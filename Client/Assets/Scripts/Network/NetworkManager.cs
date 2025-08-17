@@ -61,8 +61,6 @@ public class NetworkManager : MonoBehaviour
 
     private void Start()
     {
-        Debug.Log($"NetworkManager started with WebSockets - Server URL: {ServerUrl}");
-        Debug.Log("Connection will be initiated by the login system, not automatically");
         // Note: ConnectToServer() is no longer called automatically to enforce proper authentication
     }
 
@@ -95,7 +93,6 @@ public class NetworkManager : MonoBehaviour
             await _webSocket.ConnectAsync(new Uri(ServerUrl), _cancellationTokenSource.Token);
             
             QueueMainThreadAction(() => {
-                Debug.Log($"Connected to WebSocket server successfully! Connection ID: {ConnectionId}");
                 OnConnected?.Invoke();
             });
 
@@ -179,11 +176,10 @@ public class NetworkManager : MonoBehaviour
             // Parse the wrapper message to get the type
             var wrapper = JsonConvert.DeserializeObject<MessageWrapper>(jsonMessage);
             
-            // LOG ALL INCOMING MESSAGES FOR DEBUGGING
-            Debug.Log($"[NetworkManager] Received message type: {wrapper.Type}");
-            if (wrapper.Type == "LevelUp" || wrapper.Type == "ExperienceGain" || wrapper.Type == "PlayerStatsUpdate" || wrapper.Type == "InventoryResponse" || wrapper.Type == "InventoryUpdate")
+            // Only log loot-related messages for debugging
+            if (wrapper.Type == "LootDrop" || wrapper.Type == "LootPickupResponse")
             {
-                Debug.Log($"[NetworkManager] IMPORTANT MESSAGE: {wrapper.Type} - Data: {wrapper.Data}");
+                Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Received message type: {wrapper.Type}");
             }
             
             switch (wrapper.Type)
@@ -237,16 +233,11 @@ public class NetworkManager : MonoBehaviour
                     QueueMainThreadAction(() => {
                         if (authResponse.Success)
                         {
-                            Debug.Log($"Authentication successful for player: {authResponse.PlayerName}");
                             var gameManager = GameManager.Instance;
                             if (gameManager != null)
                             {
                                 gameManager.OnPlayerAuthenticated();
                             }
-                        }
-                        else
-                        {
-                            Debug.LogError($"Authentication failed: {authResponse.Message}");
                         }
                     });
                     break;
@@ -257,8 +248,6 @@ public class NetworkManager : MonoBehaviour
                         var loginUI = FindObjectOfType<LoginUI>();
                         if (loginResponse.Success)
                         {
-                            Debug.Log($"Login successful for player: {loginResponse.PlayerName}");
-                            
                             // Set player information in GameManager
                             var gameManager = GameManager.Instance;
                             if (gameManager != null)
@@ -284,7 +273,6 @@ public class NetworkManager : MonoBehaviour
                         }
                         else
                         {
-                            Debug.LogError($"Login failed: {loginResponse.ErrorMessage}");
                             if (loginUI != null)
                             {
                                 loginUI.OnLoginFailed(loginResponse.ErrorMessage);
@@ -299,13 +287,7 @@ public class NetworkManager : MonoBehaviour
                     
                 case "LevelUp":
                     var levelUpMsg = JsonConvert.DeserializeObject<NetworkMessages.LevelUpMessage>(wrapper.Data.ToString());
-                    Debug.Log($"[NetworkManager] LEVEL UP MESSAGE RECEIVED! Player: {levelUpMsg.PlayerId}, New Level: {levelUpMsg.NewLevel}");
-                    QueueMainThreadAction(() => {
-                        Debug.Log($"[NetworkManager] Invoking OnLevelUp event for level {levelUpMsg.NewLevel}");
-                        Debug.Log($"[NetworkManager] OnLevelUp has {(OnLevelUp?.GetInvocationList()?.Length ?? 0)} subscribers");
-                        OnLevelUp?.Invoke(levelUpMsg);
-                        Debug.Log($"[NetworkManager] OnLevelUp event invoked");
-                    });
+                    QueueMainThreadAction(() => OnLevelUp?.Invoke(levelUpMsg));
                     break;
                     
                 case "HealthChange":
@@ -322,7 +304,6 @@ public class NetworkManager : MonoBehaviour
                     // Server confirmed our connection and assigned us an ID
                     var connData = JsonConvert.DeserializeObject<ConnectionData>(wrapper.Data.ToString());
                     ConnectionId = connData.ConnectionId;
-                    Debug.Log($"Server assigned connection ID: {ConnectionId}");
                     
                     // Check authentication method based on available data
                     QueueMainThreadAction(async () => {
@@ -333,7 +314,6 @@ public class NetworkManager : MonoBehaviour
                         if (!string.IsNullOrEmpty(pendingUsername) && !string.IsNullOrEmpty(pendingPasswordHash))
                         {
                             // Handle login authentication
-                            Debug.Log($"Sending login credentials for user: {pendingUsername}");
                             var loginMessage = new
                             {
                                 Username = pendingUsername,
@@ -347,7 +327,6 @@ public class NetworkManager : MonoBehaviour
                             string sessionToken = ClientUtilities.SessionManager.GetValidSessionToken();
                             if (!string.IsNullOrEmpty(sessionToken))
                             {
-                                Debug.Log("Attempting session token validation for reconnection");
                                 var sessionMessage = new
                                 {
                                     SessionToken = sessionToken
@@ -357,30 +336,17 @@ public class NetworkManager : MonoBehaviour
                             else
                             {
                                 // No valid session token - require login
-                                Debug.Log("No valid session token found, showing login UI");
-                                
-                                // Don't disconnect immediately - just show login UI
-                                // The connection will be closed naturally when no authentication happens
-                                
-                                // Show login UI using multiple approaches
                                 var uiManager = FindObjectOfType<UIManager>();
                                 var loginUI = FindObjectOfType<LoginUI>();
                                 
                                 if (uiManager != null)
                                 {
-                                    Debug.Log("Found UIManager, showing login panel");
                                     uiManager.ShowLoginPanel();
                                 }
                                 
                                 if (loginUI != null)
                                 {
-                                    Debug.Log("Found LoginUI, showing login panel");
                                     loginUI.ShowLoginPanel();
-                                }
-                                
-                                if (uiManager == null && loginUI == null)
-                                {
-                                    Debug.LogError("Neither UIManager nor LoginUI found!");
                                 }
                             }
                         }
@@ -409,26 +375,40 @@ public class NetworkManager : MonoBehaviour
                     
                 case "InventoryResponse":
                     var inventoryResponseMsg = JsonConvert.DeserializeObject<NetworkMessages.InventoryResponseMessage>(wrapper.Data.ToString());
-                    Debug.Log($"[NetworkManager] Inventory response received for player {inventoryResponseMsg.PlayerId} with {inventoryResponseMsg.Items.Count} items");
                     QueueMainThreadAction(() => OnInventoryResponse?.Invoke(inventoryResponseMsg));
                     break;
                     
                 case "InventoryUpdate":
                     var inventoryUpdateMsg = JsonConvert.DeserializeObject<NetworkMessages.InventoryUpdateMessage>(wrapper.Data.ToString());
-                    Debug.Log($"[NetworkManager] Inventory update received: {inventoryUpdateMsg.UpdateType} - {inventoryUpdateMsg.UpdatedItems.Count} items");
                     QueueMainThreadAction(() => OnInventoryUpdate?.Invoke(inventoryUpdateMsg));
                     break;
                     
                 case "LootDrop":
+                    Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Received LootDrop message: {wrapper.Data}");
                     var lootDropMsg = JsonConvert.DeserializeObject<NetworkMessages.LootDropMessage>(wrapper.Data.ToString());
-                    Debug.Log($"[NetworkManager] Loot drop received: {lootDropMsg.Item.ItemName} at position ({lootDropMsg.Position.X}, {lootDropMsg.Position.Y}, {lootDropMsg.Position.Z})");
-                    QueueMainThreadAction(() => OnLootDrop?.Invoke(lootDropMsg));
+                    if (lootDropMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Deserialized LootDrop: Item={lootDropMsg.Item?.ItemName}, Position=({lootDropMsg.Position?.X}, {lootDropMsg.Position?.Y}, {lootDropMsg.Position?.Z}), LootId={lootDropMsg.LootId}");
+                        Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Queuing main thread action for OnLootDrop event. Subscribers: {OnLootDrop?.GetInvocationList()?.Length ?? 0}");
+                        QueueMainThreadAction(() => {
+                            Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Executing OnLootDrop event on main thread");
+                            OnLootDrop?.Invoke(lootDropMsg);
+                        });
+                    }
+                    else
+                    {
+                        Debug.LogError($"[NetworkManager] *** LOOT DEBUG *** Failed to deserialize LootDrop message!");
+                    }
                     break;
                     
                 case "LootPickupResponse":
+                    Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Received LootPickupResponse: {wrapper.Data}");
                     var lootPickupMsg = JsonConvert.DeserializeObject<NetworkMessages.LootPickupResponseMessage>(wrapper.Data.ToString());
-                    Debug.Log($"[NetworkManager] Loot pickup response: Success={lootPickupMsg.Success}, Message={lootPickupMsg.Message}");
-                    QueueMainThreadAction(() => OnLootPickupResponse?.Invoke(lootPickupMsg));
+                    if (lootPickupMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Pickup Response: Success={lootPickupMsg.Success}, Message={lootPickupMsg.Message}, Item={lootPickupMsg.Item?.ItemName}");
+                        QueueMainThreadAction(() => OnLootPickupResponse?.Invoke(lootPickupMsg));
+                    }
                     break;
             }
         }
@@ -460,7 +440,6 @@ public class NetworkManager : MonoBehaviour
             };
             
             await SendMessage("PlayerMovement", message);
-            Debug.Log($"Movement sent: Pos={position}, Vel={velocity}, Rot={rotation}");
         }
         catch (Exception ex)
         {
@@ -470,13 +449,7 @@ public class NetworkManager : MonoBehaviour
 
     public async Task SendAttack(string targetId, string attackType, Vector3 position)
     {
-        Debug.Log($"[NetworkManager] SendAttack called - Connected: {IsConnected}, Target: {targetId}, AttackType: {attackType}");
-        
-        if (!IsConnected) 
-        {
-            Debug.LogError("[NetworkManager] Cannot send attack - not connected to server!");
-            return;
-        }
+        if (!IsConnected) return;
         
         try
         {
@@ -489,9 +462,7 @@ public class NetworkManager : MonoBehaviour
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
             };
             
-            Debug.Log($"[NetworkManager] Sending CombatAction message: Attacker={message.AttackerId}, Target={message.TargetId}");
             await SendMessage("CombatAction", message);
-            Debug.Log($"[NetworkManager] CombatAction message sent successfully");
         }
         catch (Exception ex)
         {
@@ -546,18 +517,12 @@ public class NetworkManager : MonoBehaviour
 
     public async Task AuthenticatePlayer(string playerId, string playerName)
     {
-        if (!IsConnected) 
-        {
-            Debug.LogWarning($"Cannot authenticate player {playerName} - not connected to server");
-            return;
-        }
+        if (!IsConnected) return;
         
         try
         {
-            Debug.Log($"Sending authentication for player: {playerName} (ID: {playerId})");
             var authMessage = new { PlayerId = playerId, PlayerName = playerName };
             await SendMessage("Authentication", authMessage);
-            Debug.Log($"Player authentication sent successfully: {playerName}");
         }
         catch (Exception ex)
         {
@@ -567,11 +532,7 @@ public class NetworkManager : MonoBehaviour
 
     public async Task RequestInventory()
     {
-        if (!IsConnected)
-        {
-            Debug.LogWarning("Cannot request inventory - not connected to server");
-            return;
-        }
+        if (!IsConnected) return;
 
         try
         {
@@ -580,7 +541,6 @@ public class NetworkManager : MonoBehaviour
                 PlayerId = ConnectionId
             };
             
-            Debug.Log($"Requesting inventory for player: {ConnectionId}");
             await SendMessage("InventoryRequest", inventoryRequest);
         }
         catch (Exception ex)
@@ -602,7 +562,7 @@ public class NetworkManager : MonoBehaviour
                 PlayerPosition = new Vector3Data(playerPosition.x, playerPosition.y, playerPosition.z)
             };
             
-            Debug.Log($"Sending loot pickup request for loot: {lootId}");
+            Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Sending loot pickup request for loot: {lootId}");
             await SendMessage("LootPickupRequest", pickupRequest);
         }
         catch (Exception ex)
@@ -636,14 +596,19 @@ public class NetworkManager : MonoBehaviour
             var json = JsonConvert.SerializeObject(wrapper);
             var bytes = Encoding.UTF8.GetBytes(json);
             
-            // Enhanced logging for inventory messages
-            if (messageType == "InventoryRequest")
+            // Enhanced logging for loot messages only
+            if (messageType == "LootPickupRequest")
             {
-                Debug.Log($"[NetworkManager] SENDING INVENTORY REQUEST: {json}");
+                Debug.Log($"[NetworkManager] *** LOOT DEBUG *** SENDING LOOT PICKUP REQUEST: {json}");
             }
             
             await _webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cancellationTokenSource.Token);
-            Debug.Log($"Message sent: {messageType}");
+            
+            // Only log loot-related message sends
+            if (messageType == "LootPickupRequest")
+            {
+                Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Message sent: {messageType}");
+            }
         }
         catch (Exception ex)
         {

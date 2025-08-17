@@ -34,10 +34,9 @@ namespace CombatMechanix.Data
                 await connection.OpenAsync();
 
                 const string sql = @"
-                    SELECT ItemTypeId, ItemName, Description, Rarity, ItemCategory, BaseValue, 
-                           IsStackable, MaxStackSize, AttackPower, DefensePower, IconName
-                    FROM ItemType 
-                    WHERE Rarity = @Rarity";
+                    SELECT ItemTypeId, ItemName, Description, ItemRarity, ItemCategory, MaxStackSize, IconPath
+                    FROM ItemTypes 
+                    WHERE ItemRarity = @Rarity";
 
                 using var command = new SqlCommand(sql, connection);
                 command.Parameters.Add("@Rarity", SqlDbType.NVarChar, 50).Value = rarity;
@@ -71,9 +70,8 @@ namespace CombatMechanix.Data
                 await connection.OpenAsync();
 
                 const string sql = @"
-                    SELECT ItemTypeId, ItemName, Description, Rarity, ItemCategory, BaseValue, 
-                           IsStackable, MaxStackSize, AttackPower, DefensePower, IconName
-                    FROM ItemType 
+                    SELECT ItemTypeId, ItemName, Description, ItemRarity, ItemCategory, MaxStackSize, IconPath
+                    FROM ItemTypes 
                     WHERE ItemTypeId = @ItemTypeId";
 
                 using var command = new SqlCommand(sql, connection);
@@ -105,10 +103,9 @@ namespace CombatMechanix.Data
                 await connection.OpenAsync();
 
                 const string sql = @"
-                    SELECT TOP 1 ItemTypeId, ItemName, Description, Rarity, ItemCategory, BaseValue, 
-                                 IsStackable, MaxStackSize, AttackPower, DefensePower, IconName
-                    FROM ItemType 
-                    WHERE Rarity = @Rarity
+                    SELECT TOP 1 ItemTypeId, ItemName, Description, ItemRarity, ItemCategory, MaxStackSize, IconPath
+                    FROM ItemTypes 
+                    WHERE ItemRarity = @Rarity
                     ORDER BY NEWID()"; // SQL Server random ordering
 
                 using var command = new SqlCommand(sql, connection);
@@ -137,21 +134,28 @@ namespace CombatMechanix.Data
         /// </summary>
         private static InventoryItem MapFromDataReader(SqlDataReader reader)
         {
+            // Handle the MaxStackSize - if null or not present, default to 1
+            int maxStackSize = 1;
+            if (reader["MaxStackSize"] != DBNull.Value)
+            {
+                maxStackSize = Convert.ToInt32(reader["MaxStackSize"]);
+            }
+
             return new InventoryItem
             {
                 ItemId = Guid.NewGuid().ToString(), // Generate unique instance ID
                 ItemType = reader["ItemTypeId"].ToString() ?? string.Empty,
                 ItemName = reader["ItemName"].ToString() ?? string.Empty,
-                ItemDescription = reader["Description"].ToString() ?? string.Empty,
-                Rarity = reader["Rarity"].ToString() ?? "Common",
+                ItemDescription = reader["Description"]?.ToString() ?? string.Empty,
+                Rarity = reader["ItemRarity"].ToString() ?? "Common",
                 Quantity = 1, // Default quantity for loot drops
                 SlotIndex = -1, // Not placed in inventory yet
-                IconName = reader["IconName"].ToString() ?? string.Empty,
-                IsStackable = Convert.ToBoolean(reader["IsStackable"]),
-                MaxStackSize = Convert.ToInt32(reader["MaxStackSize"]),
-                AttackPower = Convert.ToInt32(reader["AttackPower"]),
-                DefensePower = Convert.ToInt32(reader["DefensePower"]),
-                Value = Convert.ToInt32(reader["BaseValue"]),
+                IconName = reader["IconPath"]?.ToString() ?? string.Empty,
+                IsStackable = maxStackSize > 1, // Determine stackability from max stack size
+                MaxStackSize = maxStackSize,
+                AttackPower = 0, // Default values since ItemTypes doesn't have these
+                DefensePower = 0,
+                Value = 10, // Default value for now
                 Level = 1 // Default level for dropped items
             };
         }

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using CombatMechanix.Models;
 using CombatMechanix.Services;
+using CombatMechanix.Data;
 
 namespace CombatMechanix.Services
 {
@@ -1227,18 +1228,28 @@ namespace CombatMechanix.Services
                     return;
                 }
 
-                // Generate some sample inventory items for testing
-                var sampleItems = GenerateSampleInventoryItems(connection.PlayerId);
+                // Get player's inventory from database
+                using var scope = _serviceProvider.CreateScope();
+                var inventoryRepository = scope.ServiceProvider.GetRequiredService<IPlayerInventoryRepository>();
+                
+                var inventoryItems = await inventoryRepository.GetPlayerInventoryAsync(connection.PlayerId);
 
                 // Send inventory response
                 await SendToConnection(connection.ConnectionId, "InventoryResponse", new NetworkMessages.InventoryResponseMessage
                 {
                     PlayerId = connection.PlayerId,
-                    Items = sampleItems,
+                    Items = inventoryItems,
                     Success = true
                 });
 
-                _logger.LogInformation($"Sent inventory response to player {connection.PlayerId} with {sampleItems.Count} items");
+                _logger.LogInformation($"Sent inventory response to player {connection.PlayerId} with {inventoryItems.Count} items from database");
+                
+                // Debug log each item being sent
+                foreach (var item in inventoryItems)
+                {
+                    _logger.LogDebug("DEBUG: Sending inventory item - Slot: {Slot}, ItemType: {ItemType}, ItemName: {ItemName}, Quantity: {Quantity}", 
+                        item.SlotIndex, item.ItemType, item.ItemName, item.Quantity);
+                }
             }
             catch (Exception ex)
             {

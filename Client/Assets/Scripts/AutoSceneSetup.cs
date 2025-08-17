@@ -39,7 +39,9 @@ public class AutoSceneSetup : MonoBehaviour
         Debug.Log("=== Auto Scene Setup Starting ===");
 
         // 1. Create GameManager and all managers first (most important!)
+        Debug.Log("*** AUTO SCENE SETUP *** About to call CreateGameManagerSystem()");
         CreateGameManagerSystem();
+        Debug.Log("*** AUTO SCENE SETUP *** CreateGameManagerSystem() completed");
 
         // 2. Create GameStartup GameObject for additional setup
         CreateGameStartup();
@@ -104,12 +106,20 @@ public class AutoSceneSetup : MonoBehaviour
 
     private void CreateGameManagerSystem()
     {
+        Debug.Log("*** AUTO SCENE SETUP *** CreateGameManagerSystem() called");
+        
         // Check if GameManager already exists
-        if (FindObjectOfType<GameManager>() != null)
+        var existingGameManager = FindObjectOfType<GameManager>();
+        if (existingGameManager != null)
         {
-            Debug.Log("GameManager already exists in scene");
+            Debug.Log($"*** AUTO SCENE SETUP *** GameManager already exists in scene: {existingGameManager.name}");
+            
+            // Check if it has all required components and add missing ones
+            EnsureRequiredComponents(existingGameManager.gameObject);
             return;
         }
+        
+        Debug.Log("*** AUTO SCENE SETUP *** No existing GameManager found, creating new one");
 
         Debug.Log("Creating GameManager system...");
         GameObject gameManagerObj = new GameObject("GameManager");
@@ -122,8 +132,18 @@ public class AutoSceneSetup : MonoBehaviour
         gameManagerObj.AddComponent<CombatSystem>();
         gameManagerObj.AddComponent<ChatSystem>();
         gameManagerObj.AddComponent<InventoryManager>();
-        gameManagerObj.AddComponent<LootDropManager>();
-        gameManagerObj.AddComponent<LootTextManager>();
+        
+        Debug.Log("*** AUTO SCENE SETUP *** About to add LootDropManager component");
+        var lootDropManager = gameManagerObj.AddComponent<LootDropManager>();
+        Debug.Log($"*** AUTO SCENE SETUP *** LootDropManager component added: {lootDropManager != null}");
+        
+        Debug.Log("*** AUTO SCENE SETUP *** About to add LootTextManager component");
+        var lootTextManager = gameManagerObj.AddComponent<LootTextManager>();
+        Debug.Log($"*** AUTO SCENE SETUP *** LootTextManager component added: {lootTextManager != null}");
+        
+        Debug.Log("*** AUTO SCENE SETUP *** About to add LootDropManagerEnsurer component for debugging");
+        var lootDropManagerEnsurer = gameManagerObj.AddComponent<LootDropManagerEnsurer>();
+        Debug.Log($"*** AUTO SCENE SETUP *** LootDropManagerEnsurer component added: {lootDropManagerEnsurer != null}");
         
         // Add AudioSource for sound effects
         gameManagerObj.AddComponent<AudioSource>();
@@ -133,6 +153,90 @@ public class AutoSceneSetup : MonoBehaviour
         
         Debug.Log("GameManager system created with all manager components");
         Debug.Log("UIManager component added - inventory system will be available");
+    }
+
+    private void EnsureRequiredComponents(GameObject gameManagerObj)
+    {
+        Debug.Log($"*** AUTO SCENE SETUP *** Ensuring required components on existing GameManager: {gameManagerObj.name}");
+        
+        // Check and add missing components
+        if (gameManagerObj.GetComponent<NetworkManager>() == null)
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** Adding missing NetworkManager component");
+            gameManagerObj.AddComponent<NetworkManager>();
+        }
+        
+        if (gameManagerObj.GetComponent<WorldManager>() == null)
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** Adding missing WorldManager component");
+            gameManagerObj.AddComponent<WorldManager>();
+        }
+        
+        if (gameManagerObj.GetComponent<UIManager>() == null)
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** Adding missing UIManager component");
+            gameManagerObj.AddComponent<UIManager>();
+        }
+        
+        if (gameManagerObj.GetComponent<CombatSystem>() == null)
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** Adding missing CombatSystem component");
+            gameManagerObj.AddComponent<CombatSystem>();
+        }
+        
+        if (gameManagerObj.GetComponent<ChatSystem>() == null)
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** Adding missing ChatSystem component");
+            gameManagerObj.AddComponent<ChatSystem>();
+        }
+        
+        if (gameManagerObj.GetComponent<InventoryManager>() == null)
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** Adding missing InventoryManager component");
+            gameManagerObj.AddComponent<InventoryManager>();
+        }
+        
+        // THIS IS THE IMPORTANT ONE FOR LOOT SYSTEM
+        if (gameManagerObj.GetComponent<LootDropManager>() == null)
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** Adding missing LootDropManager component");
+            var lootDropManager = gameManagerObj.AddComponent<LootDropManager>();
+            Debug.Log($"*** AUTO SCENE SETUP *** LootDropManager component added: {lootDropManager != null}");
+        }
+        else
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** LootDropManager component already exists");
+        }
+        
+        if (gameManagerObj.GetComponent<LootTextManager>() == null)
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** Adding missing LootTextManager component");
+            var lootTextManager = gameManagerObj.AddComponent<LootTextManager>();
+            Debug.Log($"*** AUTO SCENE SETUP *** LootTextManager component added: {lootTextManager != null}");
+        }
+        else
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** LootTextManager component already exists");
+        }
+        
+        if (gameManagerObj.GetComponent<LootDropManagerEnsurer>() == null)
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** Adding missing LootDropManagerEnsurer component for debugging");
+            var lootDropManagerEnsurer = gameManagerObj.AddComponent<LootDropManagerEnsurer>();
+            Debug.Log($"*** AUTO SCENE SETUP *** LootDropManagerEnsurer component added: {lootDropManagerEnsurer != null}");
+        }
+        else
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** LootDropManagerEnsurer component already exists");
+        }
+        
+        if (gameManagerObj.GetComponent<AudioSource>() == null)
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** Adding missing AudioSource component");
+            gameManagerObj.AddComponent<AudioSource>();
+        }
+        
+        Debug.Log("*** AUTO SCENE SETUP *** Required components check completed");
     }
 
     private void CreateGameStartup()
