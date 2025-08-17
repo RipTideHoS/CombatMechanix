@@ -14,6 +14,7 @@ namespace CombatMechanix.Services
         private readonly ILogger<WebSocketConnectionManager> _logger;
         private readonly IServiceProvider _serviceProvider;
         private EnemyManager? _enemyManager;
+        private LootManager? _lootManager;
 
         public WebSocketConnectionManager(ILogger<WebSocketConnectionManager> logger, IServiceProvider serviceProvider)
         {
@@ -27,6 +28,14 @@ namespace CombatMechanix.Services
         public void SetEnemyManager(EnemyManager enemyManager)
         {
             _enemyManager = enemyManager;
+        }
+
+        /// <summary>
+        /// Set the loot manager reference (called after both services are initialized)
+        /// </summary>
+        public void SetLootManager(LootManager lootManager)
+        {
+            _lootManager = lootManager;
         }
 
         public async Task HandleWebSocketAsync(HttpContext context, WebSocket webSocket)
@@ -161,6 +170,9 @@ namespace CombatMechanix.Services
                         break;
                     case "HealthChange":
                         await HandleHealthChange(connection, wrapper.Data);
+                        break;
+                    case "LootPickupRequest":
+                        await HandleLootPickupRequest(connection, wrapper.Data);
                         break;
                     default:
                         _logger.LogWarning($"Unknown message type: {wrapper.Type}");
@@ -1236,6 +1248,55 @@ namespace CombatMechanix.Services
                     Success = false,
                     ErrorMessage = "Server error"
                 });
+            }
+        }
+
+        private async Task HandleLootPickupRequest(WebSocketConnection connection, object? data)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(connection.PlayerId))
+                {
+                    _logger.LogWarning($"Loot pickup request from unauthenticated connection: {connection.ConnectionId}");
+                    return;
+                }
+
+                if (_lootManager == null)
+                {
+                    _logger.LogWarning("LootManager not available for pickup request");
+                    return;
+                }
+
+                var lootRequest = JsonSerializer.Deserialize<NetworkMessages.LootPickupRequestMessage>(
+                    JsonSerializer.Serialize(data));
+
+                if (lootRequest == null)
+                {
+                    _logger.LogWarning("Failed to deserialize loot pickup request");
+                    return;
+                }
+
+                _logger.LogInformation($"Player {connection.PlayerId} attempting to pick up loot {lootRequest.LootId}");
+
+                // Handle the pickup request through LootManager
+                await _lootManager.HandleLootPickup(connection.PlayerId, lootRequest.LootId, lootRequest.PlayerPosition);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling loot pickup request");
+                
+                // Send error response to player
+                if (!string.IsNullOrEmpty(connection.PlayerId))
+                {
+                    await SendToConnection(connection.ConnectionId, "LootPickupResponse", new NetworkMessages.LootPickupResponseMessage
+                    {
+                        PlayerId = connection.PlayerId,
+                        LootId = "unknown",
+                        Success = false,
+                        Message = "Server error during pickup",
+                        Item = null
+                    });
+                }
             }
         }
 

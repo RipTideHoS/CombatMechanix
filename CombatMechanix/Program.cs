@@ -43,14 +43,19 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Initialize enemy system
+// Initialize enemy and loot systems
 var enemyManager = app.Services.GetRequiredService<EnemyManager>();
 var wsManager = app.Services.GetRequiredService<WebSocketConnectionManager>();
 var lootManager = app.Services.GetRequiredService<LootManager>();
+
+// Wire up dependencies
 wsManager.SetEnemyManager(enemyManager);
+wsManager.SetLootManager(lootManager);
+enemyManager.SetLootManager(lootManager);
+
+// Initialize default content
 enemyManager.InitializeDefaultEnemies();
-app.Logger.LogInformation("Enemy system initialized");
-app.Logger.LogInformation("Loot system initialized");
+app.Logger.LogInformation("Enemy and loot systems initialized");
 
 // Configure the HTTP request pipeline
 app.UseCors("AllowUnityClient");

@@ -13,6 +13,7 @@ namespace CombatMechanix.Services
         private readonly WebSocketConnectionManager _connectionManager;
         private readonly ILogger<EnemyManager> _logger;
         private readonly Timer _updateTimer;
+        private LootManager? _lootManager;
         
         public EnemyManager(WebSocketConnectionManager connectionManager, ILogger<EnemyManager> logger)
         {
@@ -23,6 +24,14 @@ namespace CombatMechanix.Services
             _updateTimer = new Timer(UpdateEnemies, null, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(100));
             
             _logger.LogInformation("EnemyManager initialized with update interval: 100ms");
+        }
+
+        /// <summary>
+        /// Set the loot manager reference (called after both services are initialized)
+        /// </summary>
+        public void SetLootManager(LootManager lootManager)
+        {
+            _lootManager = lootManager;
         }
 
         /// <summary>
@@ -188,6 +197,16 @@ namespace CombatMechanix.Services
             };
 
             await _connectionManager.BroadcastToAll("EnemyDeath", deathMessage);
+
+            // Generate loot drop if loot manager is available
+            if (_lootManager != null)
+            {
+                await _lootManager.GenerateLootDrop(enemy.EnemyId, enemy.Position, killerId);
+            }
+            else
+            {
+                _logger.LogWarning("LootManager not available - no loot will be generated for enemy {EnemyId}", enemy.EnemyId);
+            }
 
             // Schedule respawn (for testing - 30 seconds)
             _ = Task.Delay(TimeSpan.FromSeconds(30)).ContinueWith(_ => RespawnEnemy(enemy.EnemyId));
