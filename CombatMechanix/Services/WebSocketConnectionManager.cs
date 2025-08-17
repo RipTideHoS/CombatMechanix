@@ -141,6 +141,9 @@ namespace CombatMechanix.Services
                     case "Login":
                         await HandleLogin(connection, wrapper.Data);
                         break;
+                    case "AdminResetStats":
+                        await HandleAdminResetStats(connection, wrapper.Data);
+                        break;
                     case "SessionValidation":
                         await HandleSessionValidation(connection, wrapper.Data);
                         break;
@@ -248,9 +251,17 @@ namespace CombatMechanix.Services
                 return;
             }
 
+            // Check if player is properly authenticated
+            if (string.IsNullOrEmpty(connection.PlayerId))
+            {
+                _logger.LogWarning($"Combat attempted by unauthenticated connection: {connection.ConnectionId}");
+                return;
+            }
+            
             // Calculate player damage based on stats
             float damage = CalculatePlayerDamage(connection.PlayerId, combatData.AttackType);
             
+            _logger.LogInformation($"DEBUG: Combat - ConnectionId: {connection.ConnectionId}, PlayerId: {connection.PlayerId}");
             _logger.LogInformation($"Player {connection.PlayerId} attacking enemy {combatData.TargetId} for {damage} damage");
 
             // Apply damage to enemy via EnemyManager
@@ -364,19 +375,113 @@ namespace CombatMechanix.Services
                 };
                 
                 // Find connection by player ID
+                _logger.LogInformation($"DEBUG: Looking for connection with PlayerId: {playerId}");
+                _logger.LogInformation($"DEBUG: Available connections: [{string.Join(", ", _connections.Values.Select(c => $"{c.ConnectionId}:{c.PlayerId}"))}]");
+                
                 var connection = _connections.Values.FirstOrDefault(c => c.PlayerId == playerId);
                 if (connection != null)
                 {
                     await SendToConnection(connection.ConnectionId, "ExperienceGain", expMessage);
                     
-                    // Update player stats in database
+                    // Update player stats in database with level-up detection
                     try
                     {
                         using var scope = _serviceProvider.CreateScope();
                         var playerStatsService = scope.ServiceProvider.GetRequiredService<IPlayerStatsService>();
-                        await playerStatsService.AddExperienceAsync(playerId, expGain);
                         
-                        _logger.LogInformation($"Added {expGain} experience to player {playerId}");
+                        // Get current stats BEFORE adding experience (to track level changes)
+                        var preUpdateStats = await playerStatsService.GetPlayerStatsAsync(playerId);
+                        var preUpdateLevel = preUpdateStats.Level;
+                        
+                        // Add experience in database
+                        var success = await playerStatsService.AddExperienceAsync(playerId, expGain);
+                        
+                        _logger.LogInformation($"DEBUG: AddExperienceAsync returned success: {success}");
+                        
+                        if (success)
+                        {
+                            // Get updated stats
+                            var updatedStats = await playerStatsService.GetPlayerStatsAsync(playerId);
+                            
+                            _logger.LogInformation($"DEBUG: Pre-update level: {preUpdateLevel}, Post-update level: {updatedStats.Level}");
+                            
+                            // Update in-memory player state
+                            _logger.LogDebug($"DEBUG: Looking for player in _players dictionary with ConnectionId: {connection.ConnectionId}");
+                            _logger.LogDebug($"DEBUG: _players dictionary contains {_players.Count} entries: [{string.Join(", ", _players.Keys)}]");
+                            
+                            if (_players.TryGetValue(connection.ConnectionId, out var player))
+                            {
+                                var oldLevel = player.Level;
+                                _logger.LogInformation($"DEBUG: In-memory player oldLevel: {oldLevel}, DB updatedStats.Level: {updatedStats.Level}");
+                                player.Level = updatedStats.Level;
+                                player.Experience = updatedStats.Experience;
+                                player.Health = updatedStats.Health;
+                                player.MaxHealth = updatedStats.MaxHealth;
+                                player.Strength = updatedStats.Strength;
+                                player.Defense = updatedStats.Defense;
+                                player.Speed = updatedStats.Speed;
+
+                                // Send updated stats to player
+                                await SendToConnection(connection.ConnectionId, "PlayerStatsUpdate", new NetworkMessages.PlayerStatsUpdateMessage
+                                {
+                                    PlayerId = player.PlayerId,
+                                    Level = updatedStats.Level,
+                                    Experience = updatedStats.Experience,
+                                    Health = updatedStats.Health,
+                                    MaxHealth = updatedStats.MaxHealth,
+                                    Strength = updatedStats.Strength,
+                                    Defense = updatedStats.Defense,
+                                    Speed = updatedStats.Speed,
+                                    ExperienceToNextLevel = updatedStats.ExperienceToNextLevel
+                                });
+
+                                // Check if player leveled up (using pre-update level from database)
+                                _logger.LogInformation($"DEBUG: Level check - PreUpdateLevel: {preUpdateLevel}, PostUpdateLevel: {updatedStats.Level}");
+                                if (updatedStats.Level > preUpdateLevel)
+                                {
+                                    _logger.LogInformation($"DEBUG: LEVEL UP DETECTED! Player {playerId} leveled up from {preUpdateLevel} to {updatedStats.Level}");
+                                    await SendToConnection(connection.ConnectionId, "LevelUp", new NetworkMessages.LevelUpMessage
+                                    {
+                                        PlayerId = player.PlayerId,
+                                        NewLevel = updatedStats.Level,
+                                        StatPointsGained = (updatedStats.Level - preUpdateLevel) * 5, // 5 points per level
+                                        NewStats = new NetworkMessages.PlayerStatsUpdateMessage
+                                        {
+                                            PlayerId = player.PlayerId,
+                                            Level = updatedStats.Level,
+                                            Experience = updatedStats.Experience,
+                                            Health = updatedStats.Health,
+                                            MaxHealth = updatedStats.MaxHealth,
+                                            Strength = updatedStats.Strength,
+                                            Defense = updatedStats.Defense,
+                                            Speed = updatedStats.Speed,
+                                            ExperienceToNextLevel = updatedStats.ExperienceToNextLevel
+                                        }
+                                    });
+
+                                    // Notify all players about the level up
+                                    await BroadcastToAll("SystemNotification", new NetworkMessages.SystemNotification
+                                    {
+                                        Message = $"{player.PlayerName} reached level {updatedStats.Level}!",
+                                        Type = "LevelUp",
+                                        Priority = "Medium",
+                                        Timestamp = DateTime.UtcNow
+                                    });
+                                    
+                                    _logger.LogInformation($"Player {playerId} leveled up to level {updatedStats.Level}!");
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogWarning($"DEBUG: Player not found in _players dictionary for ConnectionId: {connection.ConnectionId}, PlayerId: {playerId}");
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogError($"DEBUG: AddExperienceAsync returned false for player {playerId}");
+                        }
+                        
+                        _logger.LogInformation($"DEBUG: Experience update process completed for player {playerId} (gain: {expGain})");
                     }
                     catch (Exception ex)
                     {
@@ -480,6 +585,8 @@ namespace CombatMechanix.Services
 
                 _players.TryAdd(connection.ConnectionId, player);
                 connection.PlayerId = player.PlayerId;
+                
+                _logger.LogInformation($"Login Success: Connection {connection.ConnectionId} mapped to Player {player.PlayerId} ({player.PlayerName})");
 
                 // Send authentication success response
                 await SendToConnection(connection.ConnectionId, "AuthenticationResponse", new NetworkMessages.AuthenticationResponseMessage
@@ -690,7 +797,7 @@ namespace CombatMechanix.Services
                     // Create player state from authenticated player
                     var player = new PlayerState
                     {
-                        PlayerId = connection.ConnectionId,
+                        PlayerId = result.PlayerId ?? result.PlayerStats.PlayerId,
                         PlayerName = result.PlayerStats.PlayerName,
                         Position = result.PlayerStats.LastPosition ?? new Vector3Data(0, 1, 0),
                         Health = result.PlayerStats.Health,
@@ -705,7 +812,46 @@ namespace CombatMechanix.Services
                     };
 
                     _players.TryAdd(connection.ConnectionId, player);
-                    connection.PlayerId = player.PlayerId;
+                    connection.PlayerId = result.PlayerId ?? result.PlayerStats.PlayerId;
+                    
+                    _logger.LogInformation($"Login Success: Connection {connection.ConnectionId} mapped to Player {connection.PlayerId} ({player.PlayerName})");
+                
+                // TEMPORARY: Auto-reset to Level 1 for testing
+                if (player.PlayerName == "RipTide")
+                {
+                    try
+                    {
+                        using var resetScope = _serviceProvider.CreateScope();
+                        var playerStatsService = resetScope.ServiceProvider.GetRequiredService<IPlayerStatsService>();
+                        
+                        var currentStats = await playerStatsService.GetPlayerStatsAsync(connection.PlayerId);
+                        currentStats.Level = 1;
+                        currentStats.Experience = 0;
+                        currentStats.NextLevelExp = 100;
+                        currentStats.Health = 100;
+                        currentStats.MaxHealth = 100;
+                        currentStats.Strength = 10;
+                        currentStats.Defense = 10;
+                        currentStats.Speed = 10;
+                        
+                        await playerStatsService.UpdatePlayerStatsAsync(currentStats);
+                        
+                        // Update in-memory player state
+                        player.Level = 1;
+                        player.Experience = 0;
+                        player.Health = 100;
+                        player.MaxHealth = 100;
+                        player.Strength = 10;
+                        player.Defense = 10;
+                        player.Speed = 10;
+                        
+                        _logger.LogInformation($"AUTO-RESET: Player {connection.PlayerId} reset to Level 1 for testing");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error auto-resetting player stats");
+                    }
+                }
 
                     // Send successful login response
                     await SendToConnection(connection.ConnectionId, "LoginResponse", new NetworkMessages.LoginResponseMessage
@@ -791,7 +937,7 @@ namespace CombatMechanix.Services
                     // Create player state from validated session
                     var player = new PlayerState
                     {
-                        PlayerId = connection.ConnectionId,
+                        PlayerId = result.PlayerStats.PlayerId,
                         PlayerName = result.PlayerStats.PlayerName,
                         Position = result.PlayerStats.LastPosition ?? new Vector3Data(0, 1, 0),
                         Health = result.PlayerStats.Health,
@@ -982,6 +1128,59 @@ namespace CombatMechanix.Services
 
         public int GetConnectionCount() => _connections.Count;
         public int GetPlayerCount() => _players.Count;
+        private async Task HandleAdminResetStats(WebSocketConnection connection, object? data)
+        {
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var playerStatsService = scope.ServiceProvider.GetRequiredService<IPlayerStatsService>();
+                
+                if (!string.IsNullOrEmpty(connection.PlayerId))
+                {
+                    var currentStats = await playerStatsService.GetPlayerStatsAsync(connection.PlayerId);
+                    
+                    // Reset to Level 1 with 0 experience
+                    currentStats.Level = 1;
+                    currentStats.Experience = 0;
+                    currentStats.NextLevelExp = 100;
+                    currentStats.Health = 100;
+                    currentStats.MaxHealth = 100;
+                    currentStats.Strength = 10;
+                    currentStats.Defense = 10;
+                    currentStats.Speed = 10;
+                    
+                    await playerStatsService.UpdatePlayerStatsAsync(currentStats);
+                    
+                    // Update in-memory player state
+                    if (_players.TryGetValue(connection.ConnectionId, out var player))
+                    {
+                        player.Level = 1;
+                        player.Experience = 0;
+                        player.Health = 100;
+                        player.MaxHealth = 100;
+                        player.Strength = 10;
+                        player.Defense = 10;
+                        player.Speed = 10;
+                    }
+                    
+                    _logger.LogInformation($"ADMIN: Reset player {connection.PlayerId} to Level 1");
+                    
+                    // Send confirmation
+                    await SendToConnection(connection.ConnectionId, "AdminResponse", new { 
+                        Success = true, 
+                        Message = "Player stats reset to Level 1" 
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resetting player stats");
+                await SendToConnection(connection.ConnectionId, "AdminResponse", new { 
+                    Success = false, 
+                    Message = "Failed to reset stats" 
+                });
+            }
+        }
     }
 
     public class WebSocketConnection

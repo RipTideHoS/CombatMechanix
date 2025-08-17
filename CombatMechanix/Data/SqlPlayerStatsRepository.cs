@@ -33,6 +33,58 @@ namespace CombatMechanix.Data
             _connectionString = configuration.GetConnectionString("DefaultConnection") 
                 ?? throw new ArgumentNullException(nameof(configuration), "DefaultConnection string is required");
             _logger = logger;
+            
+            // Ensure database schema is up to date
+            _ = Task.Run(EnsureDatabaseSchemaAsync);
+        }
+        
+        /// <summary>
+        /// Ensure the NextLevelExp column exists and update existing player records
+        /// </summary>
+        private async Task EnsureDatabaseSchemaAsync()
+        {
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+                
+                // Check if NextLevelExp column exists
+                const string checkColumnSql = @"
+                    SELECT COUNT(*) 
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_NAME = 'Players' AND COLUMN_NAME = 'NextLevelExp'";
+                
+                using var checkCommand = new SqlCommand(checkColumnSql, connection);
+                var columnExists = Convert.ToInt32(await checkCommand.ExecuteScalarAsync()) > 0;
+                
+                if (!columnExists)
+                {
+                    _logger.LogInformation("Adding NextLevelExp column to Players table");
+                    
+                    // Add the column
+                    const string addColumnSql = @"
+                        ALTER TABLE Players 
+                        ADD NextLevelExp BIGINT NOT NULL DEFAULT 0";
+                    
+                    using var addCommand = new SqlCommand(addColumnSql, connection);
+                    await addCommand.ExecuteNonQueryAsync();
+                    
+                    // Update existing records with calculated NextLevelExp values
+                    const string updateSql = @"
+                        UPDATE Players 
+                        SET NextLevelExp = (Level * Level * 100) - Experience
+                        WHERE NextLevelExp = 0";
+                    
+                    using var updateCommand = new SqlCommand(updateSql, connection);
+                    var updatedRows = await updateCommand.ExecuteNonQueryAsync();
+                    
+                    _logger.LogInformation("Added NextLevelExp column and updated {UpdatedRows} player records", updatedRows);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error ensuring database schema");
+            }
         }
 
         public async Task<PlayerStats?> GetByIdAsync(string playerId)
@@ -44,7 +96,8 @@ namespace CombatMechanix.Data
 
                 const string sql = @"
                     SELECT PlayerId, PlayerName, LoginName, PasswordHash, PasswordSalt, SessionToken, SessionExpiry,
-                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, Health, MaxHealth, 
+                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, 
+                           ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth, 
                            Defense, AttackDamage, MovementSpeed, PositionX, PositionY, PositionZ,
                            LastLogin, CreatedAt, LastSave
                     FROM Players 
@@ -82,10 +135,10 @@ namespace CombatMechanix.Data
                 await connection.OpenAsync();
 
                 const string sql = @"
-                    INSERT INTO Players (PlayerId, PlayerName, Email, LoginName, PasswordHash, PasswordSalt, Level, Experience, Health, MaxHealth, 
+                    INSERT INTO Players (PlayerId, PlayerName, Email, LoginName, PasswordHash, PasswordSalt, Level, Experience, NextLevelExp, Health, MaxHealth, 
                                        Defense, AttackDamage, MovementSpeed, PositionX, PositionY, PositionZ,
                                        LastLogin, CreatedAt, LastSave, FailedLoginAttempts)
-                    VALUES (@PlayerId, @PlayerName, @Email, @LoginName, @PasswordHash, @PasswordSalt, @Level, @Experience, @Health, @MaxHealth, 
+                    VALUES (@PlayerId, @PlayerName, @Email, @LoginName, @PasswordHash, @PasswordSalt, @Level, @Experience, @NextLevelExp, @Health, @MaxHealth, 
                             @Defense, @AttackDamage, @MovementSpeed, @PositionX, @PositionY, @PositionZ,
                             @LastLogin, @CreatedAt, @LastSave, @FailedLoginAttempts)";
 
@@ -113,7 +166,7 @@ namespace CombatMechanix.Data
 
                 const string sql = @"
                     UPDATE Players 
-                    SET PlayerName = @PlayerName, Level = @Level, Experience = @Experience, 
+                    SET PlayerName = @PlayerName, Level = @Level, Experience = @Experience, NextLevelExp = @NextLevelExp,
                         Health = @Health, MaxHealth = @MaxHealth, Defense = @Defense, 
                         AttackDamage = @AttackDamage, MovementSpeed = @MovementSpeed,
                         PositionX = @PositionX, PositionY = @PositionY, PositionZ = @PositionZ, 
@@ -171,7 +224,7 @@ namespace CombatMechanix.Data
 
                 const string sql = @"
                     SELECT TOP (@Count) PlayerId, PlayerName, LoginName, PasswordHash, PasswordSalt, SessionToken, SessionExpiry,
-                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, Health, MaxHealth, 
+                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth, 
                            Defense, AttackDamage, MovementSpeed, PositionX, PositionY, PositionZ,
                            LastLogin, CreatedAt, LastSave
                     FROM Players 
@@ -241,6 +294,7 @@ namespace CombatMechanix.Data
             command.Parameters.Add("@PasswordSalt", SqlDbType.NVarChar, 32).Value = (object?)playerStats.PasswordSalt ?? DBNull.Value;
             command.Parameters.Add("@Level", SqlDbType.Int).Value = playerStats.Level;
             command.Parameters.Add("@Experience", SqlDbType.Int).Value = (int)Math.Min(playerStats.Experience, int.MaxValue); // Convert long to int
+            command.Parameters.Add("@NextLevelExp", SqlDbType.BigInt).Value = playerStats.NextLevelExp;
             command.Parameters.Add("@Health", SqlDbType.Float).Value = (float)playerStats.Health; // Convert int to float
             command.Parameters.Add("@MaxHealth", SqlDbType.Float).Value = (float)playerStats.MaxHealth; // Convert int to float
             command.Parameters.Add("@Defense", SqlDbType.Float).Value = (float)playerStats.Defense; // Convert int to float
@@ -279,6 +333,7 @@ namespace CombatMechanix.Data
                 LastLoginAttempt = reader["LastLoginAttempt"] as DateTime?,
                 Level = Convert.ToInt32(reader["Level"]),
                 Experience = Convert.ToInt64(reader["Experience"]), // Convert int to long
+                NextLevelExp = Convert.ToInt64(reader["NextLevelExp"]),
                 Health = Convert.ToInt32(reader["Health"]), // Convert float to int
                 MaxHealth = Convert.ToInt32(reader["MaxHealth"]), // Convert float to int
                 Strength = Convert.ToInt32(reader["AttackDamage"]), // Map AttackDamage to Strength
@@ -300,7 +355,7 @@ namespace CombatMechanix.Data
 
                 const string sql = @"
                     SELECT PlayerId, PlayerName, LoginName, PasswordHash, PasswordSalt, SessionToken, SessionExpiry,
-                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, Health, MaxHealth, 
+                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth, 
                            Defense, AttackDamage, MovementSpeed, PositionX, PositionY, PositionZ,
                            LastLogin, CreatedAt, LastSave
                     FROM Players 
@@ -333,7 +388,7 @@ namespace CombatMechanix.Data
 
                 const string sql = @"
                     SELECT PlayerId, PlayerName, LoginName, PasswordHash, PasswordSalt, SessionToken, SessionExpiry,
-                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, Health, MaxHealth, 
+                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth, 
                            Defense, AttackDamage, MovementSpeed, PositionX, PositionY, PositionZ,
                            LastLogin, CreatedAt, LastSave
                     FROM Players 

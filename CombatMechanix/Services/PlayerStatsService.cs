@@ -98,18 +98,25 @@ namespace CombatMechanix.Services
 
         public async Task<bool> AddExperienceAsync(string playerId, long experience)
         {
+            _logger.LogInformation($"DEBUG: AddExperienceAsync called - PlayerId: {playerId}, Experience: {experience}");
             try
             {
                 var player = await GetPlayerStatsAsync(playerId);
                 if (player == null) return false;
 
                 var oldLevel = player.Level;
+                var oldExperience = player.Experience;
                 player.Experience += experience;
+                
+                _logger.LogInformation($"DEBUG: Player state - Level: {player.Level}, OldExp: {oldExperience}, NewExp: {player.Experience}");
+                _logger.LogInformation($"DEBUG: Experience needed for next level: {PlayerStats.CalculateExperienceForLevel(player.Level + 1)}");
+                _logger.LogInformation($"DEBUG: ShouldLevelUp? {player.ShouldLevelUp()}");
 
                 // Check for level ups
                 var levelsGained = 0;
                 while (player.ShouldLevelUp())
                 {
+                    _logger.LogInformation($"DEBUG: Leveling up from {player.Level} to {player.Level + 1}");
                     levelsGained += player.LevelUp();
                 }
 

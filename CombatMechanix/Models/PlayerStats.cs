@@ -23,6 +23,7 @@ namespace CombatMechanix.Models
         // Core Statistics
         public int Level { get; set; } = 1;
         public long Experience { get; set; } = 0;
+        public long NextLevelExp { get; set; } = 100; // Stored in database for quick access
         public int Health { get; set; } = 100;
         public int MaxHealth { get; set; } = 100;
         
@@ -61,6 +62,9 @@ namespace CombatMechanix.Models
             
             int oldLevel = Level;
             Level++;
+            
+            // Update NextLevelExp for the new level
+            NextLevelExp = CalculateExperienceForLevel(Level + 1) - Experience;
             
             // Increase stats on level up
             MaxHealth += 10;

@@ -11,7 +11,8 @@
       "Bash(curl:*)",
       "Bash(start http://localhost:5207/status)",
       "Bash(dotnet build:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(sqlcmd:*)"
     ],
     "deny": [],
     "ask": [],

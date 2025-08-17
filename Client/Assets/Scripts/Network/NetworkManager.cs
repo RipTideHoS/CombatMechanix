@@ -171,6 +171,13 @@ public class NetworkManager : MonoBehaviour
             // Parse the wrapper message to get the type
             var wrapper = JsonConvert.DeserializeObject<MessageWrapper>(jsonMessage);
             
+            // LOG ALL INCOMING MESSAGES FOR DEBUGGING
+            Debug.Log($"[NetworkManager] Received message type: {wrapper.Type}");
+            if (wrapper.Type == "LevelUp" || wrapper.Type == "ExperienceGain" || wrapper.Type == "PlayerStatsUpdate")
+            {
+                Debug.Log($"[NetworkManager] LEVEL-UP RELATED MESSAGE: {wrapper.Type} - Data: {wrapper.Data}");
+            }
+            
             switch (wrapper.Type)
             {
                 case "PlayerMovement":
@@ -284,7 +291,13 @@ public class NetworkManager : MonoBehaviour
                     
                 case "LevelUp":
                     var levelUpMsg = JsonConvert.DeserializeObject<NetworkMessages.LevelUpMessage>(wrapper.Data.ToString());
-                    QueueMainThreadAction(() => OnLevelUp?.Invoke(levelUpMsg));
+                    Debug.Log($"[NetworkManager] LEVEL UP MESSAGE RECEIVED! Player: {levelUpMsg.PlayerId}, New Level: {levelUpMsg.NewLevel}");
+                    QueueMainThreadAction(() => {
+                        Debug.Log($"[NetworkManager] Invoking OnLevelUp event for level {levelUpMsg.NewLevel}");
+                        Debug.Log($"[NetworkManager] OnLevelUp has {(OnLevelUp?.GetInvocationList()?.Length ?? 0)} subscribers");
+                        OnLevelUp?.Invoke(levelUpMsg);
+                        Debug.Log($"[NetworkManager] OnLevelUp event invoked");
+                    });
                     break;
                     
                 case "HealthChange":

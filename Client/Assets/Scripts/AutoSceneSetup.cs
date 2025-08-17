@@ -75,6 +75,9 @@ public class AutoSceneSetup : MonoBehaviour
         if (SetupHealthBarSystem)
             SetupHealthBarSystemComponents();
 
+        // 11. Setup Level Up Banner and Audio System
+        SetupLevelUpSystem();
+
         Debug.Log("=== Auto Scene Setup Complete ===");
         Debug.Log("Objects created successfully! Check the Hierarchy for new GameObjects.");
         Debug.Log("Press Play to test the WebSocket connection!");
@@ -1101,6 +1104,104 @@ public class AutoSceneSetup : MonoBehaviour
         Debug.Log("=== PLAYER HEALTH UI SETUP COMPLETE ===");
     }
 
+    private void SetupLevelUpSystem()
+    {
+        Debug.Log("Setting up Level Up System...");
+
+        // 1. Create AudioManager
+        SetupAudioManager();
+
+        // 2. Create Level Up Banner
+        SetupLevelUpBanner();
+
+        Debug.Log("Level Up System setup complete");
+    }
+
+    private void SetupAudioManager()
+    {
+        Debug.Log("Setting up Audio Manager...");
+
+        // Check if AudioManager already exists
+        if (AudioManager.Instance != null)
+        {
+            Debug.Log("AudioManager already exists in scene");
+            return;
+        }
+
+        // Create AudioManager GameObject
+        GameObject audioManagerObj = new GameObject("AudioManager");
+        
+        // Add AudioManager component
+        var audioManager = audioManagerObj.AddComponent<AudioManager>();
+        
+        // Initialize with placeholder sounds for testing
+        audioManager.InitializePlaceholderSounds();
+        
+        // Make it persistent across scenes
+        DontDestroyOnLoad(audioManagerObj);
+
+        Debug.Log("AudioManager created with placeholder sounds for testing");
+    }
+
+    private void SetupLevelUpBanner()
+    {
+        Debug.Log("Setting up Level Up Banner...");
+
+        // Check if LevelUpBanner already exists
+        if (FindObjectOfType<LevelUpBanner>() != null)
+        {
+            Debug.Log("LevelUpBanner already exists in scene");
+            return;
+        }
+
+        // Find the main UI Canvas
+        Canvas[] allCanvases = FindObjectsOfType<Canvas>();
+        Canvas mainCanvas = null;
+        
+        foreach (Canvas c in allCanvases)
+        {
+            if (c.renderMode == RenderMode.ScreenSpaceOverlay)
+            {
+                mainCanvas = c;
+                Debug.Log($"Found UI Canvas for Level Up Banner: {c.name}");
+                break;
+            }
+        }
+
+        if (mainCanvas == null)
+        {
+            Debug.LogError("No ScreenSpaceOverlay Canvas found for Level Up Banner!");
+            return;
+        }
+
+        // Create Level Up Banner GameObject
+        GameObject bannerObj = new GameObject("LevelUpBanner");
+        bannerObj.transform.SetParent(mainCanvas.transform, false);
+        
+        // Add LevelUpBanner component
+        var levelUpBanner = bannerObj.AddComponent<LevelUpBanner>();
+        
+        // Configure banner settings
+        levelUpBanner.DisplayDuration = 4f;
+        levelUpBanner.FadeInDuration = 0.5f;
+        levelUpBanner.FadeOutDuration = 0.5f;
+        levelUpBanner.BannerTextFormat = "LEVEL {0} ACHIEVED!";
+        levelUpBanner.BannerColor = Color.yellow;
+        levelUpBanner.FontSize = 48;
+        levelUpBanner.FontStyle = FontStyle.Bold;
+        levelUpBanner.PlaySoundEffect = true;
+        levelUpBanner.SoundVolume = 0.8f;
+
+        // Set high sorting order to appear above other UI
+        bannerObj.transform.SetSiblingIndex(mainCanvas.transform.childCount - 1);
+
+        Debug.Log("LevelUpBanner created and configured");
+        Debug.Log("- 4 second display duration with fade in/out");
+        Debug.Log("- Yellow text with bold styling");
+        Debug.Log("- Sound effects enabled");
+        Debug.Log("- Positioned in main UI Canvas");
+    }
+
     private GameObject CreateMainUIHealthSlider(GameObject parent)
     {
         Debug.Log($"[CreateMainUIHealthSlider] *** CREATING PLAYER HEALTH BAR *** with parent: {parent.name}");
@@ -1632,28 +1733,9 @@ public class AutoSceneSetup : MonoBehaviour
         Debug.Log("- Color coding: Red (critical), Orange (regular), Green (healing)");
         
         // Add testing component for easy testing
-        SetupFloatingDamageTextTester(damageTextManagerObj);
+        // Testing component removed to clean up UI
     }
     
-    private void SetupFloatingDamageTextTester(GameObject parentObject)
-    {
-        Debug.Log("Setting up Floating Damage Text Tester...");
-        
-        // Add the tester component to the damage text manager object
-        var tester = parentObject.AddComponent<FloatingDamageTextTester>();
-        
-        // Configure test settings
-        tester.EnableTestMode = true;
-        tester.TestDamageAmount = 25f;
-        tester.TestHealAmount = 15f;
-        tester.TestCriticalDamage = 75f;
-        
-        Debug.Log("FloatingDamageTextTester added");
-        Debug.Log("- Press 1 for regular damage, 2 for critical, 3 for healing");
-        Debug.Log("- Press 4 for random damage at mouse position");
-        Debug.Log("- Press 9 to show damage text system statistics");
-        Debug.Log("- GUI buttons also available in top-left corner");
-    }
     
     private void SetFieldValue(object target, string fieldName, object value)
     {
@@ -1729,6 +1811,7 @@ public class AutoSceneSetupEditor : Editor
             "• Brown reference box with collision\n" +
             "• EnemyNetworkManager for server-synchronized enemies\n" +
             "• Health Bar System (enemy health bars + player health UI)\n" +
+            "• Level Up System (animated banner + audio manager)\n" +
             "• (Optional) Local test enemy for debugging", 
             MessageType.Info);
     }
