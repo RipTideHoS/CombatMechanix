@@ -73,13 +73,43 @@ public class LootDropManager : MonoBehaviour
     {
         Debug.Log($"[LootDropManager] Pickup response: {response.Message}");
 
-        if (response.Success)
+        if (response.Success && response.Item != null)
         {
-            // Remove the loot visual from the world
-            RemoveLootDrop(response.LootId);
+            // Server confirmed the pickup - we must remove the loot visual regardless
+            // Try to add the item to the player's inventory
+            var inventoryManager = FindObjectOfType<InventoryManager>();
+            if (inventoryManager != null)
+            {
+                bool addedToInventory = inventoryManager.AddItem(response.Item);
+                
+                if (addedToInventory)
+                {
+                    // Successfully added to inventory
+                    Debug.Log($"Successfully picked up and added to inventory: {response.Item.ItemName}");
+                    
+                    // TODO: In Phase 5, we'll add positive floating text feedback here
+                }
+                else
+                {
+                    // Inventory was full - item is lost since server already removed it
+                    Debug.LogWarning($"Inventory full! Lost item: {response.Item.ItemName}");
+                    
+                    // Show inventory full message to player
+                    if (GameManager.Instance?.UIManager != null)
+                    {
+                        GameManager.Instance.UIManager.ShowMessage($"Inventory full! Lost {response.Item.ItemName}");
+                    }
+                    
+                    // TODO: In Phase 5, we'll show "Inventory Full" floating text
+                }
+            }
+            else
+            {
+                Debug.LogError("[LootDropManager] InventoryManager not found - cannot add item to inventory");
+            }
             
-            // TODO: In Phase 5, we'll add floating text feedback here
-            Debug.Log($"Successfully picked up: {response.Item?.ItemName}");
+            // Always remove the loot visual since server confirmed pickup
+            RemoveLootDrop(response.LootId);
         }
         else
         {

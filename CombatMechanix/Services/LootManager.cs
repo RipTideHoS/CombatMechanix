@@ -141,13 +141,16 @@ namespace CombatMechanix.Services
                     return false;
                 }
 
-                // TODO: In the next phase, we'll add inventory validation here
-                // For now, assume pickup is successful
-
-                // Remove loot from active collection
+                // Server-side validation passed, send the item to client for inventory validation
+                // The client will handle inventory space checking and confirm the pickup
+                
+                // For now, we'll assume the pickup is successful and let the client handle inventory full cases
+                // In a full implementation, we would have server-side inventory tracking
+                
+                // Remove loot from active collection (server authoritative)
                 _activeLoot.TryRemove(lootId, out _);
 
-                // Send success response
+                // Send success response with the item data
                 await SendPickupResponse(playerId, lootId, true, "Item picked up successfully", lootDrop.Item);
 
                 _logger.LogInformation("Player {PlayerId} picked up loot: {ItemName} (ID: {LootId})", 

@@ -106,6 +106,83 @@ public class InventoryManager : MonoBehaviour
         return false;
     }
 
+    public bool AddItem(InventoryItem item)
+    {
+        if (item == null)
+        {
+            Debug.LogWarning("Cannot add null item to inventory");
+            return false;
+        }
+
+        // Try to stack with existing items first (if item is stackable)
+        if (item.IsStackable)
+        {
+            for (int i = 0; i < _inventorySlots.Count; i++)
+            {
+                if (_inventorySlots[i] != null && 
+                    _inventorySlots[i].ItemType == item.ItemType &&
+                    _inventorySlots[i].Quantity < _inventorySlots[i].MaxStackSize)
+                {
+                    int spaceAvailable = _inventorySlots[i].MaxStackSize - _inventorySlots[i].Quantity;
+                    int amountToAdd = Mathf.Min(item.Quantity, spaceAvailable);
+                    
+                    _inventorySlots[i].Quantity += amountToAdd;
+                    item.Quantity -= amountToAdd;
+                    
+                    OnInventoryChanged?.Invoke();
+                    UpdateInventoryUI();
+                    Debug.Log($"Added {amountToAdd} {item.ItemName} to existing stack. New total: {_inventorySlots[i].Quantity}");
+                    
+                    // If we've added all the items, we're done
+                    if (item.Quantity <= 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Find empty slot for remaining items
+        for (int i = 0; i < _inventorySlots.Count; i++)
+        {
+            if (_inventorySlots[i] == null)
+            {
+                // Create a copy of the item for this slot
+                var slotItem = new InventoryItem
+                {
+                    ItemId = item.ItemId,
+                    ItemType = item.ItemType,
+                    ItemName = item.ItemName,
+                    ItemDescription = item.ItemDescription,
+                    Quantity = item.Quantity,
+                    SlotIndex = i,
+                    IconName = item.IconName,
+                    Rarity = item.Rarity,
+                    Level = item.Level,
+                    IsStackable = item.IsStackable,
+                    MaxStackSize = item.MaxStackSize,
+                    AttackPower = item.AttackPower,
+                    DefensePower = item.DefensePower,
+                    Value = item.Value
+                };
+                
+                _inventorySlots[i] = slotItem;
+                OnInventoryChanged?.Invoke();
+                UpdateInventoryUI();
+                Debug.Log($"Added {item.ItemName} (x{item.Quantity}) to slot {i}");
+                return true;
+            }
+        }
+
+        // Inventory full
+        if (GameManager.Instance.UIManager != null)
+        {
+            GameManager.Instance.UIManager.ShowMessage("Inventory is full!");
+        }
+        Debug.LogWarning("Inventory is full!");
+        return false;
+    }
+
     public bool RemoveItem(string itemType, int quantity)
     {
         for (int i = 0; i < _inventorySlots.Count; i++)
