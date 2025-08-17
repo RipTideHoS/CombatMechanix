@@ -122,6 +122,7 @@ public class AutoSceneSetup : MonoBehaviour
         gameManagerObj.AddComponent<CombatSystem>();
         gameManagerObj.AddComponent<ChatSystem>();
         gameManagerObj.AddComponent<InventoryManager>();
+        gameManagerObj.AddComponent<LootDropManager>();
         
         // Add AudioSource for sound effects
         gameManagerObj.AddComponent<AudioSource>();

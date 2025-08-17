@@ -43,6 +43,10 @@ public class NetworkManager : MonoBehaviour
     // Inventory-related events
     public static event Action<NetworkMessages.InventoryResponseMessage> OnInventoryResponse;
     public static event Action<NetworkMessages.InventoryUpdateMessage> OnInventoryUpdate;
+    
+    // Loot-related events
+    public static event Action<NetworkMessages.LootDropMessage> OnLootDrop;
+    public static event Action<NetworkMessages.LootPickupResponseMessage> OnLootPickupResponse;
 
     private ClientWebSocket _webSocket;
     private CancellationTokenSource _cancellationTokenSource;
@@ -414,6 +418,18 @@ public class NetworkManager : MonoBehaviour
                     Debug.Log($"[NetworkManager] Inventory update received: {inventoryUpdateMsg.UpdateType} - {inventoryUpdateMsg.UpdatedItems.Count} items");
                     QueueMainThreadAction(() => OnInventoryUpdate?.Invoke(inventoryUpdateMsg));
                     break;
+                    
+                case "LootDrop":
+                    var lootDropMsg = JsonConvert.DeserializeObject<NetworkMessages.LootDropMessage>(wrapper.Data.ToString());
+                    Debug.Log($"[NetworkManager] Loot drop received: {lootDropMsg.Item.ItemName} at position ({lootDropMsg.Position.X}, {lootDropMsg.Position.Y}, {lootDropMsg.Position.Z})");
+                    QueueMainThreadAction(() => OnLootDrop?.Invoke(lootDropMsg));
+                    break;
+                    
+                case "LootPickupResponse":
+                    var lootPickupMsg = JsonConvert.DeserializeObject<NetworkMessages.LootPickupResponseMessage>(wrapper.Data.ToString());
+                    Debug.Log($"[NetworkManager] Loot pickup response: Success={lootPickupMsg.Success}, Message={lootPickupMsg.Message}");
+                    QueueMainThreadAction(() => OnLootPickupResponse?.Invoke(lootPickupMsg));
+                    break;
             }
         }
         catch (Exception ex)
@@ -570,6 +586,28 @@ public class NetworkManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Failed to request inventory: {ex.Message}");
+        }
+    }
+
+    public async Task SendLootPickupRequest(string lootId, Vector3 playerPosition)
+    {
+        if (!IsConnected || string.IsNullOrEmpty(ConnectionId)) return;
+        
+        try
+        {
+            var pickupRequest = new NetworkMessages.LootPickupRequestMessage
+            {
+                PlayerId = ConnectionId,
+                LootId = lootId,
+                PlayerPosition = new Vector3Data(playerPosition.x, playerPosition.y, playerPosition.z)
+            };
+            
+            Debug.Log($"Sending loot pickup request for loot: {lootId}");
+            await SendMessage("LootPickupRequest", pickupRequest);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send loot pickup request: {ex.Message}");
         }
     }
 
