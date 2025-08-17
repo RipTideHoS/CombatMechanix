@@ -39,6 +39,10 @@ public class NetworkManager : MonoBehaviour
     public static event Action<NetworkMessages.EnemyUpdateMessage> OnEnemyUpdate;
     public static event Action<NetworkMessages.EnemyDamageMessage> OnEnemyDamage;
     public static event Action<NetworkMessages.EnemyDeathMessage> OnEnemyDeath;
+    
+    // Inventory-related events
+    public static event Action<NetworkMessages.InventoryResponseMessage> OnInventoryResponse;
+    public static event Action<NetworkMessages.InventoryUpdateMessage> OnInventoryUpdate;
 
     private ClientWebSocket _webSocket;
     private CancellationTokenSource _cancellationTokenSource;
@@ -173,9 +177,9 @@ public class NetworkManager : MonoBehaviour
             
             // LOG ALL INCOMING MESSAGES FOR DEBUGGING
             Debug.Log($"[NetworkManager] Received message type: {wrapper.Type}");
-            if (wrapper.Type == "LevelUp" || wrapper.Type == "ExperienceGain" || wrapper.Type == "PlayerStatsUpdate")
+            if (wrapper.Type == "LevelUp" || wrapper.Type == "ExperienceGain" || wrapper.Type == "PlayerStatsUpdate" || wrapper.Type == "InventoryResponse" || wrapper.Type == "InventoryUpdate")
             {
-                Debug.Log($"[NetworkManager] LEVEL-UP RELATED MESSAGE: {wrapper.Type} - Data: {wrapper.Data}");
+                Debug.Log($"[NetworkManager] IMPORTANT MESSAGE: {wrapper.Type} - Data: {wrapper.Data}");
             }
             
             switch (wrapper.Type)
@@ -398,6 +402,18 @@ public class NetworkManager : MonoBehaviour
                     var enemyDeathMsg = JsonConvert.DeserializeObject<NetworkMessages.EnemyDeathMessage>(wrapper.Data.ToString());
                     QueueMainThreadAction(() => OnEnemyDeath?.Invoke(enemyDeathMsg));
                     break;
+                    
+                case "InventoryResponse":
+                    var inventoryResponseMsg = JsonConvert.DeserializeObject<NetworkMessages.InventoryResponseMessage>(wrapper.Data.ToString());
+                    Debug.Log($"[NetworkManager] Inventory response received for player {inventoryResponseMsg.PlayerId} with {inventoryResponseMsg.Items.Count} items");
+                    QueueMainThreadAction(() => OnInventoryResponse?.Invoke(inventoryResponseMsg));
+                    break;
+                    
+                case "InventoryUpdate":
+                    var inventoryUpdateMsg = JsonConvert.DeserializeObject<NetworkMessages.InventoryUpdateMessage>(wrapper.Data.ToString());
+                    Debug.Log($"[NetworkManager] Inventory update received: {inventoryUpdateMsg.UpdateType} - {inventoryUpdateMsg.UpdatedItems.Count} items");
+                    QueueMainThreadAction(() => OnInventoryUpdate?.Invoke(inventoryUpdateMsg));
+                    break;
             }
         }
         catch (Exception ex)
@@ -533,6 +549,30 @@ public class NetworkManager : MonoBehaviour
         }
     }
 
+    public async Task RequestInventory()
+    {
+        if (!IsConnected)
+        {
+            Debug.LogWarning("Cannot request inventory - not connected to server");
+            return;
+        }
+
+        try
+        {
+            var inventoryRequest = new NetworkMessages.InventoryRequestMessage
+            {
+                PlayerId = ConnectionId
+            };
+            
+            Debug.Log($"Requesting inventory for player: {ConnectionId}");
+            await SendMessage("InventoryRequest", inventoryRequest);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to request inventory: {ex.Message}");
+        }
+    }
+
     private async Task SendHeartbeat()
     {
         if (!IsConnected) return;
@@ -557,6 +597,12 @@ public class NetworkManager : MonoBehaviour
             var wrapper = new MessageWrapper { Type = messageType, Data = messageData };
             var json = JsonConvert.SerializeObject(wrapper);
             var bytes = Encoding.UTF8.GetBytes(json);
+            
+            // Enhanced logging for inventory messages
+            if (messageType == "InventoryRequest")
+            {
+                Debug.Log($"[NetworkManager] SENDING INVENTORY REQUEST: {json}");
+            }
             
             await _webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cancellationTokenSource.Token);
             Debug.Log($"Message sent: {messageType}");

@@ -155,6 +155,27 @@ public class NetworkMessages
         public long Timestamp { get; set; }
     }
 
+    // Inventory-specific network messages
+    public class InventoryRequestMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+    }
+
+    public class InventoryResponseMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public List<InventoryItem> Items { get; set; } = new();
+        public bool Success { get; set; } = true;
+        public string ErrorMessage { get; set; } = string.Empty;
+    }
+
+    public class InventoryUpdateMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public List<InventoryItem> UpdatedItems { get; set; } = new();
+        public string UpdateType { get; set; } = string.Empty; // "Add", "Remove", "Update", "Clear"
+    }
+
     public class LoginResponseMessage
     {
         public bool Success { get; set; }
@@ -264,7 +285,20 @@ public class CombatEffect
 [Serializable]
 public class InventoryItem
 {
-    public string ItemType { get; set; } = string.Empty;
-    public int Quantity { get; set; }
-    public int SlotIndex { get; set; }
+    public string ItemId { get; set; } = string.Empty; // Unique item instance ID
+    public string ItemType { get; set; } = string.Empty; // "Sword", "Potion", "Shield", etc.
+    public string ItemName { get; set; } = string.Empty; // Display name like "Iron Sword"
+    public string ItemDescription { get; set; } = string.Empty; // Tooltip description
+    public int Quantity { get; set; } = 1;
+    public int SlotIndex { get; set; } = -1; // -1 means not equipped/placed
+    public string IconName { get; set; } = string.Empty; // Icon file name for UI
+    public string Rarity { get; set; } = "Common"; // "Common", "Rare", "Epic", "Legendary"
+    public int Level { get; set; } = 1; // Item level
+    public bool IsStackable { get; set; } = false; // Can multiple items stack in one slot
+    public int MaxStackSize { get; set; } = 1; // Maximum stack size
+    
+    // Item stats (for equipment)
+    public int AttackPower { get; set; } = 0;
+    public int DefensePower { get; set; } = 0;
+    public int Value { get; set; } = 0; // Gold value
 }

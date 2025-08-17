@@ -144,6 +144,9 @@ namespace CombatMechanix.Services
                     case "AdminResetStats":
                         await HandleAdminResetStats(connection, wrapper.Data);
                         break;
+                    case "InventoryRequest":
+                        await HandleInventoryRequest(connection, wrapper.Data);
+                        break;
                     case "SessionValidation":
                         await HandleSessionValidation(connection, wrapper.Data);
                         break;
@@ -1180,6 +1183,163 @@ namespace CombatMechanix.Services
                     Message = "Failed to reset stats" 
                 });
             }
+        }
+
+        private async Task HandleInventoryRequest(WebSocketConnection connection, object data)
+        {
+            try
+            {
+                _logger.LogInformation($"Handling inventory request for connection: {connection.ConnectionId}");
+
+                if (string.IsNullOrEmpty(connection.PlayerId))
+                {
+                    _logger.LogWarning($"Inventory request from unauthenticated connection: {connection.ConnectionId}");
+                    await SendToConnection(connection.ConnectionId, "InventoryResponse", new NetworkMessages.InventoryResponseMessage
+                    {
+                        Success = false,
+                        ErrorMessage = "Not authenticated"
+                    });
+                    return;
+                }
+
+                // Generate some sample inventory items for testing
+                var sampleItems = GenerateSampleInventoryItems(connection.PlayerId);
+
+                // Send inventory response
+                await SendToConnection(connection.ConnectionId, "InventoryResponse", new NetworkMessages.InventoryResponseMessage
+                {
+                    PlayerId = connection.PlayerId,
+                    Items = sampleItems,
+                    Success = true
+                });
+
+                _logger.LogInformation($"Sent inventory response to player {connection.PlayerId} with {sampleItems.Count} items");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling inventory request");
+                await SendToConnection(connection.ConnectionId, "InventoryResponse", new NetworkMessages.InventoryResponseMessage
+                {
+                    Success = false,
+                    ErrorMessage = "Server error"
+                });
+            }
+        }
+
+        private List<CombatMechanix.Models.InventoryItem> GenerateSampleInventoryItems(string playerId)
+        {
+            var items = new List<CombatMechanix.Models.InventoryItem>();
+
+            // Add some sample items for testing
+            items.Add(new CombatMechanix.Models.InventoryItem
+            {
+                ItemId = Guid.NewGuid().ToString(),
+                ItemType = "sword",
+                ItemName = "Iron Sword",
+                ItemDescription = "A sturdy iron blade forged by skilled blacksmiths.",
+                Quantity = 1,
+                SlotIndex = 0,
+                IconName = "iron_sword",
+                Rarity = "Common",
+                Level = 5,
+                IsStackable = false,
+                MaxStackSize = 1,
+                AttackPower = 15,
+                DefensePower = 0,
+                Value = 100
+            });
+
+            items.Add(new CombatMechanix.Models.InventoryItem
+            {
+                ItemId = Guid.NewGuid().ToString(),
+                ItemType = "potion",
+                ItemName = "Health Potion",
+                ItemDescription = "Restores 50 health points when consumed.",
+                Quantity = 5,
+                SlotIndex = 1,
+                IconName = "health_potion",
+                Rarity = "Common",
+                Level = 1,
+                IsStackable = true,
+                MaxStackSize = 10,
+                AttackPower = 0,
+                DefensePower = 0,
+                Value = 25
+            });
+
+            items.Add(new InventoryItem
+            {
+                ItemId = Guid.NewGuid().ToString(),
+                ItemType = "shield",
+                ItemName = "Wooden Shield",
+                ItemDescription = "A simple wooden shield that provides basic protection.",
+                Quantity = 1,
+                SlotIndex = 2,
+                IconName = "wooden_shield",
+                Rarity = "Common",
+                Level = 3,
+                IsStackable = false,
+                MaxStackSize = 1,
+                AttackPower = 0,
+                DefensePower = 8,
+                Value = 50
+            });
+
+            items.Add(new InventoryItem
+            {
+                ItemId = Guid.NewGuid().ToString(),
+                ItemType = "bow",
+                ItemName = "Hunter's Bow",
+                ItemDescription = "A well-crafted bow favored by hunters and rangers.",
+                Quantity = 1,
+                SlotIndex = 5,
+                IconName = "hunters_bow",
+                Rarity = "Rare",
+                Level = 8,
+                IsStackable = false,
+                MaxStackSize = 1,
+                AttackPower = 20,
+                DefensePower = 0,
+                Value = 200
+            });
+
+            items.Add(new InventoryItem
+            {
+                ItemId = Guid.NewGuid().ToString(),
+                ItemType = "gem",
+                ItemName = "Ruby",
+                ItemDescription = "A precious red gemstone that sparkles with inner fire.",
+                Quantity = 2,
+                SlotIndex = 10,
+                IconName = "ruby",
+                Rarity = "Epic",
+                Level = 1,
+                IsStackable = true,
+                MaxStackSize = 50,
+                AttackPower = 0,
+                DefensePower = 0,
+                Value = 500
+            });
+
+            items.Add(new InventoryItem
+            {
+                ItemId = Guid.NewGuid().ToString(),
+                ItemType = "armor",
+                ItemName = "Leather Armor",
+                ItemDescription = "Flexible leather armor that provides moderate protection.",
+                Quantity = 1,
+                SlotIndex = 15,
+                IconName = "leather_armor",
+                Rarity = "Common",
+                Level = 6,
+                IsStackable = false,
+                MaxStackSize = 1,
+                AttackPower = 0,
+                DefensePower = 12,
+                Value = 150
+            });
+
+            return items;
         }
     }
 

@@ -78,6 +78,9 @@ public class AutoSceneSetup : MonoBehaviour
         // 11. Setup Level Up Banner and Audio System
         SetupLevelUpSystem();
 
+        // 12. Setup Inventory System
+        SetupInventorySystem();
+
         Debug.Log("=== Auto Scene Setup Complete ===");
         Debug.Log("Objects created successfully! Check the Hierarchy for new GameObjects.");
         Debug.Log("Press Play to test the WebSocket connection!");
@@ -433,69 +436,6 @@ public class AutoSceneSetup : MonoBehaviour
     }
 
 
-    private GameObject CreateInventoryPanel(GameObject canvasObj)
-    {
-        // Create inventory panel
-        GameObject inventoryPanel = new GameObject("InventoryPanel");
-        inventoryPanel.transform.SetParent(canvasObj.transform, false);
-        
-        // Add Image component for background - dark box style like HealthBarDebugger
-        var image = inventoryPanel.AddComponent<UnityEngine.UI.Image>();
-        image.color = new Color(0.2f, 0.2f, 0.2f, 0.85f); // Dark transparent background like Unity's box GUI
-        image.raycastTarget = true;
-        
-        // Set up RectTransform for positioning (right side of screen)
-        var rectTransform = inventoryPanel.GetComponent<RectTransform>();
-        
-        // Use absolute positioning to ensure it's visible
-        rectTransform.anchorMin = new Vector2(0.75f, 0.25f);
-        rectTransform.anchorMax = new Vector2(0.98f, 0.85f);
-        rectTransform.anchoredPosition = Vector2.zero;
-        rectTransform.sizeDelta = Vector2.zero;
-        rectTransform.offsetMin = Vector2.zero;
-        rectTransform.offsetMax = Vector2.zero;
-        
-        // Add title text
-        GameObject titleObj = new GameObject("Title");
-        titleObj.transform.SetParent(inventoryPanel.transform, false);
-        var titleText = titleObj.AddComponent<UnityEngine.UI.Text>();
-        titleText.text = "INVENTORY";
-        titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        titleText.fontSize = 20;
-        titleText.color = Color.white; // White text on dark background
-        titleText.alignment = TextAnchor.MiddleCenter;
-        titleText.fontStyle = FontStyle.Bold;
-        
-        var titleRect = titleObj.GetComponent<RectTransform>();
-        titleRect.anchorMin = new Vector2(0, 0.85f);
-        titleRect.anchorMax = new Vector2(1, 1f);
-        titleRect.anchoredPosition = Vector2.zero;
-        titleRect.sizeDelta = Vector2.zero;
-        
-        // Add some sample content
-        GameObject contentObj = new GameObject("Content");
-        contentObj.transform.SetParent(inventoryPanel.transform, false);
-        var contentText = contentObj.AddComponent<UnityEngine.UI.Text>();
-        contentText.text = "• Inventory items will appear here\n\n• Press WASD to move player\n• Press I to toggle this panel\n\nPanel Status: Working!";
-        contentText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        contentText.fontSize = 16;
-        contentText.color = Color.white; // White text on dark background
-        contentText.alignment = TextAnchor.UpperLeft;
-        
-        var contentRect = contentObj.GetComponent<RectTransform>();
-        contentRect.anchorMin = new Vector2(0.05f, 0.05f);
-        contentRect.anchorMax = new Vector2(0.95f, 0.8f);
-        contentRect.anchoredPosition = Vector2.zero;
-        contentRect.sizeDelta = Vector2.zero;
-        
-        // Start with panel hidden
-        inventoryPanel.SetActive(false);
-        
-        Debug.Log($"Inventory panel created: Pos={rectTransform.anchoredPosition}, Size={rectTransform.rect.size}, Active={inventoryPanel.activeSelf}");
-        Debug.Log($"Panel hierarchy: Canvas->InventoryPanel->Title+Content");
-        
-        return inventoryPanel;
-    }
 
     private GameObject CreateLoginPanel(GameObject canvasObj)
     {
@@ -1202,6 +1142,134 @@ public class AutoSceneSetup : MonoBehaviour
         Debug.Log("- Positioned in main UI Canvas");
     }
 
+    private void SetupInventorySystem()
+    {
+        Debug.Log("Setting up Inventory System...");
+
+        // Check if InventoryUI already exists
+        if (FindObjectOfType<InventoryUI>() != null)
+        {
+            Debug.Log("InventoryUI already exists in scene");
+            return;
+        }
+
+        // Find the Canvas first since InventoryPanel should be a child of Canvas
+        Canvas mainCanvas = null;
+        Canvas[] allCanvases = FindObjectsOfType<Canvas>();
+        
+        foreach (Canvas canvas in allCanvases)
+        {
+            if (canvas.renderMode == RenderMode.ScreenSpaceOverlay)
+            {
+                mainCanvas = canvas;
+                Debug.Log($"Found main Canvas: {canvas.name}");
+                break;
+            }
+        }
+        
+        if (mainCanvas == null)
+        {
+            Debug.LogError("No Canvas found! Cannot create inventory system.");
+            return;
+        }
+
+        // Look for InventoryPanel as child of Canvas
+        GameObject inventoryPanel = null;
+        for (int i = 0; i < mainCanvas.transform.childCount; i++)
+        {
+            var child = mainCanvas.transform.GetChild(i);
+            if (child.name == "InventoryPanel")
+            {
+                inventoryPanel = child.gameObject;
+                Debug.Log($"Found InventoryPanel as child of Canvas: {child.name}");
+                break;
+            }
+        }
+        
+        if (inventoryPanel == null)
+        {
+            Debug.LogWarning("InventoryPanel not found as Canvas child. Creating new InventoryPanel...");
+            inventoryPanel = CreateInventoryPanel(mainCanvas.gameObject);
+        }
+
+        // Add InventoryUI component to the inventory panel
+        Debug.Log($"Adding InventoryUI component to panel: {inventoryPanel.name}");
+        var inventoryUI = inventoryPanel.AddComponent<InventoryUI>();
+        
+        if (inventoryUI == null)
+        {
+            Debug.LogError("Failed to add InventoryUI component!");
+            return;
+        }
+        
+        Debug.Log("InventoryUI component added successfully, configuring settings...");
+        
+        // Configure inventory settings
+        inventoryUI.MaxSlots = 20;
+        inventoryUI.SlotSize = new Vector2(64, 64);
+        inventoryUI.SlotSpacing = new Vector2(8, 8);
+        inventoryUI.SlotsPerRow = 5;
+        inventoryUI.InventoryContainer = inventoryPanel.transform;
+        inventoryUI.ShowPlaceholderIcons = true;
+        inventoryUI.PlaceholderColor = Color.gray;
+        
+        Debug.Log("InventoryUI settings configured successfully");
+
+        Debug.Log("InventoryUI component added to InventoryPanel");
+        Debug.Log("- 20 inventory slots in 4x5 grid layout");
+        Debug.Log("- Placeholder icons for different item types");
+        Debug.Log("- Network integration for server inventory data");
+        Debug.Log("- Opens/closes with 'I' key (handled by UIManager)");
+        
+        Debug.Log("Inventory System setup complete");
+    }
+    
+    private GameObject CreateInventoryPanel(GameObject canvasObj)
+    {
+        Debug.Log("Creating new InventoryPanel...");
+        
+        // Create inventory panel
+        GameObject inventoryPanel = new GameObject("InventoryPanel");
+        inventoryPanel.transform.SetParent(canvasObj.transform, false);
+        
+        // Add Image component for background - dark box style
+        var image = inventoryPanel.AddComponent<UnityEngine.UI.Image>();
+        image.color = new Color(0.2f, 0.2f, 0.2f, 0.85f);
+        image.raycastTarget = true;
+        
+        // Set up RectTransform for positioning (right side of screen)
+        var rectTransform = inventoryPanel.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.75f, 0.25f);
+        rectTransform.anchorMax = new Vector2(0.98f, 0.85f);
+        rectTransform.anchoredPosition = Vector2.zero;
+        rectTransform.sizeDelta = Vector2.zero;
+        rectTransform.offsetMin = Vector2.zero;
+        rectTransform.offsetMax = Vector2.zero;
+        
+        // Add title text
+        GameObject titleObj = new GameObject("Title");
+        titleObj.transform.SetParent(inventoryPanel.transform, false);
+        var titleText = titleObj.AddComponent<UnityEngine.UI.Text>();
+        titleText.text = "INVENTORY";
+        titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        titleText.fontSize = 20;
+        titleText.color = Color.white;
+        titleText.alignment = TextAnchor.MiddleCenter;
+        titleText.fontStyle = FontStyle.Bold;
+        
+        var titleRect = titleObj.GetComponent<RectTransform>();
+        titleRect.anchorMin = new Vector2(0, 0.85f);
+        titleRect.anchorMax = new Vector2(1, 1f);
+        titleRect.anchoredPosition = Vector2.zero;
+        titleRect.sizeDelta = Vector2.zero;
+        
+        // Start with panel hidden
+        inventoryPanel.SetActive(false);
+        
+        Debug.Log("InventoryPanel created successfully");
+        return inventoryPanel;
+    }
+
     private GameObject CreateMainUIHealthSlider(GameObject parent)
     {
         Debug.Log($"[CreateMainUIHealthSlider] *** CREATING PLAYER HEALTH BAR *** with parent: {parent.name}");
@@ -1812,6 +1880,7 @@ public class AutoSceneSetupEditor : Editor
             "• EnemyNetworkManager for server-synchronized enemies\n" +
             "• Health Bar System (enemy health bars + player health UI)\n" +
             "• Level Up System (animated banner + audio manager)\n" +
+            "• Inventory System (20 slots with placeholder icons)\n" +
             "• (Optional) Local test enemy for debugging", 
             MessageType.Info);
     }
