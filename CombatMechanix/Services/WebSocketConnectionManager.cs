@@ -1096,6 +1096,19 @@ namespace CombatMechanix.Services
             }
         }
 
+        public async Task SendToPlayer(string playerId, string messageType, object data)
+        {
+            var connection = _connections.Values.FirstOrDefault(conn => conn.PlayerId == playerId);
+            if (connection != null)
+            {
+                await SendToConnection(connection.ConnectionId, messageType, data);
+            }
+            else
+            {
+                _logger.LogWarning($"Cannot send message to player {playerId} - not connected");
+            }
+        }
+
         public async Task BroadcastToAll(string messageType, object data)
         {
             var tasks = _connections.Values.Select(conn => SendToConnection(conn.ConnectionId, messageType, data));

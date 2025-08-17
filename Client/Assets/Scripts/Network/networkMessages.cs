@@ -185,6 +185,32 @@ public class NetworkMessages
         public string ErrorMessage { get; set; } = string.Empty;
         public PlayerStatsUpdateMessage PlayerStats { get; set; } = new();
     }
+
+    // Loot drop system messages
+    public class LootDropMessage
+    {
+        public string LootId { get; set; } = string.Empty; // Unique identifier for this loot drop
+        public InventoryItem Item { get; set; } = new(); // The item that was dropped
+        public Vector3Data Position { get; set; } = new(); // World position where loot appears
+        public string SourceEnemyId { get; set; } = string.Empty; // Enemy that dropped this loot
+        public long Timestamp { get; set; } // When the loot was dropped
+    }
+
+    public class LootPickupRequestMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public string LootId { get; set; } = string.Empty; // ID of the loot to pick up
+        public Vector3Data PlayerPosition { get; set; } = new(); // Player position for range validation
+    }
+
+    public class LootPickupResponseMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public string LootId { get; set; } = string.Empty;
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty; // Success message or error reason
+        public InventoryItem Item { get; set; } = new(); // The item that was picked up (null if failed)
+    }
 }
 
 public class PlayerState
