@@ -3,9 +3,9 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 
 /// <summary>
-/// Individual inventory slot that can hold an item and handle clicks
+/// Individual inventory slot that can hold an item and handle clicks and hover events
 /// </summary>
-public class InventorySlot : MonoBehaviour, IPointerClickHandler
+public class InventorySlot : MonoBehaviour, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler
 {
     [Header("Slot Properties")]
     public int SlotIndex = -1;
@@ -27,6 +27,8 @@ public class InventorySlot : MonoBehaviour, IPointerClickHandler
     // Events
     public System.Action<int, InventoryItem> OnSlotClicked;
     public System.Action<int, InventoryItem> OnSlotRightClicked;
+    public System.Action<int, InventoryItem> OnSlotHoverEnter;
+    public System.Action<int, InventoryItem> OnSlotHoverExit;
     
     private void Awake()
     {
@@ -213,5 +215,26 @@ public class InventorySlot : MonoBehaviour, IPointerClickHandler
         }
         
         return false;
+    }
+    
+    /// <summary>
+    /// Handle mouse enter hover event
+    /// </summary>
+    public void OnPointerEnter(PointerEventData eventData)
+    {
+        // Only trigger hover if slot has an item
+        if (_isOccupied && _currentItem != null)
+        {
+            OnSlotHoverEnter?.Invoke(SlotIndex, _currentItem);
+        }
+    }
+    
+    /// <summary>
+    /// Handle mouse exit hover event
+    /// </summary>
+    public void OnPointerExit(PointerEventData eventData)
+    {
+        // Always trigger hover exit to hide details panel
+        OnSlotHoverExit?.Invoke(SlotIndex, _currentItem);
     }
 }
