@@ -1,5 +1,6 @@
 using CombatMechanix.Services;
 using CombatMechanix.Data;
+using CombatMechanix.AI;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,6 +8,47 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<WebSocketConnectionManager>();
 builder.Services.AddSingleton<EnemyManager>();
 builder.Services.AddSingleton<LootManager>();
+builder.Services.AddSingleton<EnemyAIManager>(serviceProvider =>
+{
+    var logger = serviceProvider.GetRequiredService<ILogger<EnemyAIManager>>();
+    var connectionManager = serviceProvider.GetRequiredService<WebSocketConnectionManager>();
+    var enemyManager = serviceProvider.GetRequiredService<EnemyManager>();
+    
+    // Create delegate functions for AI manager to access enemy/player data
+    var getEnemiesFunc = new Func<Task<List<CombatMechanix.Models.EnemyState>>>(async () => 
+    {
+        return enemyManager.GetAllEnemies();
+    });
+    
+    var getPlayersFunc = new Func<Task<List<CombatMechanix.Models.PlayerState>>>(async () => 
+    {
+        // This would be replaced with actual player service integration
+        var activePlayers = new List<CombatMechanix.Models.PlayerState>();
+        foreach (var connection in connectionManager.GetAllConnections())
+        {
+            if (!string.IsNullOrEmpty(connection.PlayerId))
+            {
+                var playerState = new CombatMechanix.Models.PlayerState
+                {
+                    PlayerId = connection.PlayerId,
+                    PlayerName = connection.PlayerName ?? "Unknown",
+                    Position = connection.LastPosition ?? new CombatMechanix.Models.Vector3Data(),
+                    IsOnline = true,
+                    LastUpdate = DateTime.UtcNow
+                };
+                activePlayers.Add(playerState);
+            }
+        }
+        return activePlayers;
+    });
+    
+    var getEnemyFunc = new Func<string, CombatMechanix.Models.EnemyState?>(enemyId => 
+    {
+        return enemyManager.GetEnemy(enemyId);
+    });
+    
+    return new EnemyAIManager(logger, connectionManager, getEnemiesFunc, getPlayersFunc, getEnemyFunc);
+});
 builder.Services.AddScoped<IPlayerStatsRepository, SqlPlayerStatsRepository>();
 builder.Services.AddScoped<IPlayerStatsService, PlayerStatsService>();
 builder.Services.AddScoped<IItemRepository, ItemRepository>();
@@ -48,15 +90,17 @@ using (var scope = app.Services.CreateScope())
 var enemyManager = app.Services.GetRequiredService<EnemyManager>();
 var wsManager = app.Services.GetRequiredService<WebSocketConnectionManager>();
 var lootManager = app.Services.GetRequiredService<LootManager>();
+var aiManager = app.Services.GetRequiredService<EnemyAIManager>();
 
 // Wire up dependencies
 wsManager.SetEnemyManager(enemyManager);
 wsManager.SetLootManager(lootManager);
 enemyManager.SetLootManager(lootManager);
+enemyManager.SetAIManager(aiManager);
 
 // Initialize default content
 enemyManager.InitializeDefaultEnemies();
-app.Logger.LogInformation("Enemy and loot systems initialized");
+app.Logger.LogInformation("Enemy, loot, and AI systems initialized");
 
 // Configure the HTTP request pipeline
 app.UseCors("AllowUnityClient");

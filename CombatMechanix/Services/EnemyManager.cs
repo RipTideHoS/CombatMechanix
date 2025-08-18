@@ -1,4 +1,5 @@
 using CombatMechanix.Models;
+using CombatMechanix.AI;
 using System.Collections.Concurrent;
 
 namespace CombatMechanix.Services
@@ -14,6 +15,7 @@ namespace CombatMechanix.Services
         private readonly ILogger<EnemyManager> _logger;
         private readonly Timer _updateTimer;
         private LootManager? _lootManager;
+        private EnemyAIManager? _aiManager;
         
         public EnemyManager(WebSocketConnectionManager connectionManager, ILogger<EnemyManager> logger)
         {
@@ -32,6 +34,14 @@ namespace CombatMechanix.Services
         public void SetLootManager(LootManager lootManager)
         {
             _lootManager = lootManager;
+        }
+
+        /// <summary>
+        /// Set the AI manager reference (called after both services are initialized)
+        /// </summary>
+        public void SetAIManager(EnemyAIManager aiManager)
+        {
+            _aiManager = aiManager;
         }
 
         /// <summary>
@@ -58,6 +68,10 @@ namespace CombatMechanix.Services
             };
             
             _enemies.TryAdd(testEnemy.EnemyId, testEnemy);
+            
+            // Initialize AI for the enemy
+            _aiManager?.InitializeEnemyAI(testEnemy, "RandomWander");
+            
             _logger.LogInformation($"Spawned enemy: {testEnemy.EnemyName} (ID: {testEnemy.EnemyId}) at position ({testEnemy.Position.X}, {testEnemy.Position.Y}, {testEnemy.Position.Z})");
             
             // Could add more default enemies here
@@ -92,6 +106,10 @@ namespace CombatMechanix.Services
                 };
 
                 _enemies.TryAdd(enemy.EnemyId, enemy);
+                
+                // Initialize AI for each additional enemy
+                _aiManager?.InitializeEnemyAI(enemy, "RandomWander");
+                
                 _logger.LogInformation($"Spawned enemy: {enemy.EnemyName} (ID: {enemy.EnemyId}) Level {enemy.Level}");
             }
         }
@@ -152,6 +170,13 @@ namespace CombatMechanix.Services
             enemy.LastUpdate = DateTime.UtcNow;
 
             _logger.LogInformation($"Enemy {enemy.EnemyName} (ID: {enemyId}) took {damage} damage. Health: {enemy.Health}/{enemy.MaxHealth}");
+
+            // Notify AI system about damage taken
+            if (_aiManager != null)
+            {
+                var aiContext = await BuildAIWorldContext();
+                await _aiManager.OnEnemyDamaged(enemy, damage, attackerId, aiContext);
+            }
 
             // Check for death
             if (enemy.Health <= 0 && enemy.IsAlive)
@@ -331,9 +356,62 @@ namespace CombatMechanix.Services
             return distance <= maxAttackRange;
         }
 
+        /// <summary>
+        /// Build AI world context for AI decision making
+        /// </summary>
+        private async Task<AIWorldContext> BuildAIWorldContext()
+        {
+            var context = new AIWorldContext
+            {
+                CurrentTime = DateTime.UtcNow,
+                ActivePlayers = await GetActivePlayersForAI(),
+                OtherEnemies = GetAllEnemies()
+            };
+            
+            return context;
+        }
+        
+        /// <summary>
+        /// Get active players for AI context (will need to integrate with player service)
+        /// </summary>
+        private async Task<List<PlayerState>> GetActivePlayersForAI()
+        {
+            // For now, get from connection manager
+            var activePlayers = new List<PlayerState>();
+            
+            foreach (var connection in _connectionManager.GetAllConnections())
+            {
+                if (!string.IsNullOrEmpty(connection.PlayerId))
+                {
+                    // Create basic player state for AI context
+                    // In full implementation, this would come from PlayerStatsService
+                    var playerState = new PlayerState
+                    {
+                        PlayerId = connection.PlayerId,
+                        PlayerName = connection.PlayerName ?? "Unknown",
+                        Position = connection.LastPosition ?? new Vector3Data(),
+                        IsOnline = true,
+                        LastUpdate = DateTime.UtcNow
+                    };
+                    activePlayers.Add(playerState);
+                }
+            }
+            
+            return activePlayers;
+        }
+        
+        /// <summary>
+        /// Remove AI when enemy dies permanently
+        /// </summary>
+        private void RemoveEnemyAI(string enemyId)
+        {
+            _aiManager?.RemoveEnemyAI(enemyId);
+        }
+
         public void Dispose()
         {
             _updateTimer?.Dispose();
+            _aiManager?.Dispose();
             _logger.LogInformation("EnemyManager disposed");
         }
     }

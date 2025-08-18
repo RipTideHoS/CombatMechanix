@@ -202,6 +202,10 @@ namespace CombatMechanix.Services
                 player.Velocity = movementData.Velocity;
                 player.Rotation = movementData.Rotation;
                 player.LastUpdate = DateTime.UtcNow;
+                
+                // Also update the connection's LastPosition for AI access
+                connection.LastPosition = movementData.Position;
+                connection.PlayerName = player.PlayerName;
 
                 // Persist position to database periodically (every 5 seconds)
                 var timeSinceLastUpdate = DateTime.UtcNow - player.LastUpdate;
@@ -1426,6 +1430,14 @@ namespace CombatMechanix.Services
 
             return items;
         }
+        
+        /// <summary>
+        /// Get all active connections
+        /// </summary>
+        public IEnumerable<WebSocketConnection> GetAllConnections()
+        {
+            return _connections.Values.Where(c => c.WebSocket.State == WebSocketState.Open);
+        }
     }
 
     public class WebSocketConnection
@@ -1434,6 +1446,8 @@ namespace CombatMechanix.Services
         public WebSocket WebSocket { get; }
         public DateTime ConnectedAt { get; }
         public string? PlayerId { get; set; }
+        public string? PlayerName { get; set; }
+        public Vector3Data? LastPosition { get; set; }
 
         public WebSocketConnection(string connectionId, WebSocket webSocket)
         {
