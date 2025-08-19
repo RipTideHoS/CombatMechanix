@@ -25,15 +25,67 @@ public class ClientPlayerStats : MonoBehaviour
     public static event Action<int, int> OnHealthChanged; // (newHealth, healthChange)
     public static event Action<long, string> OnExperienceGained; // (experience, source)
 
+    private void Awake()
+    {
+        Debug.Log("[CLIENT] ClientPlayerStats Awake() called");
+    }
+
     private void Start()
     {
-        // Subscribe to network events
-        NetworkManager.OnPlayerStatsUpdate += HandlePlayerStatsUpdate;
-        NetworkManager.OnLevelUp += HandleLevelUp;
-        NetworkManager.OnHealthChange += HandleHealthChange;
-        NetworkManager.OnExperienceGain += HandleExperienceGain;
+        Debug.Log("[CLIENT] ClientPlayerStats Start() called");
+        // Delay the subscription to ensure NetworkManager is ready
+        StartCoroutine(InitializeWithDelay());
+    }
+    
+    private System.Collections.IEnumerator InitializeWithDelay()
+    {
+        Debug.Log("[CLIENT] InitializeWithDelay started");
+        
+        // Wait a few frames to ensure all components are initialized
+        yield return new WaitForEndOfFrame();
+        yield return new WaitForEndOfFrame();
+        
+        Debug.Log("[CLIENT] Looking for NetworkManager...");
+        
+        // Find NetworkManager and subscribe to events
+        var networkManager = FindObjectOfType<NetworkManager>();
+        Debug.Log($"[CLIENT] NetworkManager found: {networkManager != null}");
+        
+        if (networkManager != null)
+        {
+            Debug.Log("[CLIENT] NetworkManager found, subscribing to events");
+            
+            NetworkManager.OnPlayerStatsUpdate += HandlePlayerStatsUpdate;
+            NetworkManager.OnLevelUp += HandleLevelUp;
+            NetworkManager.OnHealthChange += HandleHealthChange;
+            NetworkManager.OnExperienceGain += HandleExperienceGain;
 
-        Debug.Log("ClientPlayerStats initialized and subscribed to network events");
+            Debug.Log("[CLIENT] ClientPlayerStats initialized and subscribed to network events");
+            Debug.Log($"[CLIENT] Local Player ID: {GameManager.Instance?.LocalPlayerId}");
+        }
+        else
+        {
+            Debug.LogError("[CLIENT] NetworkManager not found! ClientPlayerStats events not subscribed");
+            
+            // Try a different approach - wait longer and retry
+            yield return new WaitForSeconds(1f);
+            Debug.Log("[CLIENT] Retrying NetworkManager search after 1 second...");
+            
+            networkManager = FindObjectOfType<NetworkManager>();
+            if (networkManager != null)
+            {
+                Debug.Log("[CLIENT] NetworkManager found on retry!");
+                NetworkManager.OnPlayerStatsUpdate += HandlePlayerStatsUpdate;
+                NetworkManager.OnLevelUp += HandleLevelUp;
+                NetworkManager.OnHealthChange += HandleHealthChange;
+                NetworkManager.OnExperienceGain += HandleExperienceGain;
+                Debug.Log("[CLIENT] Successfully subscribed on retry");
+            }
+            else
+            {
+                Debug.LogError("[CLIENT] NetworkManager still not found after retry!");
+            }
+        }
     }
 
     private void OnDestroy()
@@ -91,19 +143,35 @@ public class ClientPlayerStats : MonoBehaviour
 
     private void HandleHealthChange(NetworkMessages.HealthChangeMessage healthChange)
     {
-        Debug.Log($"Health changed by {healthChange.HealthChange} to {healthChange.NewHealth} from {healthChange.Source}");
+        Debug.Log($"[CLIENT] HandleHealthChange called: PlayerId={healthChange.PlayerId}, Health changed by {healthChange.HealthChange} to {healthChange.NewHealth} from {healthChange.Source}");
+        
+        // Check if this health change is for the local player
+        var gameManager = GameManager.Instance;
+        if (gameManager == null || gameManager.LocalPlayerId != healthChange.PlayerId)
+        {
+            Debug.Log($"[CLIENT] HealthChange not for local player. Local={gameManager?.LocalPlayerId}, Message={healthChange.PlayerId}");
+            return; // This health change is not for us
+        }
+        
+        Debug.Log($"[CLIENT] Current Health before change: {Health}");
         
         int oldHealth = Health;
         Health = healthChange.NewHealth;
+        
+        Debug.Log($"[CLIENT] Health updated from {oldHealth} to {Health}");
 
         // Trigger health change event
+        Debug.Log($"[CLIENT] About to invoke OnHealthChanged static event. Subscribers: {OnHealthChanged?.GetInvocationList()?.Length ?? 0}");
         OnHealthChanged?.Invoke(Health, healthChange.HealthChange);
+        Debug.Log($"[CLIENT] OnHealthChanged static event invoked");
 
         // Update UI
-        var uiManager = GameManager.Instance?.UIManager;
+        var uiManager = gameManager.UIManager;
+        Debug.Log($"[CLIENT] UIManager found: {uiManager != null}");
         if (uiManager != null)
         {
             uiManager.UpdateHealth(healthChange.HealthChange);
+            Debug.Log($"[CLIENT] Called UIManager.UpdateHealth({healthChange.HealthChange})");
         }
 
         // Show damage/healing effects
@@ -115,8 +183,11 @@ public class ClientPlayerStats : MonoBehaviour
             if (uiManager != null)
             {
                 uiManager.ShowNotification($"{effectText} HP", effectColor);
+                Debug.Log($"[CLIENT] Called UIManager.ShowNotification(\"{effectText} HP\")");
             }
         }
+        
+        Debug.Log($"[CLIENT] HandleHealthChange completed");
     }
 
     private void HandleExperienceGain(NetworkMessages.ExperienceGainMessage expGain)
@@ -198,7 +269,7 @@ public class ClientPlayerStats : MonoBehaviour
     {
         if (!ShowDebugStats) return;
 
-        GUILayout.BeginArea(new Rect(10, 100, 300, 200));
+        GUILayout.BeginArea(new Rect(10, 100, 300, 300));
         GUILayout.BeginVertical("box");
         
         GUILayout.Label("Player Stats (Server Authoritative)");
@@ -215,14 +286,22 @@ public class ClientPlayerStats : MonoBehaviour
             TestExperienceGain(50, "GUI Test");
         }
         
-        if (GUILayout.Button("Test -10 Health"))
-        {
-            TestHealthChange(-10, "GUI Test");
-        }
-        
         if (GUILayout.Button("Test +5 Health"))
         {
             TestHealthChange(5, "GUI Test");
+        }
+        
+        if (GUILayout.Button("Test Event Subscription"))
+        {
+            Debug.Log("[CLIENT] Testing if HandleHealthChange method works...");
+            var testMessage = new NetworkMessages.HealthChangeMessage
+            {
+                PlayerId = GameManager.Instance?.LocalPlayerId ?? "test",
+                NewHealth = 95,
+                HealthChange = -5,
+                Source = "Manual Test"
+            };
+            HandleHealthChange(testMessage);
         }
         
         GUILayout.EndVertical();

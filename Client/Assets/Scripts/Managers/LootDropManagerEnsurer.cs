@@ -19,7 +19,7 @@ public class LootDropManagerEnsurer : MonoBehaviour
     {
         if (EnableDebugLogging)
         {
-            Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Starting LootDropManager diagnostics");
+            // Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Starting LootDropManager diagnostics");
         }
         
         // Initial check
@@ -40,7 +40,7 @@ public class LootDropManagerEnsurer : MonoBehaviour
     {
         if (EnableDebugLogging)
         {
-            Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Checking for LootDropManager component");
+            // Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Checking for LootDropManager component");
         }
         
         // Look for LootDropManager in the scene
@@ -50,7 +50,7 @@ public class LootDropManagerEnsurer : MonoBehaviour
         {
             if (EnableDebugLogging)
             {
-                Debug.LogWarning($"[LootDropManagerEnsurer] *** LOOT DEBUG *** LootDropManager not found in scene!");
+                // Debug.LogWarning($"[LootDropManagerEnsurer] *** LOOT DEBUG *** LootDropManager not found in scene!");
             }
             
             if (AutoCreateIfMissing)
@@ -62,9 +62,9 @@ public class LootDropManagerEnsurer : MonoBehaviour
         {
             if (EnableDebugLogging)
             {
-                Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** LootDropManager found: {_lootDropManager.name}");
-                Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Component enabled: {_lootDropManager.enabled}");
-                Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** GameObject active: {_lootDropManager.gameObject.activeInHierarchy}");
+                // Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** LootDropManager found: {_lootDropManager.name}");
+                // Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Component enabled: {_lootDropManager.enabled}");
+                // Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** GameObject active: {_lootDropManager.gameObject.activeInHierarchy}");
             }
             
             if (ForceSubscriptionCheck)
@@ -76,7 +76,7 @@ public class LootDropManagerEnsurer : MonoBehaviour
                 }
                 catch (System.Exception ex)
                 {
-                    Debug.LogError($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Error calling CheckAndForceSubscription: {ex.Message}");
+                    // Debug.LogError($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Error calling CheckAndForceSubscription: {ex.Message}");
                 }
             }
         }
@@ -89,7 +89,7 @@ public class LootDropManagerEnsurer : MonoBehaviour
     {
         if (EnableDebugLogging)
         {
-            Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Attempting to create LootDropManager component");
+            // Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Attempting to create LootDropManager component");
         }
         
         // Look for GameManager first
@@ -99,7 +99,7 @@ public class LootDropManagerEnsurer : MonoBehaviour
             // Create a dedicated GameObject for LootDropManager
             if (EnableDebugLogging)
             {
-                Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** GameManager not found, creating dedicated LootDropManager GameObject");
+                // Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** GameManager not found, creating dedicated LootDropManager GameObject");
             }
             
             gameManagerObj = new GameObject("LootDropManager_Fallback");
@@ -115,17 +115,17 @@ public class LootDropManagerEnsurer : MonoBehaviour
             {
                 if (EnableDebugLogging)
                 {
-                    Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** LootDropManager component created successfully!");
+                    // Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** LootDropManager component created successfully!");
                 }
             }
             else
             {
-                Debug.LogError($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Failed to create LootDropManager component!");
+                // Debug.LogError($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Failed to create LootDropManager component!");
             }
         }
         catch (System.Exception ex)
         {
-            Debug.LogError($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Exception creating LootDropManager: {ex.Message}");
+            // Debug.LogError($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Exception creating LootDropManager: {ex.Message}");
         }
     }
     
@@ -139,7 +139,7 @@ public class LootDropManagerEnsurer : MonoBehaviour
             {
                 if (EnableDebugLogging)
                 {
-                    Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** NetworkManager found: {networkManager.name}");
+                    // Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** NetworkManager found: {networkManager.name}");
                 }
                 
                 // Check OnLootDrop event subscriber count
@@ -151,12 +151,12 @@ public class LootDropManagerEnsurer : MonoBehaviour
                     
                     if (EnableDebugLogging)
                     {
-                        Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** NetworkManager.OnLootDrop has {subscriberCount} subscribers");
+                        // Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** NetworkManager.OnLootDrop has {subscriberCount} subscribers");
                     }
                     
                     if (subscriberCount == 0 && _lootDropManager != null)
                     {
-                        Debug.LogWarning($"[LootDropManagerEnsurer] *** LOOT DEBUG *** No subscribers to OnLootDrop event, but LootDropManager exists!");
+                        // Debug.LogWarning($"[LootDropManagerEnsurer] *** LOOT DEBUG *** No subscribers to OnLootDrop event, but LootDropManager exists!");
                     }
                 }
             }
@@ -164,13 +164,13 @@ public class LootDropManagerEnsurer : MonoBehaviour
             {
                 if (EnableDebugLogging)
                 {
-                    Debug.LogWarning($"[LootDropManagerEnsurer] *** LOOT DEBUG *** NetworkManager not found in scene!");
+                    // Debug.LogWarning($"[LootDropManagerEnsurer] *** LOOT DEBUG *** NetworkManager not found in scene!");
                 }
             }
         }
         catch (System.Exception ex)
         {
-            Debug.LogError($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Error checking NetworkManager events: {ex.Message}");
+            // Debug.LogError($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Error checking NetworkManager events: {ex.Message}");
         }
     }
     
@@ -181,7 +181,7 @@ public class LootDropManagerEnsurer : MonoBehaviour
     [ContextMenu("Force Create LootDropManager")]
     public void ForceCreateLootDropManager()
     {
-        Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** ForceCreateLootDropManager called manually");
+        // Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** ForceCreateLootDropManager called manually");
         CreateLootDropManager();
         CheckLootDropManager();
     }
@@ -192,7 +192,7 @@ public class LootDropManagerEnsurer : MonoBehaviour
     [ContextMenu("Check Subscription Status")]
     public void CheckSubscriptionStatus()
     {
-        Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Manual subscription status check");
+        // Debug.Log($"[LootDropManagerEnsurer] *** LOOT DEBUG *** Manual subscription status check");
         CheckLootDropManager();
     }
 }

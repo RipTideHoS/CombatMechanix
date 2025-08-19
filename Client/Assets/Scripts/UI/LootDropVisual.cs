@@ -27,48 +27,48 @@ public class LootDropVisual : MonoBehaviour
     /// </summary>
     public void Initialize(NetworkMessages.LootDropMessage lootData, LootDropManager lootManager)
     {
-        Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Initialize called");
+        // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Initialize called");
         
         // Validate input parameters
         if (lootData == null)
         {
-            Debug.LogError($"[LootDropVisual] *** LOOT DEBUG *** Initialize called with null lootData!");
+            // Debug.LogError($"[LootDropVisual] *** LOOT DEBUG *** Initialize called with null lootData!");
             return;
         }
         
         if (lootManager == null)
         {
-            Debug.LogError($"[LootDropVisual] *** LOOT DEBUG *** Initialize called with null lootManager!");
+            // Debug.LogError($"[LootDropVisual] *** LOOT DEBUG *** Initialize called with null lootManager!");
             return;
         }
         
-        Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Parameters valid, setting up visual");
+        // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Parameters valid, setting up visual");
         
         _lootData = lootData;
         _lootManager = lootManager;
         _basePosition = transform.position;
         
-        Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Base position set to: {_basePosition}");
-        Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** GameObject active state: {gameObject.activeInHierarchy}");
-        Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Transform position: {transform.position}");
+        // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Base position set to: {_basePosition}");
+        // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** GameObject active state: {gameObject.activeInHierarchy}");
+        // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Transform position: {transform.position}");
         
         // Get renderer for color changes
-        Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Looking for Renderer component");
+        // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Looking for Renderer component");
         _renderer = GetComponent<Renderer>();
         if (_renderer != null)
         {
-            Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Renderer found, setting up colors");
+            // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Renderer found, setting up colors");
             _originalColor = _renderer.material.color;
             _highlightColor = _originalColor * 1.3f; // Brighter version for highlight
-            Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Original color: {_originalColor}, Highlight color: {_highlightColor}");
+            // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Original color: {_originalColor}, Highlight color: {_highlightColor}");
         }
         else
         {
-            Debug.LogWarning($"[LootDropVisual] *** LOOT DEBUG *** No Renderer component found on {gameObject.name}!");
+            // Debug.LogWarning($"[LootDropVisual] *** LOOT DEBUG *** No Renderer component found on {gameObject.name}!");
         }
 
-        Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Initialization completed successfully for: {_lootData.Item.ItemName} (ID: {_lootData.LootId})");
-        Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Final object state - Active: {gameObject.activeInHierarchy}, Position: {transform.position}, BobSpeed access: {_lootManager.BobSpeed}");
+        // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Initialization completed successfully for: {_lootData.Item.ItemName} (ID: {_lootData.LootId})");
+        // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Final object state - Active: {gameObject.activeInHierarchy}, Position: {transform.position}, BobSpeed access: {_lootManager.BobSpeed}");
     }
 
     private void Update()
@@ -87,20 +87,20 @@ public class LootDropVisual : MonoBehaviour
     /// </summary>
     private void OnMouseEnter()
     {
-        Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** OnMouseEnter triggered for: {_lootData?.Item?.ItemName ?? "NULL"}");
+        // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** OnMouseEnter triggered for: {_lootData?.Item?.ItemName ?? "NULL"}");
         
         if (!_isHighlighted && _renderer != null)
         {
-            Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Applying highlight effect");
+            // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Applying highlight effect");
             _isHighlighted = true;
             _renderer.material.color = _highlightColor;
             
             // Show tooltip/info (placeholder for now)
-            Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Hovering over: {_lootData.Item.ItemName} ({_lootData.Item.Rarity})");
+            // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Hovering over: {_lootData.Item.ItemName} ({_lootData.Item.Rarity})");
         }
         else
         {
-            Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Highlight not applied - Already highlighted: {_isHighlighted}, Renderer available: {_renderer != null}");
+            // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Highlight not applied - Already highlighted: {_isHighlighted}, Renderer available: {_renderer != null}");
         }
     }
 
@@ -121,16 +121,16 @@ public class LootDropVisual : MonoBehaviour
     /// </summary>
     private void OnMouseDown()
     {
-        Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** OnMouseDown triggered for: {_lootData?.Item?.ItemName ?? "NULL"}");
+        // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** OnMouseDown triggered for: {_lootData?.Item?.ItemName ?? "NULL"}");
         
         if (_lootManager != null)
         {
-            Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** LootManager available, calling AttemptPickup for ID: {_lootData.LootId}");
+            // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** LootManager available, calling AttemptPickup for ID: {_lootData.LootId}");
             _lootManager.AttemptPickup(_lootData.LootId);
         }
         else
         {
-            Debug.LogError($"[LootDropVisual] *** LOOT DEBUG *** LootManager reference is null!");
+            // Debug.LogError($"[LootDropVisual] *** LOOT DEBUG *** LootManager reference is null!");
         }
     }
 

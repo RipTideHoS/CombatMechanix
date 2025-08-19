@@ -51,8 +51,11 @@ public class AutoSceneSetup : MonoBehaviour
             CreateGroundPlane();
 
         // 4. Create Player GameObject
+        Debug.Log($"*** AUTO SCENE SETUP *** CreatePlayer flag is: {CreatePlayer}");
         if (CreatePlayer)
             CreateLocalPlayer();
+        else
+            Debug.Log("*** AUTO SCENE SETUP *** Skipping player creation (CreatePlayer = false)");
 
         // 5. Setup Camera position
         if (SetupCamera)
@@ -77,11 +80,17 @@ public class AutoSceneSetup : MonoBehaviour
         if (SetupHealthBarSystem)
             SetupHealthBarSystemComponents();
 
+        // 10.5. Setup Simple Player Health Bar (NEW IMPLEMENTATION)
+        SetupSimplePlayerHealthBar();
+
         // 11. Setup Level Up Banner and Audio System
         SetupLevelUpSystem();
 
         // 12. Setup Inventory System
         SetupInventorySystem();
+
+        // 13. Setup Player Stats Panel (under inventory)
+        SetupPlayerStatsPanel();
 
         Debug.Log("=== Auto Scene Setup Complete ===");
         Debug.Log("Objects created successfully! Check the Hierarchy for new GameObjects.");
@@ -295,10 +304,25 @@ public class AutoSceneSetup : MonoBehaviour
 
     private void CreateLocalPlayer()
     {
+        Debug.Log("*** AUTO SCENE SETUP *** CreateLocalPlayer() called");
+        
         // Check if LocalPlayer already exists
-        if (GameObject.Find("LocalPlayer") != null)
+        var existingPlayer = GameObject.Find("LocalPlayer");
+        if (existingPlayer != null)
         {
-            Debug.Log("LocalPlayer already exists in scene");
+            Debug.Log($"*** AUTO SCENE SETUP *** LocalPlayer already exists in scene: {existingPlayer.name}");
+            
+            // Check if it has ClientPlayerStats
+            var existingStats = existingPlayer.GetComponent<ClientPlayerStats>();
+            if (existingStats == null)
+            {
+                Debug.Log("*** AUTO SCENE SETUP *** Adding missing ClientPlayerStats to existing LocalPlayer");
+                existingPlayer.AddComponent<ClientPlayerStats>();
+            }
+            else
+            {
+                Debug.Log("*** AUTO SCENE SETUP *** Existing LocalPlayer already has ClientPlayerStats");
+            }
             return;
         }
 
@@ -311,7 +335,9 @@ public class AutoSceneSetup : MonoBehaviour
         PlayerController playerController = player.AddComponent<PlayerController>();
         
         // Add the ClientPlayerStats component for server-authoritative stats
+        Debug.Log("*** AUTO SCENE SETUP *** About to add ClientPlayerStats component");
         ClientPlayerStats playerStats = player.AddComponent<ClientPlayerStats>();
+        Debug.Log($"*** AUTO SCENE SETUP *** ClientPlayerStats component added: {playerStats != null}");
         
         // Make the player blue so it's easily visible
         Renderer renderer = player.GetComponent<Renderer>();
@@ -667,16 +693,13 @@ public class AutoSceneSetup : MonoBehaviour
             SetupHealthBarManager(enemyHealthBarPrefab, playerHealthBarPrefab);
             Debug.Log("*** FINISHED CALLING SetupHealthBarManager ***");
 
-            // 4. Setup Player Health UI
-            Debug.Log("*** ABOUT TO CALL SetupPlayerHealthUI ***");
-            SetupPlayerHealthUI();
-            Debug.Log("*** FINISHED CALLING SetupPlayerHealthUI ***");
+            // 4. Setup Player Health UI - REMOVED (using SimplePlayerHealthBar instead)
 
             // 5. Connect to existing UI Manager
             ConnectHealthUIToUIManager();
 
             // 6. Add health bar debugger for testing
-            SetupHealthBarDebugger();
+            // HealthBarDebugger removed
 
             // 7. Add health bar tester for visibility debugging
             SetupHealthBarTester();
@@ -690,7 +713,7 @@ public class AutoSceneSetup : MonoBehaviour
             Debug.Log("- Enemy health bars will appear automatically above enemies");
             Debug.Log("- Player health bar is integrated into main UI");
             Debug.Log("- Health bars are performance optimized with pooling");
-            Debug.Log("- HealthBarDebugger added - press E to create test enemies, D to damage them");
+            // HealthBarDebugger removed
             Debug.Log("- EnemyDamageTextManager added - floating damage text with color coding");
             Debug.Log("- FloatingDamageTextTester added - press 1/2/3/4 keys to test damage text");
         }
@@ -968,187 +991,7 @@ public class AutoSceneSetup : MonoBehaviour
         Debug.Log($"- Player prefab name: {playerHealthBarPrefab.name}");
     }
 
-    private void SetupPlayerHealthUI()
-    {
-        Debug.Log("*** SETTING UP PLAYER HEALTH UI - START ***");
-
-        // Find the main Canvas (Screen Space Overlay only)
-        Canvas[] allCanvases = FindObjectsOfType<Canvas>();
-        Debug.Log($"[SetupPlayerHealthUI] Found {allCanvases.Length} canvases in scene:");
-        foreach (Canvas c in allCanvases)
-        {
-            Debug.Log($"  - Canvas: {c.name}, renderMode: {c.renderMode}, active: {c.gameObject.activeInHierarchy}, sortingOrder: {c.sortingOrder}");
-        }
-        
-        // Find the FIRST ScreenSpaceOverlay canvas, prioritizing the main UI canvas
-        Canvas mainCanvas = null;
-        foreach (Canvas c in allCanvases)
-        {
-            if (c.renderMode == RenderMode.ScreenSpaceOverlay && c.name == "Canvas")
-            {
-                mainCanvas = c;
-                Debug.Log($"[SetupPlayerHealthUI] Found main UI Canvas: {c.name}");
-                break;
-            }
-        }
-        
-        // If we didn't find the main "Canvas", take any ScreenSpaceOverlay canvas
-        if (mainCanvas == null)
-        {
-            foreach (Canvas c in allCanvases)
-            {
-                if (c.renderMode == RenderMode.ScreenSpaceOverlay)
-                {
-                    mainCanvas = c;
-                    Debug.Log($"[SetupPlayerHealthUI] Using fallback ScreenSpaceOverlay Canvas: {c.name}");
-                    break;
-                }
-            }
-        }
-        
-        if (mainCanvas == null)
-        {
-            Debug.LogError("*** EARLY RETURN: No ScreenSpaceOverlay Canvas found for Player Health UI! Player health bar will not be created.");
-            Debug.LogError("Available canvases and their render modes:");
-            foreach (Canvas c in allCanvases)
-            {
-                Debug.LogError($"  - {c.name}: {c.renderMode}");
-            }
-            return;
-        }
-        
-        Debug.Log($"[SetupPlayerHealthUI] Selected canvas: {mainCanvas.name} with renderMode: {mainCanvas.renderMode}, sortingOrder: {mainCanvas.sortingOrder}");
-
-        // Check if PlayerHealthUI already exists
-        if (FindObjectOfType<PlayerHealthUI>() != null)
-        {
-            Debug.LogError("*** EARLY RETURN: PlayerHealthUI already exists in scene");
-            return;
-        }
-
-        // Verify canvas is truly in ScreenSpaceOverlay mode before proceeding
-        if (mainCanvas.renderMode != RenderMode.ScreenSpaceOverlay)
-        {
-            Debug.LogError($"*** EARLY RETURN: Selected canvas {mainCanvas.name} is not in ScreenSpaceOverlay mode! RenderMode: {mainCanvas.renderMode}");
-            return;
-        }
-
-        Debug.Log($"Canvas validated - proceeding with player health UI creation on {mainCanvas.name}");
-
-        // Create Player Health UI container
-        Debug.Log("*** CREATING PlayerHealthUI CONTAINER ***");
-        GameObject playerHealthContainer = new GameObject("PlayerHealthUI");
-        playerHealthContainer.transform.SetParent(mainCanvas.transform, false);
-
-        // Set up the container's RectTransform to be properly sized and positioned
-        var containerRect = playerHealthContainer.GetComponent<RectTransform>();
-        if (containerRect == null)
-        {
-            containerRect = playerHealthContainer.AddComponent<RectTransform>();
-        }
-        
-        // Position the PlayerHealthUI container at bottom center for the health bar
-        containerRect.anchorMin = new Vector2(0.3f, 0.02f);
-        containerRect.anchorMax = new Vector2(0.7f, 0.08f);
-        containerRect.anchoredPosition = Vector2.zero;
-        containerRect.sizeDelta = Vector2.zero;
-
-        // Verify the container is parented correctly
-        Debug.Log($"PlayerHealthUI container created, parent: {playerHealthContainer.transform.parent?.name}");
-        Debug.Log($"Container anchors: {containerRect.anchorMin} to {containerRect.anchorMax}");
-        Debug.Log($"Container active: {playerHealthContainer.activeInHierarchy}");
-
-        // Add PlayerHealthUI component
-        var playerHealthUI = playerHealthContainer.AddComponent<PlayerHealthUI>();
-
-        // Create health slider for main UI
-        Debug.Log("*** ABOUT TO CALL CreateMainUIHealthSlider ***");
-        GameObject healthSliderObj = CreateMainUIHealthSlider(playerHealthContainer);
-        Debug.Log("*** FINISHED CALLING CreateMainUIHealthSlider ***");
-        
-        // Verify the health slider object was created
-        if (healthSliderObj == null)
-        {
-            Debug.LogError("Failed to create healthSliderObj in CreateMainUIHealthSlider!");
-            return;
-        }
-        
-        var healthSlider = healthSliderObj.GetComponent<UnityEngine.UI.Slider>();
-        var healthText = healthSliderObj.GetComponentInChildren<UnityEngine.UI.Text>();
-        
-        // Find the fill image and background image from the simplified structure
-        var healthFillImage = healthSliderObj.transform.Find("HealthFill")?.GetComponent<UnityEngine.UI.Image>();
-        var backgroundImage = healthSliderObj.transform.Find("InnerBackground")?.GetComponent<UnityEngine.UI.Image>();
-
-        // Verify components were created correctly
-        Debug.Log($"HealthSliderObj created: {healthSliderObj != null}");
-        Debug.Log($"Health slider component: {healthSlider != null}");
-        Debug.Log($"Health text component: {healthText != null}");
-        Debug.Log($"Health fill image component: {healthFillImage != null}");
-        
-        if (healthSlider == null)
-        {
-            Debug.LogError("HealthSlider component is null! Cannot configure PlayerHealthUI.");
-            return;
-        }
-
-        // Configure PlayerHealthUI component with correct field names
-        SetFieldValue(playerHealthUI, "HealthSlider", healthSlider);
-        SetFieldValue(playerHealthUI, "HealthText", healthText);
-        SetFieldValue(playerHealthUI, "HealthFillImage", healthFillImage);
-        SetFieldValue(playerHealthUI, "HealthBackgroundImage", backgroundImage);
-        SetFieldValue(playerHealthUI, "HealthBarContainer", playerHealthContainer);
-        
-        // Debug the field assignments
-        Debug.Log($"Setting HealthSlider: {healthSlider != null}");
-        Debug.Log($"Setting HealthText: {healthText != null}");
-        Debug.Log($"Setting HealthFillImage: {healthFillImage != null}");
-        Debug.Log($"Setting HealthBackgroundImage: {backgroundImage != null}");
-        SetFieldValue(playerHealthUI, "ShowAbovePlayer", false); // Disabled by default - use main UI only
-        SetFieldValue(playerHealthUI, "PlayerHealthBarPrefab", null); // Don't assign prefab to prevent world health bar
-        SetFieldValue(playerHealthUI, "AnimateHealthChanges", true);
-        SetFieldValue(playerHealthUI, "ShowDamageFlash", true);
-        SetFieldValue(playerHealthUI, "EnableLowHealthWarning", true);
-
-        Debug.Log("PlayerHealthUI created with main UI health bar - checking final hierarchy...");
-        Debug.Log($"Final hierarchy: Canvas->{playerHealthContainer.name}->{healthSliderObj.name}");
-        
-        // Safe access to healthSlider properties
-        if (healthSlider != null)
-        {
-            Debug.Log($"Health slider value: {healthSlider.value}, min: {healthSlider.minValue}, max: {healthSlider.maxValue}");
-        }
-        else
-        {
-            Debug.LogError("healthSlider is null, cannot log slider values");
-        }
-        
-        // Force the PlayerHealthUI to initialize immediately using reflection (since Start() hasn't been called yet)
-        var setupMethod = playerHealthUI.GetType().GetMethod("SetupUI", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        if (setupMethod != null)
-        {
-            setupMethod.Invoke(playerHealthUI, null);
-            Debug.Log("Forced PlayerHealthUI.SetupUI() call");
-        }
-        
-        var updateMethod = playerHealthUI.GetType().GetMethod("UpdateHealthDisplay", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        if (updateMethod != null)
-        {
-            updateMethod.Invoke(playerHealthUI, null);
-            Debug.Log("Forced PlayerHealthUI.UpdateHealthDisplay() call");
-        }
-        
-        // Verify that the health UI components are all active and visible
-        Debug.Log($"PlayerHealthContainer active: {playerHealthContainer.activeInHierarchy}");
-        Debug.Log($"HealthSlider active: {healthSliderObj.activeInHierarchy}");
-        Debug.Log($"Canvas render mode: {mainCanvas.renderMode}");
-        Debug.Log($"Canvas sorting order: {mainCanvas.sortingOrder}");
-        
-        // Position test confirmed - health bar components should be visible
-        
-        // Final verification
-        Debug.Log("=== PLAYER HEALTH UI SETUP COMPLETE ===");
-    }
+    // OLD SetupPlayerHealthUI method removed - using SimplePlayerHealthBar instead
 
     private void SetupLevelUpSystem()
     {
@@ -1248,6 +1091,197 @@ public class AutoSceneSetup : MonoBehaviour
         Debug.Log("- Positioned in main UI Canvas");
     }
 
+    private void SetupSimplePlayerHealthBar()
+    {
+        Debug.Log("=== Setting up Simple Player Health Bar ===");
+
+        // Check if SimplePlayerHealthBar already exists
+        if (FindObjectOfType<SimplePlayerHealthBar>() != null)
+        {
+            Debug.Log("SimplePlayerHealthBar already exists in scene");
+            return;
+        }
+
+        // Find the main Canvas (Screen Space Overlay only)
+        Canvas[] allCanvases = FindObjectsOfType<Canvas>();
+        Debug.Log($"[SetupSimplePlayerHealthBar] Found {allCanvases.Length} canvases in scene:");
+        
+        Canvas mainCanvas = null;
+        foreach (Canvas c in allCanvases)
+        {
+            Debug.Log($"  - Canvas: {c.name}, renderMode: {c.renderMode}, active: {c.gameObject.activeInHierarchy}");
+            if (c.renderMode == RenderMode.ScreenSpaceOverlay && c.name == "Canvas")
+            {
+                mainCanvas = c;
+                Debug.Log($"[SetupSimplePlayerHealthBar] Found main UI Canvas: {c.name}");
+                break;
+            }
+        }
+        
+        if (mainCanvas == null)
+        {
+            // Fallback to any ScreenSpaceOverlay canvas
+            foreach (Canvas c in allCanvases)
+            {
+                if (c.renderMode == RenderMode.ScreenSpaceOverlay)
+                {
+                    mainCanvas = c;
+                    Debug.Log($"[SetupSimplePlayerHealthBar] Using fallback canvas: {c.name}");
+                    break;
+                }
+            }
+        }
+        
+        if (mainCanvas == null)
+        {
+            Debug.LogError("No ScreenSpaceOverlay Canvas found for Simple Player Health Bar!");
+            return;
+        }
+
+        // Create Simple Player Health Bar container
+        GameObject simpleHealthBarContainer = new GameObject("SimplePlayerHealthBar");
+        simpleHealthBarContainer.transform.SetParent(mainCanvas.transform, false);
+
+        // Position at bottom center (same as old PlayerHealthUI)
+        var containerRect = simpleHealthBarContainer.GetComponent<RectTransform>();
+        if (containerRect == null)
+        {
+            containerRect = simpleHealthBarContainer.AddComponent<RectTransform>();
+        }
+        
+        containerRect.anchorMin = new Vector2(0.3f, 0.02f);
+        containerRect.anchorMax = new Vector2(0.7f, 0.08f);
+        containerRect.anchoredPosition = Vector2.zero;
+        containerRect.sizeDelta = Vector2.zero;
+
+        // Create the health slider using the simple structure that works
+        GameObject healthSliderObj = CreateSimpleHealthSlider(simpleHealthBarContainer);
+        
+        // Add SimplePlayerHealthBar component
+        var simpleHealthBar = simpleHealthBarContainer.AddComponent<SimplePlayerHealthBar>();
+        
+        // Get references to components
+        var healthSlider = healthSliderObj.GetComponent<UnityEngine.UI.Slider>();
+        var healthText = healthSliderObj.GetComponentInChildren<UnityEngine.UI.Text>();
+        var healthFillImage = healthSliderObj.transform.Find("Fill Area/Fill")?.GetComponent<UnityEngine.UI.Image>();
+        var backgroundImage = healthSliderObj.transform.Find("Background")?.GetComponent<UnityEngine.UI.Image>();
+
+        // Set the component references using reflection
+        SetFieldValue(simpleHealthBar, "HealthSlider", healthSlider);
+        SetFieldValue(simpleHealthBar, "HealthText", healthText);
+        SetFieldValue(simpleHealthBar, "HealthFillImage", healthFillImage);
+        SetFieldValue(simpleHealthBar, "BackgroundImage", backgroundImage);
+
+        Debug.Log($"SimplePlayerHealthBar created successfully:");
+        Debug.Log($"- Container active: {simpleHealthBarContainer.activeInHierarchy}");
+        Debug.Log($"- Slider: {healthSlider != null}");
+        Debug.Log($"- Text: {healthText != null}");
+        Debug.Log($"- Fill Image: {healthFillImage != null}");
+        Debug.Log($"- Background Image: {backgroundImage != null}");
+    }
+
+    private GameObject CreateSimpleHealthSlider(GameObject parent)
+    {
+        Debug.Log("Creating simple health slider using working enemy health bar pattern...");
+        
+        // Create main slider GameObject
+        GameObject sliderObj = new GameObject("SimpleHealthSlider");
+        sliderObj.transform.SetParent(parent.transform, false);
+
+        // Set to fill parent container
+        var sliderRect = sliderObj.GetComponent<RectTransform>();
+        if (sliderRect == null)
+        {
+            sliderRect = sliderObj.AddComponent<RectTransform>();
+        }
+        sliderRect.anchorMin = Vector2.zero;
+        sliderRect.anchorMax = Vector2.one;
+        sliderRect.anchoredPosition = Vector2.zero;
+        sliderRect.sizeDelta = Vector2.zero;
+
+        // Add Slider component - COPY EXACT PATTERN FROM ENEMY HEALTH BARS
+        var slider = sliderObj.AddComponent<UnityEngine.UI.Slider>();
+        slider.minValue = 0f;
+        slider.maxValue = 1f;
+        slider.value = 1f;
+
+        // Create Background
+        GameObject backgroundObj = new GameObject("Background");
+        backgroundObj.transform.SetParent(sliderObj.transform, false);
+        
+        var backgroundImage = backgroundObj.AddComponent<UnityEngine.UI.Image>();
+        backgroundImage.color = new Color(0.2f, 0.2f, 0.2f, 0.9f); // Dark background
+        
+        var backgroundRect = backgroundObj.GetComponent<RectTransform>();
+        backgroundRect.anchorMin = Vector2.zero;
+        backgroundRect.anchorMax = Vector2.one;
+        backgroundRect.anchoredPosition = Vector2.zero;
+        backgroundRect.sizeDelta = Vector2.zero;
+
+        // Create Fill Area
+        GameObject fillAreaObj = new GameObject("Fill Area");
+        fillAreaObj.transform.SetParent(sliderObj.transform, false);
+        
+        if (fillAreaObj.GetComponent<RectTransform>() == null)
+        {
+            fillAreaObj.AddComponent<RectTransform>();
+        }
+        var fillAreaRect = fillAreaObj.GetComponent<RectTransform>();
+        fillAreaRect.anchorMin = Vector2.zero;
+        fillAreaRect.anchorMax = Vector2.one;
+        fillAreaRect.anchoredPosition = Vector2.zero;
+        fillAreaRect.sizeDelta = Vector2.zero;
+
+        // Create Fill - EXACT PATTERN FROM WORKING ENEMY HEALTH BARS
+        GameObject fillObj = new GameObject("Fill");
+        fillObj.transform.SetParent(fillAreaObj.transform, false);
+        
+        var fillImage = fillObj.AddComponent<UnityEngine.UI.Image>();
+        fillImage.color = Color.green; // Start with green
+        fillImage.type = UnityEngine.UI.Image.Type.Simple; // Use Simple type like enemy health bars
+        
+        var fillRect = fillObj.GetComponent<RectTransform>();
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.anchoredPosition = Vector2.zero;
+        fillRect.sizeDelta = Vector2.zero;
+
+        // Create Health Text
+        GameObject textObj = new GameObject("HealthText");
+        textObj.transform.SetParent(sliderObj.transform, false);
+        
+        var healthText = textObj.AddComponent<UnityEngine.UI.Text>();
+        healthText.text = "100/100";
+        healthText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        healthText.fontSize = 14;
+        healthText.color = Color.white;
+        healthText.alignment = TextAnchor.MiddleCenter;
+        healthText.fontStyle = FontStyle.Bold;
+        
+        var textRect = textObj.GetComponent<RectTransform>();
+        textRect.anchorMin = new Vector2(0.7f, 0);
+        textRect.anchorMax = new Vector2(1f, 1f);
+        textRect.anchoredPosition = Vector2.zero;
+        textRect.sizeDelta = Vector2.zero;
+
+        // Connect slider components - EXACT PATTERN FROM ENEMY HEALTH BARS
+        slider.fillRect = fillRect;
+        slider.targetGraphic = fillImage;
+
+        // Force everything active
+        sliderObj.SetActive(true);
+        backgroundObj.SetActive(true);
+        fillAreaObj.SetActive(true);
+        fillObj.SetActive(true);
+        textObj.SetActive(true);
+
+        Debug.Log("Simple health slider created with exact enemy health bar pattern");
+        Debug.Log($"Slider min/max/value: {slider.minValue}/{slider.maxValue}/{slider.value}");
+        Debug.Log($"Fill image color: {fillImage.color}");
+        
+        return sliderObj;
+    }
+
     private void SetupInventorySystem()
     {
         Debug.Log("Setting up Inventory System...");
@@ -1329,6 +1363,95 @@ public class AutoSceneSetup : MonoBehaviour
         
         Debug.Log("Inventory System setup complete");
     }
+
+    private void SetupPlayerStatsPanel()
+    {
+        Debug.Log("Setting up Player Stats Panel...");
+
+        // Find the main Canvas
+        Canvas[] allCanvases = FindObjectsOfType<Canvas>();
+        Canvas mainCanvas = null;
+        foreach (Canvas c in allCanvases)
+        {
+            if (c.renderMode == RenderMode.ScreenSpaceOverlay && c.name == "Canvas")
+            {
+                mainCanvas = c;
+                break;
+            }
+        }
+        
+        if (mainCanvas == null)
+        {
+            foreach (Canvas c in allCanvases)
+            {
+                if (c.renderMode == RenderMode.ScreenSpaceOverlay)
+                {
+                    mainCanvas = c;
+                    break;
+                }
+            }
+        }
+        
+        if (mainCanvas == null)
+        {
+            Debug.LogError("No ScreenSpaceOverlay Canvas found for Player Stats Panel!");
+            return;
+        }
+
+        // Create Player Stats Panel
+        GameObject playerStatsPanel = new GameObject("PlayerStatsPanel");
+        playerStatsPanel.transform.SetParent(mainCanvas.transform, false);
+
+        // Add Image component for background
+        var image = playerStatsPanel.AddComponent<UnityEngine.UI.Image>();
+        image.color = new Color(0.15f, 0.15f, 0.15f, 0.9f); // Darker than inventory
+        image.raycastTarget = true;
+
+        // Position below inventory panel (right side, bottom)
+        var rectTransform = playerStatsPanel.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.75f, 0.02f);  // Below inventory
+        rectTransform.anchorMax = new Vector2(0.98f, 0.23f);  // Just below inventory bottom
+        rectTransform.anchoredPosition = Vector2.zero;
+        rectTransform.sizeDelta = Vector2.zero;
+
+        // Create Player Info Text
+        GameObject playerInfoTextObj = new GameObject("PlayerInfoText");
+        playerInfoTextObj.transform.SetParent(playerStatsPanel.transform, false);
+        
+        var playerInfoText = playerInfoTextObj.AddComponent<UnityEngine.UI.Text>();
+        playerInfoText.text = "Player Stats\nLoading...";
+        playerInfoText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        playerInfoText.fontSize = 12;
+        playerInfoText.color = Color.white;
+        playerInfoText.alignment = TextAnchor.UpperLeft;
+        playerInfoText.fontStyle = FontStyle.Normal;
+
+        // Position text with padding
+        var textRect = playerInfoTextObj.GetComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.anchoredPosition = Vector2.zero;
+        textRect.sizeDelta = Vector2.zero;
+        textRect.offsetMin = new Vector2(10, 10); // Padding
+        textRect.offsetMax = new Vector2(-10, -10); // Padding
+
+        // Start hidden (will be shown with inventory)
+        playerStatsPanel.SetActive(false);
+
+        // Connect to UIManager
+        var uiManager = FindObjectOfType<UIManager>();
+        if (uiManager != null)
+        {
+            SetFieldValue(uiManager, "PlayerInfoText", playerInfoText);
+            SetFieldValue(uiManager, "PlayerStatsPanel", playerStatsPanel);
+            Debug.Log("Player Stats Panel connected to UIManager");
+        }
+
+        Debug.Log("Player Stats Panel created successfully:");
+        Debug.Log($"- Positioned below inventory panel at bottom right");
+        Debug.Log($"- Hidden by default, will show with inventory panel");
+        Debug.Log($"- Connected to UIManager.PlayerInfoText");
+    }
     
     private GameObject CreateInventoryPanel(GameObject canvasObj)
     {
@@ -1376,112 +1499,11 @@ public class AutoSceneSetup : MonoBehaviour
         return inventoryPanel;
     }
 
-    private GameObject CreateMainUIHealthSlider(GameObject parent)
-    {
-        Debug.Log($"[CreateMainUIHealthSlider] *** CREATING PLAYER HEALTH BAR *** with parent: {parent.name}");
-        
-        // Create health bar container positioned in top-left of screen
-        GameObject healthBarObj = new GameObject("MainHealthSlider");
-        healthBarObj.transform.SetParent(parent.transform, false);
-
-        // Add RectTransform component for UI GameObject
-        if (healthBarObj.GetComponent<RectTransform>() == null)
-        {
-            healthBarObj.AddComponent<RectTransform>();
-        }
-        var containerRect = healthBarObj.GetComponent<RectTransform>();
-        
-        // Fill the parent container completely (PlayerHealthUI container is already positioned)
-        containerRect.anchorMin = Vector2.zero;
-        containerRect.anchorMax = Vector2.one;
-        containerRect.anchoredPosition = Vector2.zero;
-        containerRect.sizeDelta = Vector2.zero;
-        
-        Debug.Log($"[CreateMainUIHealthSlider] Container rect - anchorMin: {containerRect.anchorMin}, anchorMax: {containerRect.anchorMax}");
-
-        // Add dark border background
-        var borderImage = healthBarObj.AddComponent<UnityEngine.UI.Image>();
-        borderImage.color = new Color(0.1f, 0.1f, 0.1f, 0.8f);  // Dark border
-        
-        // Create inner background container with padding for border effect
-        GameObject innerBg = new GameObject("InnerBackground");
-        innerBg.transform.SetParent(healthBarObj.transform, false);
-        
-        var innerBgImage = innerBg.AddComponent<UnityEngine.UI.Image>();
-        innerBgImage.color = new Color(0.2f, 0.2f, 0.2f, 0.9f);  // Dark background
-        
-        var innerBgRect = innerBg.GetComponent<RectTransform>();
-        // Create border by inset positioning - larger margins for visible border
-        innerBgRect.anchorMin = new Vector2(0.05f, 0.15f);
-        innerBgRect.anchorMax = new Vector2(0.95f, 0.85f);
-        innerBgRect.anchoredPosition = Vector2.zero;
-        innerBgRect.sizeDelta = Vector2.zero;
-
-        // Create fill inside the inner background (not the main container)
-        GameObject fillObj = new GameObject("HealthFill");
-        fillObj.transform.SetParent(innerBg.transform, false);
-
-        var fillImage = fillObj.AddComponent<UnityEngine.UI.Image>();
-        fillImage.color = Color.green;  // Green health fill
-        fillImage.type = UnityEngine.UI.Image.Type.Filled;
-        fillImage.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
-
-        var fillRect = fillObj.GetComponent<RectTransform>();
-        // Fill most of the inner background, leaving some padding
-        fillRect.anchorMin = new Vector2(0.05f, 0.1f);
-        fillRect.anchorMax = new Vector2(0.75f, 0.9f);
-        fillRect.anchoredPosition = Vector2.zero;
-        fillRect.sizeDelta = Vector2.zero;
-
-        // Create health text
-        GameObject healthTextObj = new GameObject("HealthText");
-        healthTextObj.transform.SetParent(healthBarObj.transform, false);
-
-        var healthText = healthTextObj.AddComponent<UnityEngine.UI.Text>();
-        healthText.text = "100/100";
-        healthText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        healthText.fontSize = 16;
-        healthText.color = Color.white;
-        healthText.alignment = TextAnchor.MiddleCenter;
-        healthText.fontStyle = FontStyle.Bold;
-
-        var textRect = healthTextObj.GetComponent<RectTransform>();
-        textRect.anchorMin = new Vector2(0.72f, 0);
-        textRect.anchorMax = new Vector2(1f, 1f);
-        textRect.anchoredPosition = Vector2.zero;
-        textRect.sizeDelta = Vector2.zero;
-
-        // Create a simple slider component that works with the simple structure
-        var healthSlider = healthBarObj.AddComponent<UnityEngine.UI.Slider>();
-        healthSlider.minValue = 0f;
-        healthSlider.maxValue = 1f;
-        healthSlider.value = 1f;
-        healthSlider.fillRect = fillRect;
-        healthSlider.targetGraphic = fillImage;
-        
-        // Force everything to be active and visible
-        healthBarObj.SetActive(true);
-        innerBg.SetActive(true);
-        fillObj.SetActive(true);
-        healthTextObj.SetActive(true);
-        
-        // Verify everything is properly configured
-        Debug.Log($"[CreateMainUIHealthSlider] Health bar created - checking all components:");
-        Debug.Log($"[CreateMainUIHealthSlider] Container active: {healthBarObj.activeInHierarchy}");
-        Debug.Log($"[CreateMainUIHealthSlider] Container anchors: {containerRect.anchorMin} to {containerRect.anchorMax}");
-        Debug.Log($"[CreateMainUIHealthSlider] Fill active: {fillObj.activeInHierarchy}");
-        Debug.Log($"[CreateMainUIHealthSlider] Border color (dark): {borderImage.color}");
-        Debug.Log($"[CreateMainUIHealthSlider] Inner background color: {innerBgImage.color}");
-        Debug.Log($"[CreateMainUIHealthSlider] Fill color: {fillImage.color}");
-        Debug.Log($"[CreateMainUIHealthSlider] Slider value: {healthSlider.value}");
-        Debug.Log($"[CreateMainUIHealthSlider] Container parent: {healthBarObj.transform.parent?.name}");
-
-        return healthBarObj;
-    }
+    // OLD CreateMainUIHealthSlider method removed - using CreateSimpleHealthSlider instead
 
     private void ConnectHealthUIToUIManager()
     {
-        Debug.Log("Connecting Health UI to UIManager...");
+        Debug.Log("Connecting Simple Health UI to UIManager...");
 
         // Find UIManager
         UIManager uiManager = FindObjectOfType<UIManager>();
@@ -1491,62 +1513,29 @@ public class AutoSceneSetup : MonoBehaviour
             return;
         }
 
-        // Find PlayerHealthUI
-        PlayerHealthUI playerHealthUI = FindObjectOfType<PlayerHealthUI>();
-        if (playerHealthUI != null)
+        // Find SimplePlayerHealthBar
+        SimplePlayerHealthBar simpleHealthBar = FindObjectOfType<SimplePlayerHealthBar>();
+        if (simpleHealthBar != null)
         {
-            // Connect PlayerHealthUI to UIManager
-            SetFieldValue(uiManager, "PlayerHealthUI", playerHealthUI);
-
-            // Also connect the slider and text to legacy fields for backward compatibility
-            if (playerHealthUI.HealthSlider != null)
+            // Connect SimplePlayerHealthBar to UIManager legacy fields for backward compatibility
+            if (simpleHealthBar.HealthSlider != null)
             {
-                SetFieldValue(uiManager, "HealthBar", playerHealthUI.HealthSlider);
+                SetFieldValue(uiManager, "HealthBar", simpleHealthBar.HealthSlider);
             }
-            if (playerHealthUI.HealthText != null)
+            if (simpleHealthBar.HealthText != null)
             {
-                SetFieldValue(uiManager, "HealthText", playerHealthUI.HealthText);
+                SetFieldValue(uiManager, "HealthText", simpleHealthBar.HealthText);
             }
 
-            Debug.Log("PlayerHealthUI connected to UIManager with backward compatibility");
+            Debug.Log("SimplePlayerHealthBar connected to UIManager with backward compatibility");
         }
         else
         {
-            Debug.LogWarning("PlayerHealthUI not found - UIManager integration incomplete");
+            Debug.LogWarning("SimplePlayerHealthBar not found - UIManager integration incomplete");
         }
     }
 
-    private void SetupHealthBarDebugger()
-    {
-        Debug.Log("Setting up Health Bar Debugger...");
-
-        // Check if debugger already exists
-        if (FindObjectOfType<HealthBarDebugger>() != null)
-        {
-            Debug.Log("HealthBarDebugger already exists in scene");
-            return;
-        }
-
-        // Add debugger to the GameManager or create dedicated GameObject
-        GameObject gameManagerObj = GameObject.Find("GameManager");
-        if (gameManagerObj != null)
-        {
-            var debugger = gameManagerObj.AddComponent<HealthBarDebugger>();
-            debugger.EnableDebugLogs = false; // Disabled by default for production
-            debugger.ShowGUI = false; // Disabled by default for production
-            Debug.Log("HealthBarDebugger added to GameManager GameObject (disabled by default - press F1 to enable)");
-        }
-        else
-        {
-            GameObject debuggerObj = new GameObject("HealthBarDebugger");
-            var debugger = debuggerObj.AddComponent<HealthBarDebugger>();
-            debugger.EnableDebugLogs = false; // Disabled by default for production
-            debugger.ShowGUI = false; // Disabled by default for production
-            Debug.Log("HealthBarDebugger created as standalone GameObject (disabled by default - press F1 to enable)");
-        }
-
-        Debug.Log("HealthBarDebugger setup complete - use E to create test enemies, D to damage them");
-    }
+    // SetupHealthBarDebugger method removed
 
     private void SetupHealthBarTester()
     {

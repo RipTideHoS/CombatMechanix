@@ -52,7 +52,7 @@ namespace CombatMechanix.AI
         /// <summary>
         /// How often this behavior should be updated (in milliseconds)
         /// </summary>
-        public int UpdateIntervalMs { get; set; } = 200;
+        public int UpdateIntervalMs { get; set; } = 50;
         
         /// <summary>
         /// Movement speed multiplier for this behavior
@@ -67,7 +67,7 @@ namespace CombatMechanix.AI
         /// <summary>
         /// Minimum distance to maintain from target when chasing
         /// </summary>
-        public float MinChaseDistance { get; set; } = 2.0f;
+        public float MinChaseDistance { get; set; } = 1.5f;
         
         /// <summary>
         /// Custom parameters specific to behavior implementation
@@ -94,6 +94,11 @@ namespace CombatMechanix.AI
         /// Current server time
         /// </summary>
         public DateTime CurrentTime { get; set; } = DateTime.UtcNow;
+        
+        /// <summary>
+        /// Function to broadcast messages to all clients
+        /// </summary>
+        public Func<string, object, Task>? BroadcastMessage { get; set; }
         
         /// <summary>
         /// Find the nearest player to a given position

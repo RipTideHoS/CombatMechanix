@@ -20,7 +20,7 @@ namespace CombatMechanix.AI
         {
             _config = config ?? new BehaviorConfig
             {
-                UpdateIntervalMs = 300, // Update every 300ms for wandering
+                UpdateIntervalMs = 50, // Update every 50ms for smooth movement
                 MovementSpeed = 1.5f,   // Slow wandering speed
                 DetectionRange = 12.0f, // Detection range for players
                 CustomParameters = new Dictionary<string, object>
@@ -103,13 +103,21 @@ namespace CombatMechanix.AI
         {
             if (state.ChaseTarget == null) return false;
             
+            // Continuously update target position to track moving player
+            var currentTarget = context.FindNearestPlayer(enemy.Position, _config.DetectionRange);
+            if (currentTarget != null && currentTarget.PlayerId == state.ChaseTarget.PlayerId)
+            {
+                state.ChaseTarget = currentTarget; // Update with fresh player position
+            }
+            
             var targetPosition = state.ChaseTarget.Position;
             var distance = AIWorldContext.CalculateDistance(enemy.Position, targetPosition);
             
-            // If too close, stop chasing (to avoid overlap)
+            
+            // If within attack range, attack instead of moving
             if (distance <= _config.MinChaseDistance)
             {
-                return false;
+                return await TryAttackTarget(enemy, state, context);
             }
             
             // Move towards the player
@@ -144,6 +152,10 @@ namespace CombatMechanix.AI
         
         private async Task<bool> UpdateWanderBehavior(EnemyState enemy, WanderState state, AIWorldContext context, float deltaTime)
         {
+            // WANDERING DISABLED - Enemies will only stand still unless chasing
+            // This allows testing if enemies are truly following players or just wandering randomly
+            
+            /*
             var now = context.CurrentTime;
             var directionChangeInterval = (float)_config.CustomParameters["DirectionChangeInterval"];
             var pauseChance = (float)_config.CustomParameters["PauseChance"];
@@ -215,8 +227,100 @@ namespace CombatMechanix.AI
                     return true;
                 }
             }
+            */
             
             return false;
+        }
+        
+        private async Task<bool> TryAttackTarget(EnemyState enemy, WanderState state, AIWorldContext context)
+        {
+            if (state.ChaseTarget == null) return false;
+            
+            var now = context.CurrentTime;
+            var timeSinceLastAttack = (now - state.LastAttackTime).TotalSeconds;
+            
+            
+            // Check if enough time has passed since last attack
+            if (timeSinceLastAttack < state.AttackCooldownSeconds)
+            {
+                return false; // Still on cooldown
+            }
+            
+            // Perform attack
+            state.LastAttackTime = now;
+            
+            // Calculate damage (server-authoritative)
+            var baseDamage = CalculateEnemyDamage(enemy);
+            
+            // Face the target
+            var targetPosition = state.ChaseTarget.Position;
+            var direction = new Vector3Data
+            {
+                X = targetPosition.X - enemy.Position.X,
+                Y = 0,
+                Z = targetPosition.Z - enemy.Position.Z
+            };
+            
+            var magnitude = (float)Math.Sqrt(direction.X * direction.X + direction.Z * direction.Z);
+            if (magnitude > 0)
+            {
+                enemy.Rotation = (float)Math.Atan2(direction.X, direction.Z) * 180f / (float)Math.PI;
+            }
+            
+            // Send attack message to all clients
+            await SendEnemyAttackMessage(enemy, state.ChaseTarget, baseDamage, context);
+            
+            enemy.LastUpdate = DateTime.UtcNow;
+            return true; // State changed (rotation updated)
+        }
+        
+        private float CalculateEnemyDamage(EnemyState enemy)
+        {
+            // Base damage calculation based on enemy level
+            var baseDamage = 10f + (enemy.Level * 5f); // Level 1 = 15 damage, Level 2 = 20 damage, etc.
+            
+            // Add some randomness (±20%)
+            var random = new Random();
+            var damageVariation = 1.0f + ((random.NextSingle() - 0.5f) * 0.4f); // 0.8 to 1.2 multiplier
+            
+            return baseDamage * damageVariation;
+        }
+        
+        private async Task SendEnemyAttackMessage(EnemyState enemy, PlayerState target, float damage, AIWorldContext context)
+        {
+            // Create attack message for visual effects
+            var attackMessage = new Models.NetworkMessages.CombatActionMessage
+            {
+                AttackerId = enemy.EnemyId,
+                TargetId = target.PlayerId,
+                AttackType = "EnemyAttack",
+                Position = enemy.Position,
+                Damage = damage,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            };
+            
+            // Calculate new health after damage
+            var newHealth = Math.Max(0, target.Health - (int)damage);
+            
+            // Create health change message for server-authoritative damage
+            var healthChangeMessage = new Models.NetworkMessages.HealthChangeMessage
+            {
+                PlayerId = target.PlayerId,
+                HealthChange = -(int)damage, // Negative for damage
+                NewHealth = newHealth,
+                Source = $"Enemy attack from {enemy.EnemyName}"
+            };
+            
+            // Broadcast both messages to all clients
+            if (context.BroadcastMessage != null)
+            {
+                
+                // Send attack animation/effect
+                await context.BroadcastMessage("CombatAction", attackMessage);
+                
+                // Send authoritative health change
+                await context.BroadcastMessage("HealthChange", healthChangeMessage);
+            }
         }
         
         public async Task<bool> OnDamageTaken(EnemyState enemy, float damage, string attackerId, AIWorldContext context)
@@ -258,6 +362,8 @@ namespace CombatMechanix.AI
             public PlayerState? ChaseTarget { get; set; }
             public bool IsPaused { get; set; }
             public DateTime PauseEndTime { get; set; }
+            public DateTime LastAttackTime { get; set; }
+            public float AttackCooldownSeconds { get; set; } = 2.0f; // Attack every 2 seconds
         }
     }
 }

@@ -74,22 +74,16 @@ public class PlayerController : MonoBehaviour
         transform.position = new Vector3(0, 1f, 0); // Transform at y=1 puts CC bottom at ground level
         CurrentRotation = transform.eulerAngles.y;
         
-        Debug.Log($"Player positioned at: {transform.position}, CharacterController center: {_characterController.center}, height: {_characterController.height}");
+        // Initialize networking variables
+        _lastSentPosition = transform.position;
+        _lastSendTime = Time.time;
+        
     }
 
     private void Update()
     {
-        if (GameManager.Instance == null)
+        if (GameManager.Instance == null || !GameManager.Instance.IsInGame) 
         {
-            Debug.LogError("GameManager.Instance is null!");
-            return;
-        }
-        
-        if (!GameManager.Instance.IsInGame) 
-        {
-            // Only log this occasionally to avoid spam
-            if (Time.frameCount % 300 == 0) // Log every 5 seconds at 60fps
-                Debug.LogWarning("Player movement blocked - GameManager.IsInGame is false");
             return;
         }
 
@@ -103,9 +97,6 @@ public class PlayerController : MonoBehaviour
         // Enhanced WASD movement input with camera-relative movement
         float horizontal = Input.GetAxis("Horizontal"); // A/D keys
         float vertical = Input.GetAxis("Vertical");     // W/S keys
-        
-        if (horizontal != 0 || vertical != 0)
-            Debug.Log($"Input detected: H={horizontal:F2}, V={vertical:F2}");
 
         // Make movement relative to camera direction for 3rd person
         Camera mainCamera = Camera.main;
@@ -131,11 +122,6 @@ public class PlayerController : MonoBehaviour
         }
 
         _isMoving = _inputVector.magnitude > 0.1f;
-        
-        if (_isMoving)
-        {
-            Debug.Log($"Movement calculated: InputVector={_inputVector}, IsMoving={_isMoving}");
-        }
 
         // Rotate player to face movement direction for 3rd person
         if (_isMoving && _inputVector.magnitude > 0.1f)
@@ -226,11 +212,6 @@ public class PlayerController : MonoBehaviour
         if (_characterController != null)
         {
             _characterController.Move(finalMovement * Time.deltaTime);
-            
-            if (_isMoving)
-            {
-                Debug.Log($"Movement applied via CharacterController: H={horizontalMovement}, V={_verticalVelocity:F2}, Grounded={_isGrounded}");
-            }
         }
         else
         {
@@ -238,7 +219,6 @@ public class PlayerController : MonoBehaviour
             if (_isMoving)
             {
                 transform.Translate(horizontalMovement * Time.deltaTime, Space.World);
-                Debug.Log($"Movement applied via Transform: {horizontalMovement * Time.deltaTime}");
             }
         }
 
@@ -254,22 +234,57 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    private void HandleNetworking()
+    private async void HandleNetworking()
     {
-        // Send movement updates at specified rate
-        if (Time.time - _lastSendTime > 1f / SendRate)
+        // Check if we should send an update (either at normal rate or forced interval)
+        bool normalRateCheck = Time.time - _lastSendTime > 1f / SendRate;
+        bool forcedIntervalCheck = Time.time - _lastSendTime > 1f; // Force update every 1 second
+        
+        if (normalRateCheck || forcedIntervalCheck)
         {
-            // Only send if position changed significantly or if moving
-            if (Vector3.Distance(transform.position, _lastSentPosition) > 0.01f || _isMoving)
+            // Send if position changed significantly, if moving, or if forced interval reached
+            bool shouldSend = Vector3.Distance(transform.position, _lastSentPosition) > 0.01f || 
+                             _isMoving || 
+                             forcedIntervalCheck;
+            
+            if (shouldSend)
             {
-                var networkManager = GameManager.Instance.NetworkManager;
-                if (networkManager != null && networkManager.IsConnected)
+                var networkManager = GameManager.Instance?.NetworkManager;
+                
+                // Try to fix NetworkManager if it's null
+                if (networkManager == null)
                 {
-                   _= networkManager.SendMovement(transform.position, CurrentVelocity, CurrentRotation);
+                    Debug.Log("[PlayerController] NetworkManager is NULL! Attempting auto-refresh...");
+                    
+                    // Try to refresh the GameManager's NetworkManager reference
+                    GameManager.Instance?.RefreshNetworkManager();
+                    networkManager = GameManager.Instance?.NetworkManager;
+                    
+                    Debug.Log($"[PlayerController] After refresh - NetworkManager: {(networkManager != null ? "found" : "still null")}");
+                    
+                    // If still null, try direct scene lookup
+                    if (networkManager == null)
+                    {
+                        networkManager = FindObjectOfType<NetworkManager>();
+                        Debug.Log($"[PlayerController] Direct FindObjectOfType result: {(networkManager != null ? "found" : "still null")}");
+                    }
+                    
+                    if (networkManager == null) return;
                 }
-
-                _lastSentPosition = transform.position;
-                _lastSendTime = Time.time;
+                
+                if (networkManager.IsConnected)
+                {
+                    try
+                    {
+                        await networkManager.SendMovement(transform.position, CurrentVelocity, CurrentRotation);
+                        _lastSentPosition = transform.position;
+                        _lastSendTime = Time.time;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[PlayerController] Failed to send movement: {ex.Message}");
+                    }
+                }
             }
         }
     }
@@ -310,7 +325,6 @@ public class PlayerController : MonoBehaviour
             {
                 targetId = targetEnemy.EnemyId;
                 targetType = "Enemy";
-                Debug.Log($"[PlayerController] Targeting enemy: {targetEnemy.EnemyName} (ID: {targetId})");
             }
             else
             {
@@ -320,44 +334,15 @@ public class PlayerController : MonoBehaviour
                 {
                     targetId = targetPlayer.PlayerId;
                     targetType = "Player";
-                    Debug.Log($"[PlayerController] Targeting player: {targetPlayer.PlayerId}");
                 }
             }
 
-            // Debug GameManager availability
-            Debug.Log($"[PlayerController] GameManager.Instance: {(GameManager.Instance != null ? "Available" : "NULL")}");
-            
-            // Debug what's actually on the GameManager GameObject
-            if (GameManager.Instance != null)
-            {
-                var components = GameManager.Instance.GetComponents<Component>();
-                Debug.Log($"[PlayerController] GameManager has {components.Length} components:");
-                foreach (var comp in components)
-                {
-                    Debug.Log($"[PlayerController]   - {comp.GetType().Name}");
-                }
-            }
-            
-            // Try to find NetworkManager in the scene
-            var networkManagerInScene = FindObjectOfType<NetworkManager>();
-            Debug.Log($"[PlayerController] NetworkManager found in scene: {(networkManagerInScene != null ? "YES" : "NO")}");
-            if (networkManagerInScene != null)
-            {
-                Debug.Log($"[PlayerController] NetworkManager is on GameObject: {networkManagerInScene.gameObject.name}");
-            }
-            
-            // Send attack to server - use direct scene lookup since GameManager.NetworkManager is null
+            // Send attack to server
             var networkManager = GameManager.Instance?.NetworkManager ?? FindObjectOfType<NetworkManager>();
-            Debug.Log($"[PlayerController] NetworkManager: {(networkManager != null ? "Available" : "NULL")}");
             
             if (networkManager != null)
             {
-                Debug.Log($"[PlayerController] Calling networkManager.SendAttack with targetId: {targetId}");
                 _ = networkManager.SendAttack(targetId, "BasicAttack", attackPosition);
-            }
-            else
-            {
-                Debug.LogError("[PlayerController] NetworkManager is null - cannot send attack!");
             }
 
             // Play local attack animation/effect
@@ -367,7 +352,6 @@ public class PlayerController : MonoBehaviour
                 combatSystem.PlayAttackEffect(transform.position, attackPosition);
             }
 
-            Debug.Log($"Attack sent to position: {attackPosition}" + (targetId != null ? $", target: {targetId}" : ""));
         }
     }
 
@@ -394,7 +378,6 @@ public class PlayerController : MonoBehaviour
 
                 // Play gathering animation
                 resource.PlayGatherEffect();
-                Debug.Log($"Gathering {resource.ResourceType} from {resource.ResourceId}");
                 break; // Only gather from one resource at a time
             }
         }
@@ -402,29 +385,21 @@ public class PlayerController : MonoBehaviour
 
     private void HandleInventoryToggle()
     {
-        Debug.Log($"HandleInventoryToggle called - GameManager.Instance: {(GameManager.Instance != null ? "exists" : "null")}");
-        
         // Try UIManager first
         var uiManager = GameManager.Instance?.UIManager;
         if (uiManager != null)
         {
-            Debug.Log("Using UIManager.ToggleInventory()");
             uiManager.ToggleInventory();
             return;
         }
-        
-        Debug.LogWarning($"UIManager not available via GameManager - GameManager: {(GameManager.Instance != null ? "exists" : "null")}, UIManager: {(uiManager != null ? "exists" : "null")}");
         
         // Fallback 1: Try to find UIManager directly
         UIManager directUIManager = FindObjectOfType<UIManager>();
         if (directUIManager != null)
         {
-            Debug.Log("Found UIManager directly, using ToggleInventory()");
             directUIManager.ToggleInventory();
             return;
         }
-        
-        Debug.LogWarning("No UIManager found via FindObjectOfType either");
         
         // Fallback 2: Direct panel toggle
         GameObject inventoryPanel = GameObject.Find("InventoryPanel");
@@ -432,11 +407,6 @@ public class PlayerController : MonoBehaviour
         {
             bool currentState = inventoryPanel.activeSelf;
             inventoryPanel.SetActive(!currentState);
-            Debug.Log($"Inventory panel toggled (direct fallback): {!currentState}");
-        }
-        else
-        {
-            Debug.LogError("No inventory panel found with GameObject.Find either - UI system may be broken");
         }
     }
 
@@ -466,7 +436,6 @@ public class PlayerController : MonoBehaviour
 
     public void TakeDamage(float damage)
     {
-        Debug.Log($"Local player took {damage} damage!");
 
         // Update UI
         var uiManager = GameManager.Instance.UIManager;

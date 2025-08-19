@@ -66,43 +66,68 @@ public class GameManager : MonoBehaviour
         CombatSystem = GetComponent<CombatSystem>();
         InventoryManager = GetComponent<InventoryManager>();
 
-        // Debug component initialization
-        Debug.Log($"GameManager component initialization:");
-        Debug.Log($"  NetworkManager: {(NetworkManager != null ? "found" : "null")}");
-        Debug.Log($"  UIManager: {(UIManager != null ? "found" : "null")}");
-        Debug.Log($"  WorldManager: {(WorldManager != null ? "found" : "null")}");
         
         // If NetworkManager is null, try to find it in scene as fallback
         if (NetworkManager == null)
         {
-            Debug.LogWarning("NetworkManager not found on GameManager GameObject, searching scene...");
             NetworkManager = FindObjectOfType<NetworkManager>();
-            Debug.Log($"  NetworkManager (via FindObjectOfType): {(NetworkManager != null ? "found" : "still null")}");
         }
 
         // Find LocalPlayer in scene
         LocalPlayer = FindObjectOfType<PlayerController>();
 
-        // Subscribe to network events
+        // Subscribe to static network events
+        global::NetworkManager.OnConnected += OnNetworkConnected;
+        global::NetworkManager.OnDisconnected += OnNetworkDisconnected;
+
+    }
+
+    /// <summary>
+    /// Force re-initialization of NetworkManager - call this if NetworkManager is added after GameManager initialization
+    /// </summary>
+    public void RefreshNetworkManager()
+    {
+        Debug.Log($"[GameManager] RefreshNetworkManager called. Current NetworkManager: {(NetworkManager != null ? "exists" : "null")}");
+        
+        // Always try to refresh, even if we think we have one
+        var oldNetworkManager = NetworkManager;
+        NetworkManager = GetComponent<NetworkManager>();
+        
+        Debug.Log($"[GameManager] GetComponent<NetworkManager>() result: {(NetworkManager != null ? "found" : "null")}");
+        
+        if (NetworkManager == null)
+        {
+            NetworkManager = FindObjectOfType<NetworkManager>();
+            Debug.Log($"[GameManager] FindObjectOfType<NetworkManager>() result: {(NetworkManager != null ? "found" : "null")}");
+        }
+        
+        // Subscribe to network events if we found it (static events)
         if (NetworkManager != null)
         {
-            NetworkManager.OnConnected += OnNetworkConnected;
-            NetworkManager.OnDisconnected += OnNetworkDisconnected;
+            Debug.Log("[GameManager] NetworkManager successfully re-initialized");
         }
-
-        Debug.Log($"Game initialized for player: {LocalPlayerName} ({LocalPlayerId})");
+        else
+        {
+            Debug.LogError("[GameManager] NetworkManager still not found after refresh");
+            
+            // Debug all GameObjects in scene with NetworkManager component
+            var allNetworkManagers = FindObjectsOfType<NetworkManager>();
+            Debug.Log($"[GameManager] Total NetworkManager components in scene: {allNetworkManagers.Length}");
+            for (int i = 0; i < allNetworkManagers.Length; i++)
+            {
+                Debug.Log($"[GameManager] NetworkManager {i}: {allNetworkManagers[i].name} (GameObject: {allNetworkManagers[i].gameObject.name})");
+            }
+        }
     }
 
     private async void OnNetworkConnected()
     {
-        Debug.Log($"Network connected - authentication will be handled by login system");
         // Note: Authentication is now handled by the new login system (LoginUI)
         // The old automatic authentication is disabled to enforce proper login
     }
 
     private void OnNetworkDisconnected()
     {
-        Debug.Log("Network disconnected");
         IsAuthenticated = false;
         IsInGame = false;
         UIManager?.ShowConnectionLostUI();
@@ -114,7 +139,6 @@ public class GameManager : MonoBehaviour
         IsInGame = true;
         UIManager?.ShowGameUI();
         OnGameStarted?.Invoke();
-        Debug.Log("Player authenticated and in game!");
     }
 
     public long GetServerTime()
@@ -131,19 +155,15 @@ public class GameManager : MonoBehaviour
 
     private void OnDestroy()
     {
-        // Unsubscribe from events
-        if (NetworkManager != null)
-        {
-            NetworkManager.OnConnected -= OnNetworkConnected;
-            NetworkManager.OnDisconnected -= OnNetworkDisconnected;
-        }
+        // Unsubscribe from static events
+        global::NetworkManager.OnConnected -= OnNetworkConnected;
+        global::NetworkManager.OnDisconnected -= OnNetworkDisconnected;
     }
 
     // Public methods for other systems to use
     public void SetLocalPlayerName(string newName)
     {
         LocalPlayerName = newName;
-        Debug.Log($"Player name changed to: {LocalPlayerName}");
     }
 
     public bool IsPlayerReady()

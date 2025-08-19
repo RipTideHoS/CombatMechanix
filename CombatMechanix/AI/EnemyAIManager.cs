@@ -229,7 +229,11 @@ namespace CombatMechanix.AI
             {
                 CurrentTime = DateTime.UtcNow,
                 ActivePlayers = await _getPlayersFunc(),
-                OtherEnemies = await _getEnemiesFunc()
+                OtherEnemies = await _getEnemiesFunc(),
+                BroadcastMessage = async (messageType, data) => 
+                {
+                    await _connectionManager.BroadcastToAll(messageType, data);
+                }
             };
             
             return context;

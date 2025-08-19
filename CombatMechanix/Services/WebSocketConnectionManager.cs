@@ -195,6 +195,8 @@ namespace CombatMechanix.Services
             var movementData = JsonSerializer.Deserialize<NetworkMessages.PlayerMovementMessage>(data.ToString()!);
             if (movementData == null) return;
 
+            _logger.LogInformation($"Received PlayerMovement from {connection.ConnectionId}: Position=({movementData.Position.X:F2}, {movementData.Position.Y:F2}, {movementData.Position.Z:F2})");
+
             // Update player state
             if (_players.TryGetValue(connection.ConnectionId, out var player))
             {
@@ -206,6 +208,8 @@ namespace CombatMechanix.Services
                 // Also update the connection's LastPosition for AI access
                 connection.LastPosition = movementData.Position;
                 connection.PlayerName = player.PlayerName;
+                
+                _logger.LogDebug($"Updated position for {player.PlayerName}: ({movementData.Position.X:F2}, {movementData.Position.Y:F2}, {movementData.Position.Z:F2})");
 
                 // Persist position to database periodically (every 5 seconds)
                 var timeSinceLastUpdate = DateTime.UtcNow - player.LastUpdate;
@@ -606,6 +610,10 @@ namespace CombatMechanix.Services
                 _players.TryAdd(connection.ConnectionId, player);
                 connection.PlayerId = player.PlayerId;
                 
+                // Set connection.LastPosition for AI system access
+                connection.LastPosition = player.Position;
+                connection.PlayerName = player.PlayerName;
+                
                 _logger.LogInformation($"Login Success: Connection {connection.ConnectionId} mapped to Player {player.PlayerId} ({player.PlayerName})");
 
                 // Send authentication success response
@@ -834,6 +842,10 @@ namespace CombatMechanix.Services
                     _players.TryAdd(connection.ConnectionId, player);
                     connection.PlayerId = result.PlayerId ?? result.PlayerStats.PlayerId;
                     
+                    // Set connection.LastPosition for AI system access
+                    connection.LastPosition = player.Position;
+                    connection.PlayerName = player.PlayerName;
+                    
                     _logger.LogInformation($"Login Success: Connection {connection.ConnectionId} mapped to Player {connection.PlayerId} ({player.PlayerName})");
                 
                 // TEMPORARY: Auto-reset to Level 1 for testing
@@ -973,6 +985,10 @@ namespace CombatMechanix.Services
 
                     _players.TryAdd(connection.ConnectionId, player);
                     connection.PlayerId = player.PlayerId;
+                    
+                    // Set connection.LastPosition for AI system access
+                    connection.LastPosition = player.Position;
+                    connection.PlayerName = player.PlayerName;
 
                     // Send authentication success response (for compatibility with existing client)
                     await SendToConnection(connection.ConnectionId, "AuthenticationResponse", new NetworkMessages.AuthenticationResponseMessage

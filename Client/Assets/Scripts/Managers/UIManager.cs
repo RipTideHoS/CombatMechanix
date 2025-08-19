@@ -13,13 +13,13 @@ public class UIManager : MonoBehaviour
     public GameObject ConnectionLostPanel;
     public GameObject ChatPanel;
     public GameObject InventoryPanel;
+    public GameObject PlayerStatsPanel;
 
     [Header("HUD Elements")]
     public Slider HealthBar;
     public Text HealthText;
     public Text PlayerInfoText;
     public Text NotificationText;
-    public PlayerHealthUI PlayerHealthUI;
 
     [Header("Login UI")]
     public LoginUI LoginUIComponent;
@@ -212,7 +212,7 @@ private void OnLoginButtonClicked()
 
     public void UpdateHealth(float damage)
     {
-        // This method is now handled by PlayerHealthUI component
+        // This method is now handled by SimplePlayerHealthBar component
         // But we keep this for backward compatibility
         var playerStats = FindObjectOfType<ClientPlayerStats>();
         if (playerStats != null)
@@ -328,10 +328,30 @@ private void OnLoginButtonClicked()
         if (InventoryPanel != null)
         {
             bool currentState = InventoryPanel.activeSelf;
-            InventoryPanel.SetActive(!currentState);
+            bool newState = !currentState;
+            
+            // Toggle inventory panel
+            InventoryPanel.SetActive(newState);
+            
+            // Toggle player stats panel with inventory
+            if (PlayerStatsPanel != null)
+            {
+                PlayerStatsPanel.SetActive(newState);
+                Debug.Log($"Player stats panel {(newState ? "shown" : "hidden")} with inventory");
+            }
+            else
+            {
+                // Try to find player stats panel if not connected
+                PlayerStatsPanel = GameObject.Find("PlayerStatsPanel");
+                if (PlayerStatsPanel != null)
+                {
+                    PlayerStatsPanel.SetActive(newState);
+                    Debug.Log($"Found and toggled player stats panel: {newState}");
+                }
+            }
             
             // Debug information
-            if (!currentState) // Panel is now visible
+            if (newState) // Panel is now visible
             {
                 var rectTransform = InventoryPanel.GetComponent<RectTransform>();
                 var canvas = InventoryPanel.GetComponentInParent<Canvas>();
@@ -352,8 +372,18 @@ private void OnLoginButtonClicked()
             {
                 InventoryPanel = foundPanel; // Cache the reference
                 bool currentState = InventoryPanel.activeSelf;
-                InventoryPanel.SetActive(!currentState);
-                Debug.Log($"Found and toggled inventory panel: {!currentState}");
+                bool newState = !currentState;
+                
+                InventoryPanel.SetActive(newState);
+                
+                // Also toggle player stats panel
+                PlayerStatsPanel = GameObject.Find("PlayerStatsPanel");
+                if (PlayerStatsPanel != null)
+                {
+                    PlayerStatsPanel.SetActive(newState);
+                }
+                
+                Debug.Log($"Found and toggled inventory panel: {newState}");
             }
             else
             {
@@ -428,6 +458,11 @@ private void OnLoginButtonClicked()
         if (InventoryPanel != null)
         {
             InventoryPanel.SetActive(true);
+            // Also show player stats panel
+            if (PlayerStatsPanel != null)
+            {
+                PlayerStatsPanel.SetActive(true);
+            }
         }
         else
         {
@@ -437,6 +472,14 @@ private void OnLoginButtonClicked()
             {
                 InventoryPanel = foundPanel; // Cache the reference
                 InventoryPanel.SetActive(true);
+                
+                // Also show player stats panel
+                PlayerStatsPanel = GameObject.Find("PlayerStatsPanel");
+                if (PlayerStatsPanel != null)
+                {
+                    PlayerStatsPanel.SetActive(true);
+                }
+                
                 Debug.Log("Found and showed inventory panel");
             }
             else
@@ -451,6 +494,11 @@ private void OnLoginButtonClicked()
         if (InventoryPanel != null)
         {
             InventoryPanel.SetActive(false);
+            // Also hide player stats panel
+            if (PlayerStatsPanel != null)
+            {
+                PlayerStatsPanel.SetActive(false);
+            }
         }
         else
         {
@@ -460,23 +508,34 @@ private void OnLoginButtonClicked()
 
     private void InitializePlayerHealthUI()
     {
-        // Find PlayerHealthUI component if not assigned
-        if (PlayerHealthUI == null)
+        // Find SimplePlayerHealthBar component and connect legacy UI elements
+        var simpleHealthBar = FindObjectOfType<SimplePlayerHealthBar>();
+        if (simpleHealthBar != null)
         {
-            PlayerHealthUI = FindObjectOfType<PlayerHealthUI>();
+            // Update legacy UI references to point to the new health bar components
+            if (simpleHealthBar.HealthSlider != null)
+            {
+                HealthBar = simpleHealthBar.HealthSlider;
+            }
+            if (simpleHealthBar.HealthText != null)
+            {
+                HealthText = simpleHealthBar.HealthText;
+            }
+            
+            Debug.Log("UIManager connected to SimplePlayerHealthBar components");
+        }
+        else
+        {
+            Debug.LogWarning("SimplePlayerHealthBar not found - legacy health UI may not work properly");
         }
 
-        // Setup legacy health UI elements to work with new system
-        if (PlayerHealthUI != null)
+        // Find and connect PlayerStatsPanel
+        if (PlayerStatsPanel == null)
         {
-            // Assign legacy UI elements to the new health UI component
-            if (HealthBar != null && PlayerHealthUI.HealthSlider == null)
+            PlayerStatsPanel = GameObject.Find("PlayerStatsPanel");
+            if (PlayerStatsPanel != null)
             {
-                PlayerHealthUI.HealthSlider = HealthBar;
-            }
-            if (HealthText != null && PlayerHealthUI.HealthText == null)
-            {
-                PlayerHealthUI.HealthText = HealthText;
+                Debug.Log("UIManager connected to PlayerStatsPanel");
             }
         }
     }

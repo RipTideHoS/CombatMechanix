@@ -31,7 +31,24 @@ public class NetworkManager : MonoBehaviour
     // New stat-related events
     public static event Action<NetworkMessages.PlayerStatsUpdateMessage> OnPlayerStatsUpdate;
     public static event Action<NetworkMessages.LevelUpMessage> OnLevelUp;
-    public static event Action<NetworkMessages.HealthChangeMessage> OnHealthChange;
+    
+    private static event Action<NetworkMessages.HealthChangeMessage> _onHealthChange;
+    public static event Action<NetworkMessages.HealthChangeMessage> OnHealthChange
+    {
+        add
+        {
+            Debug.Log($"[CLIENT] Adding subscriber to OnHealthChange. Current count: {_onHealthChange?.GetInvocationList()?.Length ?? 0}");
+            _onHealthChange += value;
+            Debug.Log($"[CLIENT] After adding subscriber. New count: {_onHealthChange?.GetInvocationList()?.Length ?? 0}");
+        }
+        remove
+        {
+            Debug.Log($"[CLIENT] Removing subscriber from OnHealthChange. Current count: {_onHealthChange?.GetInvocationList()?.Length ?? 0}");
+            _onHealthChange -= value;
+            Debug.Log($"[CLIENT] After removing subscriber. New count: {_onHealthChange?.GetInvocationList()?.Length ?? 0}");
+        }
+    }
+    
     public static event Action<NetworkMessages.ExperienceGainMessage> OnExperienceGain;
     
     // Enemy-related events
@@ -83,7 +100,6 @@ public class NetworkManager : MonoBehaviour
         if (_isConnecting || IsConnected) return;
         
         _isConnecting = true;
-        Debug.Log($"Connecting to WebSocket server: {ServerUrl}");
 
         try
         {
@@ -103,9 +119,6 @@ public class NetworkManager : MonoBehaviour
         {
             Debug.LogError($"Failed to connect to WebSocket server: {ex.Message}");
             QueueMainThreadAction(() => OnDisconnected?.Invoke());
-            
-            // Auto-reconnect disabled - login system will handle reconnection
-            Debug.Log("Connection failed, auto-reconnect disabled. Use login system to reconnect.");
             // await Task.Delay(TimeSpan.FromSeconds(ReconnectDelay));
             // if (!IsConnected)
             // {
@@ -148,7 +161,6 @@ public class NetworkManager : MonoBehaviour
                 }
                 else if (result.MessageType == WebSocketMessageType.Close)
                 {
-                    Debug.Log("WebSocket connection closed by server");
                     QueueMainThreadAction(() => OnDisconnected?.Invoke());
                     break;
                 }
@@ -158,9 +170,6 @@ public class NetworkManager : MonoBehaviour
         {
             Debug.LogError($"WebSocket receive error: {ex.Message}");
             QueueMainThreadAction(() => OnDisconnected?.Invoke());
-            
-            // Auto-reconnect disabled - login system will handle reconnection
-            Debug.Log("Connection failed, auto-reconnect disabled. Use login system to reconnect.");
             // await Task.Delay(TimeSpan.FromSeconds(ReconnectDelay));
             // if (!IsConnected)
             // {
@@ -176,11 +185,6 @@ public class NetworkManager : MonoBehaviour
             // Parse the wrapper message to get the type
             var wrapper = JsonConvert.DeserializeObject<MessageWrapper>(jsonMessage);
             
-            // Only log loot-related messages for debugging
-            if (wrapper.Type == "LootDrop" || wrapper.Type == "LootPickupResponse")
-            {
-                Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Received message type: {wrapper.Type}");
-            }
             
             switch (wrapper.Type)
             {
@@ -292,7 +296,13 @@ public class NetworkManager : MonoBehaviour
                     
                 case "HealthChange":
                     var healthMsg = JsonConvert.DeserializeObject<NetworkMessages.HealthChangeMessage>(wrapper.Data.ToString());
-                    QueueMainThreadAction(() => OnHealthChange?.Invoke(healthMsg));
+                    Debug.Log($"[CLIENT] Received HealthChange message: PlayerId={healthMsg.PlayerId}, NewHealth={healthMsg.NewHealth}, Change={healthMsg.HealthChange}, Source={healthMsg.Source}");
+                    Debug.Log($"[CLIENT] OnHealthChange has {GetHealthChangeSubscriberCount()} subscribers");
+                    QueueMainThreadAction(() => {
+                        Debug.Log($"[CLIENT] Invoking OnHealthChange event for {healthMsg.PlayerId}");
+                        _onHealthChange?.Invoke(healthMsg);
+                        Debug.Log($"[CLIENT] OnHealthChange event invoked");
+                    });
                     break;
                     
                 case "ExperienceGain":
@@ -339,15 +349,8 @@ public class NetworkManager : MonoBehaviour
                                 var uiManager = FindObjectOfType<UIManager>();
                                 var loginUI = FindObjectOfType<LoginUI>();
                                 
-                                if (uiManager != null)
-                                {
-                                    uiManager.ShowLoginPanel();
-                                }
-                                
-                                if (loginUI != null)
-                                {
-                                    loginUI.ShowLoginPanel();
-                                }
+                                uiManager?.ShowLoginPanel();
+                                loginUI?.ShowLoginPanel();
                             }
                         }
                     });
@@ -384,29 +387,17 @@ public class NetworkManager : MonoBehaviour
                     break;
                     
                 case "LootDrop":
-                    Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Received LootDrop message: {wrapper.Data}");
                     var lootDropMsg = JsonConvert.DeserializeObject<NetworkMessages.LootDropMessage>(wrapper.Data.ToString());
                     if (lootDropMsg != null)
                     {
-                        Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Deserialized LootDrop: Item={lootDropMsg.Item?.ItemName}, Position=({lootDropMsg.Position?.X}, {lootDropMsg.Position?.Y}, {lootDropMsg.Position?.Z}), LootId={lootDropMsg.LootId}");
-                        Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Queuing main thread action for OnLootDrop event. Subscribers: {OnLootDrop?.GetInvocationList()?.Length ?? 0}");
-                        QueueMainThreadAction(() => {
-                            Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Executing OnLootDrop event on main thread");
-                            OnLootDrop?.Invoke(lootDropMsg);
-                        });
-                    }
-                    else
-                    {
-                        Debug.LogError($"[NetworkManager] *** LOOT DEBUG *** Failed to deserialize LootDrop message!");
+                        QueueMainThreadAction(() => OnLootDrop?.Invoke(lootDropMsg));
                     }
                     break;
                     
                 case "LootPickupResponse":
-                    Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Received LootPickupResponse: {wrapper.Data}");
                     var lootPickupMsg = JsonConvert.DeserializeObject<NetworkMessages.LootPickupResponseMessage>(wrapper.Data.ToString());
                     if (lootPickupMsg != null)
                     {
-                        Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Pickup Response: Success={lootPickupMsg.Success}, Message={lootPickupMsg.Message}, Item={lootPickupMsg.Item?.ItemName}");
                         QueueMainThreadAction(() => OnLootPickupResponse?.Invoke(lootPickupMsg));
                     }
                     break;
@@ -562,7 +553,6 @@ public class NetworkManager : MonoBehaviour
                 PlayerPosition = new Vector3Data(playerPosition.x, playerPosition.y, playerPosition.z)
             };
             
-            Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Sending loot pickup request for loot: {lootId}");
             await SendMessage("LootPickupRequest", pickupRequest);
         }
         catch (Exception ex)
@@ -596,19 +586,9 @@ public class NetworkManager : MonoBehaviour
             var json = JsonConvert.SerializeObject(wrapper);
             var bytes = Encoding.UTF8.GetBytes(json);
             
-            // Enhanced logging for loot messages only
-            if (messageType == "LootPickupRequest")
-            {
-                Debug.Log($"[NetworkManager] *** LOOT DEBUG *** SENDING LOOT PICKUP REQUEST: {json}");
-            }
             
             await _webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cancellationTokenSource.Token);
             
-            // Only log loot-related message sends
-            if (messageType == "LootPickupRequest")
-            {
-                Debug.Log($"[NetworkManager] *** LOOT DEBUG *** Message sent: {messageType}");
-            }
         }
         catch (Exception ex)
         {
@@ -666,10 +646,17 @@ public class NetworkManager : MonoBehaviour
         }
         else
         {
-            // Auto-reconnect on unpause disabled - login system will handle reconnection
-            Debug.Log("Application unpaused - use login system to reconnect if needed");
             // ConnectToServer();
         }
+    }
+
+    #endregion
+
+    #region Debug Helpers
+
+    private int GetHealthChangeSubscriberCount()
+    {
+        return _onHealthChange?.GetInvocationList()?.Length ?? 0;
     }
 
     #endregion
