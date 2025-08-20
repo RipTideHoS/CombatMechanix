@@ -236,6 +236,16 @@ namespace CombatMechanix.AI
         {
             if (state.ChaseTarget == null) return false;
             
+            // Don't attack dead players (Health <= 0)
+            if (state.ChaseTarget.Health <= 0)
+            {
+                Console.WriteLine($"[DEBUG] Enemy {enemy.EnemyId} stopped attacking dead player {state.ChaseTarget.PlayerId} (Health={state.ChaseTarget.Health})");
+                // Stop chasing dead player
+                state.IsChasing = false;
+                state.ChaseTarget = null;
+                return false;
+            }
+            
             var now = context.CurrentTime;
             var timeSinceLastAttack = (now - state.LastAttackTime).TotalSeconds;
             
@@ -299,8 +309,21 @@ namespace CombatMechanix.AI
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
             };
             
-            // Calculate new health after damage
-            var newHealth = Math.Max(0, target.Health - (int)damage);
+            // Thread-safe health update using lock with debug logging
+            int originalHealth, newHealth;
+            lock (target)
+            {
+                originalHealth = target.Health;
+                newHealth = Math.Max(0, originalHealth - (int)damage);
+                target.Health = newHealth;
+                Console.WriteLine($"[DEBUG] Enemy {enemy.EnemyId} attacking player {target.PlayerId}: Health {originalHealth} -> {newHealth} (damage: {damage})");
+            }
+            
+            // Persist health change to database immediately (server-authoritative)
+            await PersistHealthChange(target.PlayerId, newHealth, context);
+            
+            // Update all in-memory player states to ensure consistency across AI entities
+            await UpdateInMemoryPlayerHealth(target.PlayerId, newHealth, context);
             
             // Create health change message for server-authoritative damage
             var healthChangeMessage = new Models.NetworkMessages.HealthChangeMessage
@@ -311,15 +334,62 @@ namespace CombatMechanix.AI
                 Source = $"Enemy attack from {enemy.EnemyName}"
             };
             
-            // Broadcast both messages to all clients
-            if (context.BroadcastMessage != null)
+            // Send messages to appropriate recipients
+            if (context.BroadcastMessage != null && context.SendToPlayer != null)
             {
-                
-                // Send attack animation/effect
+                // Send attack animation/effect to all clients (for visual effects)
                 await context.BroadcastMessage("CombatAction", attackMessage);
                 
-                // Send authoritative health change
-                await context.BroadcastMessage("HealthChange", healthChangeMessage);
+                // Send authoritative health change ONLY to the affected player
+                await context.SendToPlayer(target.PlayerId, "HealthChange", healthChangeMessage);
+            }
+        }
+        
+        /// <summary>
+        /// Persist health change to database (server-authoritative)
+        /// </summary>
+        private async Task PersistHealthChange(string playerId, int newHealth, AIWorldContext context)
+        {
+            try
+            {
+                // NOTE: This requires a service provider in AIWorldContext to access PlayerStatsService
+                // For now, we'll add a database persistence function to AIWorldContext
+                if (context.PersistPlayerHealth != null)
+                {
+                    await context.PersistPlayerHealth(playerId, newHealth);
+                    Console.WriteLine($"[DEBUG] Persisted health change for player {playerId} to {newHealth}");
+                }
+                else
+                {
+                    Console.WriteLine($"[WARNING] Cannot persist health change - PersistPlayerHealth function not available in context");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Failed to persist health change for player {playerId}: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Update all in-memory player states to ensure consistency across AI entities
+        /// </summary>
+        private async Task UpdateInMemoryPlayerHealth(string playerId, int newHealth, AIWorldContext context)
+        {
+            try
+            {
+                if (context.UpdatePlayerHealthInMemory != null)
+                {
+                    await context.UpdatePlayerHealthInMemory(playerId, newHealth);
+                    Console.WriteLine($"[DEBUG] Updated in-memory health for player {playerId} to {newHealth}");
+                }
+                else
+                {
+                    Console.WriteLine($"[WARNING] Cannot update in-memory player health - UpdatePlayerHealthInMemory function not available in context");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Failed to update in-memory player health for player {playerId}: {ex.Message}");
             }
         }
         

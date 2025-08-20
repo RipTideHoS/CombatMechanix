@@ -101,6 +101,21 @@ namespace CombatMechanix.AI
         public Func<string, object, Task>? BroadcastMessage { get; set; }
         
         /// <summary>
+        /// Function to send messages to a specific player
+        /// </summary>
+        public Func<string, string, object, Task>? SendToPlayer { get; set; }
+        
+        /// <summary>
+        /// Function to persist player health changes to database
+        /// </summary>
+        public Func<string, int, Task>? PersistPlayerHealth { get; set; }
+        
+        /// <summary>
+        /// Function to update player health in all in-memory caches
+        /// </summary>
+        public Func<string, int, Task>? UpdatePlayerHealthInMemory { get; set; }
+        
+        /// <summary>
         /// Find the nearest player to a given position
         /// </summary>
         public PlayerState? FindNearestPlayer(Vector3Data position, float maxRange = float.MaxValue)
@@ -111,6 +126,9 @@ namespace CombatMechanix.AI
             foreach (var player in ActivePlayers)
             {
                 if (!player.IsOnline) continue;
+                
+                // Skip dead players (Health <= 0)
+                if (player.Health <= 0) continue;
                 
                 float distance = CalculateDistance(position, player.Position);
                 if (distance < nearestDistance)
@@ -140,7 +158,7 @@ namespace CombatMechanix.AI
         public List<PlayerState> GetPlayersInRange(Vector3Data position, float range)
         {
             return ActivePlayers
-                .Where(p => p.IsOnline && CalculateDistance(position, p.Position) <= range)
+                .Where(p => p.IsOnline && p.Health > 0 && CalculateDistance(position, p.Position) <= range)
                 .ToList();
         }
     }

@@ -22,24 +22,8 @@ builder.Services.AddSingleton<EnemyAIManager>(serviceProvider =>
     
     var getPlayersFunc = new Func<Task<List<CombatMechanix.Models.PlayerState>>>(async () => 
     {
-        // This would be replaced with actual player service integration
-        var activePlayers = new List<CombatMechanix.Models.PlayerState>();
-        foreach (var connection in connectionManager.GetAllConnections())
-        {
-            if (!string.IsNullOrEmpty(connection.PlayerId))
-            {
-                var playerState = new CombatMechanix.Models.PlayerState
-                {
-                    PlayerId = connection.PlayerId,
-                    PlayerName = connection.PlayerName ?? "Unknown",
-                    Position = connection.LastPosition ?? new CombatMechanix.Models.Vector3Data(),
-                    IsOnline = true,
-                    LastUpdate = DateTime.UtcNow
-                };
-                activePlayers.Add(playerState);
-            }
-        }
-        return activePlayers;
+        // Use cached player data from WebSocketConnectionManager instead of creating new objects
+        return await connectionManager.GetActivePlayersForAI();
     });
     
     var getEnemyFunc = new Func<string, CombatMechanix.Models.EnemyState?>(enemyId => 
@@ -47,7 +31,7 @@ builder.Services.AddSingleton<EnemyAIManager>(serviceProvider =>
         return enemyManager.GetEnemy(enemyId);
     });
     
-    return new EnemyAIManager(logger, connectionManager, getEnemiesFunc, getPlayersFunc, getEnemyFunc);
+    return new EnemyAIManager(logger, connectionManager, serviceProvider, getEnemiesFunc, getPlayersFunc, getEnemyFunc);
 });
 builder.Services.AddScoped<IPlayerStatsRepository, SqlPlayerStatsRepository>();
 builder.Services.AddScoped<IPlayerStatsService, PlayerStatsService>();

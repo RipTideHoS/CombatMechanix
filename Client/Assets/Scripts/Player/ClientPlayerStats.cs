@@ -244,25 +244,8 @@ public class ClientPlayerStats : MonoBehaviour
         }
     }
 
-    // Method to request health change (for testing purposes)
-    public void TestHealthChange(int healthChange, string source = "Test")
-    {
-        if (GameManager.Instance?.NetworkManager != null)
-        {
-            int newHealth = Mathf.Clamp(Health + healthChange, 0, MaxHealth);
-            
-            var healthMessage = new NetworkMessages.HealthChangeMessage
-            {
-                PlayerId = GameManager.Instance.LocalPlayerId,
-                NewHealth = newHealth,
-                HealthChange = healthChange,
-                Source = source
-            };
-            
-            _ = GameManager.Instance.NetworkManager.SendMessage("HealthChange", healthMessage);
-            Debug.Log($"Sent test health change request: {healthChange} to {newHealth} from {source}");
-        }
-    }
+    // NOTE: TestHealthChange method removed - clients should NOT send health changes back to server
+    // In a server-authoritative system, only the server calculates and sends health changes to clients
 
     // Debug display for inspector
     private void OnGUI()
@@ -286,9 +269,9 @@ public class ClientPlayerStats : MonoBehaviour
             TestExperienceGain(50, "GUI Test");
         }
         
-        if (GUILayout.Button("Test +5 Health"))
+        if (GUILayout.Button("Test Health (Server Only)"))
         {
-            TestHealthChange(5, "GUI Test");
+            Debug.Log("Health changes are now server-authoritative only. No client test available.");
         }
         
         if (GUILayout.Button("Test Event Subscription"))

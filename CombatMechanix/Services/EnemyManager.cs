@@ -13,14 +13,16 @@ namespace CombatMechanix.Services
         private readonly ConcurrentDictionary<string, EnemyState> _enemies = new();
         private readonly WebSocketConnectionManager _connectionManager;
         private readonly ILogger<EnemyManager> _logger;
+        private readonly IServiceProvider _serviceProvider;
         private readonly Timer _updateTimer;
         private LootManager? _lootManager;
         private EnemyAIManager? _aiManager;
         
-        public EnemyManager(WebSocketConnectionManager connectionManager, ILogger<EnemyManager> logger)
+        public EnemyManager(WebSocketConnectionManager connectionManager, ILogger<EnemyManager> logger, IServiceProvider serviceProvider)
         {
             _connectionManager = connectionManager;
             _logger = logger;
+            _serviceProvider = serviceProvider;
             
             // Update enemies every 100ms (10 times per second)
             _updateTimer = new Timer(UpdateEnemies, null, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(100));
@@ -361,43 +363,44 @@ namespace CombatMechanix.Services
         /// </summary>
         private async Task<AIWorldContext> BuildAIWorldContext()
         {
+            var activePlayers = await GetActivePlayersForAI();
+            Console.WriteLine($"[DEBUG] EnemyManager.BuildAIWorldContext: Got {activePlayers.Count} players from cache/DB");
+            foreach (var player in activePlayers)
+            {
+                Console.WriteLine($"[DEBUG] Player {player.PlayerId} has Health={player.Health}");
+            }
+            
             var context = new AIWorldContext
             {
                 CurrentTime = DateTime.UtcNow,
-                ActivePlayers = await GetActivePlayersForAI(),
-                OtherEnemies = GetAllEnemies()
+                ActivePlayers = activePlayers,
+                OtherEnemies = GetAllEnemies(),
+                BroadcastMessage = async (messageType, data) => await _connectionManager.BroadcastToAll(messageType, data),
+                SendToPlayer = async (playerId, messageType, data) => await _connectionManager.SendToPlayer(playerId, messageType, data),
+                PersistPlayerHealth = async (playerId, newHealth) => 
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var playerStatsService = scope.ServiceProvider.GetRequiredService<IPlayerStatsService>();
+                    await playerStatsService.UpdateHealthAsync(playerId, newHealth);
+                },
+                UpdatePlayerHealthInMemory = async (playerId, newHealth) => 
+                {
+                    // Update player health in the connection manager's player cache
+                    await _connectionManager.UpdatePlayerHealthInMemory(playerId, newHealth);
+                }
             };
             
             return context;
         }
         
         /// <summary>
-        /// Get active players for AI context (will need to integrate with player service)
+        /// Get active players for AI context using in-memory cached data for consistent health values
         /// </summary>
         private async Task<List<PlayerState>> GetActivePlayersForAI()
         {
-            // For now, get from connection manager
-            var activePlayers = new List<PlayerState>();
-            
-            foreach (var connection in _connectionManager.GetAllConnections())
-            {
-                if (!string.IsNullOrEmpty(connection.PlayerId))
-                {
-                    // Create basic player state for AI context
-                    // In full implementation, this would come from PlayerStatsService
-                    var playerState = new PlayerState
-                    {
-                        PlayerId = connection.PlayerId,
-                        PlayerName = connection.PlayerName ?? "Unknown",
-                        Position = connection.LastPosition ?? new Vector3Data(),
-                        IsOnline = true,
-                        LastUpdate = DateTime.UtcNow
-                    };
-                    activePlayers.Add(playerState);
-                }
-            }
-            
-            return activePlayers;
+            // Get players from connection manager's in-memory cache to ensure consistent health values
+            // This avoids the database round-trip and uses the already-updated in-memory states
+            return await _connectionManager.GetActivePlayersForAI();
         }
         
         /// <summary>

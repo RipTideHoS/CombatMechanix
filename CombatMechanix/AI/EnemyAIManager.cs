@@ -11,6 +11,7 @@ namespace CombatMechanix.AI
     {
         private readonly ILogger<EnemyAIManager> _logger;
         private readonly WebSocketConnectionManager _connectionManager;
+        private readonly IServiceProvider _serviceProvider;
         private readonly Func<Task<List<EnemyState>>> _getEnemiesFunc;
         private readonly Func<Task<List<PlayerState>>> _getPlayersFunc;
         private readonly Func<string, EnemyState?> _getEnemyFunc;
@@ -37,12 +38,14 @@ namespace CombatMechanix.AI
         public EnemyAIManager(
             ILogger<EnemyAIManager> logger, 
             WebSocketConnectionManager connectionManager,
+            IServiceProvider serviceProvider,
             Func<Task<List<EnemyState>>> getEnemiesFunc,
             Func<Task<List<PlayerState>>> getPlayersFunc,
             Func<string, EnemyState?> getEnemyFunc)
         {
             _logger = logger;
             _connectionManager = connectionManager;
+            _serviceProvider = serviceProvider;
             _getEnemiesFunc = getEnemiesFunc;
             _getPlayersFunc = getPlayersFunc;
             _getEnemyFunc = getEnemyFunc;
@@ -233,6 +236,21 @@ namespace CombatMechanix.AI
                 BroadcastMessage = async (messageType, data) => 
                 {
                     await _connectionManager.BroadcastToAll(messageType, data);
+                },
+                SendToPlayer = async (playerId, messageType, data) => 
+                {
+                    await _connectionManager.SendToPlayer(playerId, messageType, data);
+                },
+                PersistPlayerHealth = async (playerId, newHealth) => 
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var playerStatsService = scope.ServiceProvider.GetRequiredService<IPlayerStatsService>();
+                    await playerStatsService.UpdateHealthAsync(playerId, newHealth);
+                },
+                UpdatePlayerHealthInMemory = async (playerId, newHealth) => 
+                {
+                    // Update player health in the connection manager's player cache
+                    await _connectionManager.UpdatePlayerHealthInMemory(playerId, newHealth);
                 }
             };
             

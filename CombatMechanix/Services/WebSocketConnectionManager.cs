@@ -200,6 +200,13 @@ namespace CombatMechanix.Services
             // Update player state
             if (_players.TryGetValue(connection.ConnectionId, out var player))
             {
+                // Reject movement from dead players
+                if (player.Health <= 0)
+                {
+                    Console.WriteLine($"[DEBUG] Rejected movement from dead player {player.PlayerId} (Health={player.Health})");
+                    return;
+                }
+                
                 player.Position = movementData.Position;
                 player.Velocity = movementData.Velocity;
                 player.Rotation = movementData.Rotation;
@@ -353,6 +360,13 @@ namespace CombatMechanix.Services
             if (string.IsNullOrEmpty(connection.PlayerId))
             {
                 _logger.LogWarning("Attack validation failed: No player ID");
+                return false;
+            }
+
+            // Reject attacks from dead players
+            if (_players.TryGetValue(connection.ConnectionId, out var player) && player.Health <= 0)
+            {
+                Console.WriteLine($"[DEBUG] Rejected attack from dead player {player.PlayerId} (Health={player.Health})");
                 return false;
             }
 
@@ -772,6 +786,8 @@ namespace CombatMechanix.Services
             var healthData = JsonSerializer.Deserialize<NetworkMessages.HealthChangeMessage>(data.ToString()!);
             if (healthData == null) return;
 
+            Console.WriteLine($"[DEBUG] Received HealthChange from client: PlayerId={healthData.PlayerId}, Change={healthData.HealthChange}, NewHealth={healthData.NewHealth}, Source={healthData.Source}");
+
             try
             {
                 using var scope = _serviceProvider.CreateScope();
@@ -785,16 +801,12 @@ namespace CombatMechanix.Services
                     // Update in-memory player state
                     if (_players.TryGetValue(connection.ConnectionId, out var player))
                     {
+                        var oldHealth = player.Health;
                         player.Health = healthData.NewHealth;
-
-                        // Send health update to player
-                        await SendToConnection(connection.ConnectionId, "HealthChange", healthData);
-
-                        // Broadcast health change to nearby players (for visual effects)
-                        await BroadcastToOthers(connection.ConnectionId, "HealthChange", healthData);
+                        Console.WriteLine($"[DEBUG] Updated player {healthData.PlayerId} in-memory health: {oldHealth} -> {player.Health}");
                     }
 
-                    _logger.LogInformation($"Player {healthData.PlayerId} health changed by {healthData.HealthChange} to {healthData.NewHealth} from {healthData.Source}");
+                    _logger.LogInformation($"Player {healthData.PlayerId} health persisted by {healthData.HealthChange} to {healthData.NewHealth} from {healthData.Source}");
                 }
             }
             catch (Exception ex)
@@ -848,7 +860,7 @@ namespace CombatMechanix.Services
                     
                     _logger.LogInformation($"Login Success: Connection {connection.ConnectionId} mapped to Player {connection.PlayerId} ({player.PlayerName})");
                 
-                // TEMPORARY: Auto-reset to Level 1 for testing
+                // TEMPORARY: Auto-reset to Level 1 for testing - RE-ENABLED for death system testing
                 if (player.PlayerName == "RipTide")
                 {
                     try
@@ -924,6 +936,25 @@ namespace CombatMechanix.Services
                         await _enemyManager.SendEnemyStatesToClient(connection.ConnectionId);
                     }
 
+                    // Cache PlayerState for AI system to avoid database queries on every attack
+                    var playerState = new PlayerState
+                    {
+                        PlayerId = player.PlayerId,
+                        PlayerName = player.PlayerName,
+                        Position = player.Position,
+                        Health = result.PlayerStats.Health,  // Use ACTUAL database health, not reset value
+                        MaxHealth = result.PlayerStats.MaxHealth,
+                        Level = result.PlayerStats.Level,
+                        Strength = result.PlayerStats.Strength,
+                        Defense = result.PlayerStats.Defense,
+                        Speed = result.PlayerStats.Speed,
+                        Experience = result.PlayerStats.Experience,
+                        IsOnline = true,
+                        LastUpdate = DateTime.UtcNow
+                    };
+                    _players[connection.ConnectionId] = playerState;
+                    Console.WriteLine($"[DEBUG] Cached PlayerState for ConnectionId={connection.ConnectionId}, PlayerId={playerState.PlayerId}, Health={playerState.Health}");
+                    
                     _logger.LogInformation($"Player {result.PlayerName} logged in successfully with Level {result.PlayerStats.Level}");
                 }
                 else
@@ -1177,6 +1208,98 @@ namespace CombatMechanix.Services
 
         public int GetConnectionCount() => _connections.Count;
         public int GetPlayerCount() => _players.Count;
+        
+        /// <summary>
+        /// Update player health in all in-memory caches (for AI consistency)
+        /// NOTE: This is now redundant since AI modifies shared cached objects directly
+        /// </summary>
+        public async Task UpdatePlayerHealthInMemory(string playerId, int newHealth)
+        {
+            // Since AI now works with shared cached objects, this update is redundant
+            // but we'll keep it for logging and potential future use
+            var playerToUpdate = _players.Values.FirstOrDefault(p => p.PlayerId == playerId);
+            if (playerToUpdate != null)
+            {
+                // Health should already be updated by AI, but verify
+                if (playerToUpdate.Health != newHealth)
+                {
+                    _logger.LogWarning($"Health mismatch for player {playerId}: cache={playerToUpdate.Health}, expected={newHealth}");
+                    playerToUpdate.Health = newHealth;
+                }
+                _logger.LogDebug($"Verified in-memory health for player {playerId}: {newHealth}");
+            }
+            
+            await Task.CompletedTask; // Method signature requires async
+        }
+        
+        /// <summary>
+        /// Get active players for AI context using cached in-memory data
+        /// Returns the ACTUAL cached objects, not copies, so AI modifies the shared instances
+        /// </summary>
+        public async Task<List<PlayerState>> GetActivePlayersForAI()
+        {
+            var activePlayers = new List<PlayerState>();
+            
+            foreach (var connection in _connections.Values)
+            {
+                if (!string.IsNullOrEmpty(connection.PlayerId))
+                {
+                    // Try to get from in-memory cache first
+                    if (_players.TryGetValue(connection.ConnectionId, out var cachedPlayer))
+                    {
+                        // Update position from latest connection data
+                        cachedPlayer.Position = connection.LastPosition ?? new Vector3Data();
+                        cachedPlayer.LastUpdate = DateTime.UtcNow;
+                        
+                        // DEBUG: Log health value from cache
+                        Console.WriteLine($"[DEBUG] GetActivePlayersForAI: Returning cached player {cachedPlayer.PlayerId} with Health={cachedPlayer.Health}");
+                        
+                        // Return the ACTUAL cached object, not a copy
+                        activePlayers.Add(cachedPlayer);
+                    }
+                    else
+                    {
+                        // Fallback to database if not in cache
+                        Console.WriteLine($"[DEBUG] Cache MISS for ConnectionId={connection.ConnectionId}, PlayerId={connection.PlayerId} - falling back to database");
+                        try
+                        {
+                            using var scope = _serviceProvider.CreateScope();
+                            var playerStatsService = scope.ServiceProvider.GetRequiredService<IPlayerStatsService>();
+                            var playerStats = await playerStatsService.GetPlayerStatsAsync(connection.PlayerId);
+                            
+                            if (playerStats != null)
+                            {
+                                var playerState = new PlayerState
+                                {
+                                    PlayerId = connection.PlayerId,
+                                    PlayerName = connection.PlayerName ?? "Unknown",
+                                    Position = connection.LastPosition ?? new Vector3Data(),
+                                    Health = playerStats.Health,
+                                    MaxHealth = playerStats.MaxHealth,
+                                    Level = playerStats.Level,
+                                    Strength = playerStats.Strength,
+                                    Defense = playerStats.Defense,
+                                    Speed = playerStats.Speed,
+                                    Experience = playerStats.Experience,
+                                    IsOnline = true,
+                                    LastUpdate = DateTime.UtcNow
+                                };
+                                activePlayers.Add(playerState);
+                                
+                                // Cache it for next time
+                                _players[connection.ConnectionId] = playerState;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, $"Failed to get player stats for {connection.PlayerId}");
+                        }
+                    }
+                }
+            }
+            
+            return activePlayers;
+        }
         private async Task HandleAdminResetStats(WebSocketConnection connection, object? data)
         {
             try
