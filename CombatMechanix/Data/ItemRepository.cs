@@ -9,6 +9,7 @@ namespace CombatMechanix.Data
         Task<List<InventoryItem>> GetItemsByRarityAsync(string rarity);
         Task<InventoryItem?> GetItemByIdAsync(string itemId);
         Task<InventoryItem?> GetRandomItemByRarityAsync(string rarity);
+        Task<InventoryItem?> GetRandomItemFromAllRaritiesAsync();
     }
 
     public class ItemRepository : IItemRepository
@@ -125,6 +126,63 @@ namespace CombatMechanix.Data
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting random item by rarity: {Rarity}", rarity);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Get a random item from all rarities with weighted probability
+        /// Rare items are less likely to drop than common items
+        /// </summary>
+        public async Task<InventoryItem?> GetRandomItemFromAllRaritiesAsync()
+        {
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                // Weighted selection: Common has higher probability than Uncommon, which has higher than Rare
+                const string sql = @"
+                    WITH WeightedItems AS (
+                        SELECT 
+                            ItemTypeId, ItemName, Description, ItemRarity, ItemCategory, MaxStackSize, IconPath,
+                            CASE ItemRarity 
+                                WHEN 'Common' THEN 70    -- 70% weight for Common items
+                                WHEN 'Uncommon' THEN 25  -- 25% weight for Uncommon items  
+                                WHEN 'Rare' THEN 5       -- 5% weight for Rare items
+                                ELSE 1                   -- 1% weight for any other rarity
+                            END as Weight
+                        FROM ItemTypes
+                    ),
+                    ExpandedItems AS (
+                        SELECT ItemTypeId, ItemName, Description, ItemRarity, ItemCategory, MaxStackSize, IconPath,
+                               ROW_NUMBER() OVER (ORDER BY NEWID()) as RandomOrder
+                        FROM WeightedItems
+                        CROSS APPLY (
+                            SELECT TOP (Weight) 1 as Dummy
+                            FROM sys.objects
+                        ) AS WeightExpander
+                    )
+                    SELECT TOP 1 ItemTypeId, ItemName, Description, ItemRarity, ItemCategory, MaxStackSize, IconPath
+                    FROM ExpandedItems
+                    ORDER BY RandomOrder";
+
+                using var command = new SqlCommand(sql, connection);
+                using var reader = await command.ExecuteReaderAsync();
+                
+                if (await reader.ReadAsync())
+                {
+                    var item = MapFromDataReader(reader);
+                    _logger.LogDebug("Selected random item from all rarities: {ItemName} ({Rarity})", item.ItemName, item.Rarity);
+                    return item;
+                }
+
+                _logger.LogWarning("No items found in database");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting random item from all rarities");
                 throw;
             }
         }

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Linq;
 using CombatMechanix.Models;
 using CombatMechanix.Services;
 using CombatMechanix.Data;
@@ -86,6 +87,7 @@ namespace CombatMechanix.Services
         private async Task ReceiveMessages(WebSocketConnection connection)
         {
             var buffer = new byte[1024 * 4];
+            var messageBuffer = new List<byte>();
             _logger.LogInformation($"Starting message receive loop for {connection.ConnectionId}");
 
             while (connection.WebSocket.State == WebSocketState.Open)
@@ -93,13 +95,25 @@ namespace CombatMechanix.Services
                 try
                 {
                     var result = await connection.WebSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-                    _logger.LogDebug($"Received message from {connection.ConnectionId}: Type={result.MessageType}, Count={result.Count}");
+                    _logger.LogDebug($"Received message from {connection.ConnectionId}: Type={result.MessageType}, Count={result.Count}, EndOfMessage={result.EndOfMessage}");
 
                     if (result.MessageType == WebSocketMessageType.Text)
                     {
-                        var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                        _logger.LogInformation($"Text message from {connection.ConnectionId}: {message}");
-                        await ProcessMessage(connection, message);
+                        // Add received bytes to message buffer
+                        messageBuffer.AddRange(buffer.Take(result.Count));
+                        
+                        // If this is the end of the message, process the complete message
+                        if (result.EndOfMessage)
+                        {
+                            var message = Encoding.UTF8.GetString(messageBuffer.ToArray());
+                            _logger.LogInformation($"Complete text message from {connection.ConnectionId} ({messageBuffer.Count} bytes)");
+                            await ProcessMessage(connection, message);
+                            messageBuffer.Clear(); // Clear for next message
+                        }
+                        else
+                        {
+                            _logger.LogDebug($"Partial message received from {connection.ConnectionId}, waiting for more data");
+                        }
                     }
                     else if (result.MessageType == WebSocketMessageType.Close)
                     {
@@ -156,6 +170,12 @@ namespace CombatMechanix.Services
                         break;
                     case "InventoryRequest":
                         await HandleInventoryRequest(connection, wrapper.Data);
+                        break;
+                    case "ItemUseRequest":
+                        await HandleItemUseRequest(connection, wrapper.Data);
+                        break;
+                    case "ItemSellRequest":
+                        await HandleItemSellRequest(connection, wrapper.Data);
                         break;
                     case "SessionValidation":
                         await HandleSessionValidation(connection, wrapper.Data);
@@ -607,7 +627,7 @@ namespace CombatMechanix.Services
                 // Create player state from database stats
                 var player = new PlayerState
                 {
-                    PlayerId = connection.ConnectionId,
+                    PlayerId = authData.PlayerId,  // Use actual player ID from authentication data
                     PlayerName = playerStats.PlayerName,
                     Position = playerStats.LastPosition ?? new Vector3Data(0, 1, 0),
                     Health = playerStats.Health,
@@ -622,7 +642,7 @@ namespace CombatMechanix.Services
                 };
 
                 _players.TryAdd(connection.ConnectionId, player);
-                connection.PlayerId = player.PlayerId;
+                connection.PlayerId = authData.PlayerId;  // Use actual player ID from authentication data
                 
                 // Set connection.LastPosition for AI system access
                 connection.LastPosition = player.Position;
@@ -835,9 +855,10 @@ namespace CombatMechanix.Services
                 if (result.Success && result.PlayerStats != null)
                 {
                     // Create player state from authenticated player
+                    var actualPlayerId = result.PlayerId ?? result.PlayerStats.PlayerId;
                     var player = new PlayerState
                     {
-                        PlayerId = result.PlayerId ?? result.PlayerStats.PlayerId,
+                        PlayerId = actualPlayerId,  // Use actual player ID from database, not connection ID
                         PlayerName = result.PlayerStats.PlayerName,
                         Position = result.PlayerStats.LastPosition ?? new Vector3Data(0, 1, 0),
                         Health = result.PlayerStats.Health,
@@ -852,7 +873,7 @@ namespace CombatMechanix.Services
                     };
 
                     _players.TryAdd(connection.ConnectionId, player);
-                    connection.PlayerId = result.PlayerId ?? result.PlayerStats.PlayerId;
+                    connection.PlayerId = actualPlayerId;  // Set connection PlayerId to actual database player ID
                     
                     // Set connection.LastPosition for AI system access
                     connection.LastPosition = player.Position;
@@ -1402,6 +1423,275 @@ namespace CombatMechanix.Services
                     Success = false,
                     ErrorMessage = "Server error"
                 });
+            }
+        }
+
+        private async Task HandleItemUseRequest(WebSocketConnection connection, object data)
+        {
+            try
+            {
+                _logger.LogInformation($"Handling item use request for connection: {connection.ConnectionId}");
+
+                if (string.IsNullOrEmpty(connection.PlayerId))
+                {
+                    _logger.LogWarning($"Item use request from unauthenticated connection: {connection.ConnectionId}");
+                    await SendToConnection(connection.ConnectionId, "ItemUseResponse", new NetworkMessages.ItemUseResponseMessage
+                    {
+                        Success = false,
+                        Message = "Not authenticated"
+                    });
+                    return;
+                }
+
+                var useRequest = JsonSerializer.Deserialize<NetworkMessages.ItemUseRequestMessage>(data.ToString()!);
+                if (useRequest == null)
+                {
+                    await SendToConnection(connection.ConnectionId, "ItemUseResponse", new NetworkMessages.ItemUseResponseMessage
+                    {
+                        Success = false,
+                        Message = "Invalid request data"
+                    });
+                    return;
+                }
+
+                _logger.LogInformation($"Player {connection.PlayerId} attempting to use item {useRequest.ItemType} from slot {useRequest.SlotIndex}");
+
+                // Get player's inventory to verify item exists
+                using var scope = _serviceProvider.CreateScope();
+                var inventoryRepository = scope.ServiceProvider.GetRequiredService<IPlayerInventoryRepository>();
+                
+                var item = await inventoryRepository.GetItemInSlotAsync(connection.PlayerId, useRequest.SlotIndex);
+                
+                if (item == null || item.ItemType != useRequest.ItemType)
+                {
+                    await SendToConnection(connection.ConnectionId, "ItemUseResponse", new NetworkMessages.ItemUseResponseMessage
+                    {
+                        Success = false,
+                        Message = "Item not found in specified slot"
+                    });
+                    return;
+                }
+
+                // Apply item effects based on item type
+                bool success = await ApplyItemEffects(connection.PlayerId, item);
+                
+                if (success)
+                {
+                    // Reduce item quantity or remove item
+                    int remainingQuantity = item.Quantity - 1;
+                    
+                    if (remainingQuantity <= 0)
+                    {
+                        await inventoryRepository.RemoveItemFromInventoryAsync(connection.PlayerId, useRequest.SlotIndex);
+                        remainingQuantity = 0;
+                    }
+                    else
+                    {
+                        await inventoryRepository.UpdateItemQuantityAsync(connection.PlayerId, useRequest.ItemType, remainingQuantity);
+                    }
+
+                    await SendToConnection(connection.ConnectionId, "ItemUseResponse", new NetworkMessages.ItemUseResponseMessage
+                    {
+                        PlayerId = connection.PlayerId,
+                        Success = true,
+                        Message = $"Used {item.ItemName}",
+                        ItemType = useRequest.ItemType,
+                        RemainingQuantity = remainingQuantity
+                    });
+
+                    _logger.LogInformation($"Player {connection.PlayerId} successfully used {item.ItemName}. Remaining quantity: {remainingQuantity}");
+                    
+                    // Send inventory update to refresh client display
+                    var inventoryItems = await inventoryRepository.GetPlayerInventoryAsync(connection.PlayerId);
+                    await SendToConnection(connection.ConnectionId, "InventoryResponse", new NetworkMessages.InventoryResponseMessage
+                    {
+                        PlayerId = connection.PlayerId,
+                        Items = inventoryItems,
+                        Success = true
+                    });
+                }
+                else
+                {
+                    await SendToConnection(connection.ConnectionId, "ItemUseResponse", new NetworkMessages.ItemUseResponseMessage
+                    {
+                        Success = false,
+                        Message = $"Failed to use {item.ItemName}"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling item use request");
+                await SendToConnection(connection.ConnectionId, "ItemUseResponse", new NetworkMessages.ItemUseResponseMessage
+                {
+                    Success = false,
+                    Message = "Server error"
+                });
+            }
+        }
+
+        private async Task HandleItemSellRequest(WebSocketConnection connection, object data)
+        {
+            try
+            {
+                _logger.LogInformation($"Handling item sell request for connection: {connection.ConnectionId}");
+
+                if (string.IsNullOrEmpty(connection.PlayerId))
+                {
+                    _logger.LogWarning($"Item sell request from unauthenticated connection: {connection.ConnectionId}");
+                    await SendToConnection(connection.ConnectionId, "ItemSellResponse", new NetworkMessages.ItemSellResponseMessage
+                    {
+                        Success = false,
+                        Message = "Not authenticated"
+                    });
+                    return;
+                }
+
+                // TODO: Implement full sell functionality when shop system is ready
+                await SendToConnection(connection.ConnectionId, "ItemSellResponse", new NetworkMessages.ItemSellResponseMessage
+                {
+                    PlayerId = connection.PlayerId,
+                    Success = false,
+                    Message = "Shop system not yet implemented"
+                });
+
+                _logger.LogInformation($"Sell request from player {connection.PlayerId} - shop system not yet implemented");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling item sell request");
+                await SendToConnection(connection.ConnectionId, "ItemSellResponse", new NetworkMessages.ItemSellResponseMessage
+                {
+                    Success = false,
+                    Message = "Server error"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Apply effects when a player uses an item
+        /// </summary>
+        private async Task<bool> ApplyItemEffects(string playerId, InventoryItem item)
+        {
+            try
+            {
+                _logger.LogInformation($"Applying effects for item: {item.ItemType} to player: {playerId}");
+
+                // Check if item is consumable
+                if (string.IsNullOrEmpty(item.ItemCategory) || 
+                    (!item.ItemCategory.Equals("Consumable", StringComparison.OrdinalIgnoreCase) &&
+                     !item.ItemCategory.Equals("Medical", StringComparison.OrdinalIgnoreCase) &&
+                     !item.ItemCategory.Equals("Food", StringComparison.OrdinalIgnoreCase)))
+                {
+                    _logger.LogWarning($"Item {item.ItemType} is not consumable. Category: {item.ItemCategory}");
+                    return false;
+                }
+
+                // Apply effects based on item type
+                switch (item.ItemType.ToLower())
+                {
+                    case "health_potion":
+                    case "common_health_potion":
+                        return await ApplyHealthPotion(playerId, 50); // Heal 50 HP
+                    
+                    case "uncommon_magic_potion":
+                        return await ApplyMagicPotion(playerId, 25); // Restore 25 mana (placeholder)
+                    
+                    default:
+                        _logger.LogWarning($"Unknown consumable item type: {item.ItemType}");
+                        return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error applying item effects for {item.ItemType}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Apply health potion effect using cached player data (follows combat system pattern)
+        /// </summary>
+        private async Task<bool> ApplyHealthPotion(string playerId, int healAmount)
+        {
+            try
+            {
+                // Find player in cached memory first (same pattern as combat)
+                var playerToHeal = _players.Values.FirstOrDefault(p => p.PlayerId == playerId);
+                if (playerToHeal == null)
+                {
+                    _logger.LogWarning($"Player {playerId} not found in cached memory for health potion");
+                    return false;
+                }
+
+                // Get max health from database only once (could be cached in future)
+                using var scope = _serviceProvider.CreateScope();
+                var playerStatsRepository = scope.ServiceProvider.GetRequiredService<IPlayerStatsRepository>();
+                var playerStats = await playerStatsRepository.GetPlayerStatsAsync(playerId);
+                if (playerStats == null)
+                {
+                    _logger.LogWarning($"Player stats not found for {playerId}");
+                    return false;
+                }
+
+                // Calculate new health using cached current health (don't exceed max health)
+                int currentHealth = playerToHeal.Health;
+                int newHealth = Math.Min(currentHealth + healAmount, playerStats.MaxHealth);
+                int actualHealAmount = newHealth - currentHealth;
+
+                if (actualHealAmount <= 0)
+                {
+                    _logger.LogInformation($"Player {playerId} already at full health ({currentHealth}/{playerStats.MaxHealth})");
+                    return false; // Already at full health
+                }
+
+                // Update cached player health immediately (same as combat)
+                playerToHeal.Health = newHealth;
+
+                // Persist to database asynchronously (same pattern as combat)
+                await playerStatsRepository.UpdatePlayerHealthAsync(playerId, newHealth);
+
+                // Create and send health change message (same pattern as combat)
+                var healthChangeMessage = new NetworkMessages.HealthChangeMessage
+                {
+                    PlayerId = playerId,
+                    NewHealth = newHealth,
+                    HealthChange = actualHealAmount, // Positive for healing
+                    Source = "Health Potion"
+                };
+
+                // Send to the specific player (not broadcast to all like combat damage)
+                var connectionEntry = _connections.FirstOrDefault(kvp => kvp.Value.PlayerId == playerId);
+                if (connectionEntry.Value != null)
+                {
+                    await SendToConnection(connectionEntry.Key, "HealthChange", healthChangeMessage);
+                }
+
+                _logger.LogInformation($"Player {playerId} healed for {actualHealAmount} HP using cached data (new health: {newHealth})");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error applying health potion to player {playerId}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Apply magic potion effect (placeholder for mana restoration)
+        /// </summary>
+        private async Task<bool> ApplyMagicPotion(string playerId, int manaAmount)
+        {
+            try
+            {
+                // TODO: Implement mana system when magic/spells are added
+                _logger.LogInformation($"Magic potion used by {playerId} - mana system not yet implemented");
+                return true; // Return true for now so the item is consumed
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error applying magic potion to player {playerId}");
+                return false;
             }
         }
 

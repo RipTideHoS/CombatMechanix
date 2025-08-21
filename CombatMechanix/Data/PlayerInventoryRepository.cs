@@ -47,7 +47,7 @@ namespace CombatMechanix.Data
                         it.ItemRarity as Rarity,
                         it.ItemCategory,
                         pi.Quantity,
-                        pi.SlotPosition,
+                        pi.SlotIndex,
                         it.MaxStackSize,
                         0 as AttackPower,
                         0 as DefensePower,
@@ -58,7 +58,7 @@ namespace CombatMechanix.Data
                     FROM PlayerInventory pi
                     INNER JOIN ItemTypes it ON pi.ItemTypeId = it.ItemTypeId
                     WHERE pi.PlayerId = @PlayerId
-                    ORDER BY pi.SlotPosition";
+                    ORDER BY pi.SlotIndex";
 
                 using var command = new SqlCommand(sql, connection);
                 command.Parameters.Add("@PlayerId", SqlDbType.NVarChar, 50).Value = playerId;
@@ -106,14 +106,14 @@ namespace CombatMechanix.Data
                 }
 
                 const string sql = @"
-                    INSERT INTO PlayerInventory (PlayerId, ItemTypeId, Quantity, SlotPosition, ItemCondition, ItemLevel, AcquiredAt)
-                    VALUES (@PlayerId, @ItemTypeId, @Quantity, @SlotPosition, 100.0, 1, GETUTCDATE())";
+                    INSERT INTO PlayerInventory (PlayerId, ItemTypeId, Quantity, SlotIndex, ItemCondition, ItemLevel, AcquiredAt)
+                    VALUES (@PlayerId, @ItemTypeId, @Quantity, @SlotIndex, 100.0, 1, GETUTCDATE())";
 
                 using var command = new SqlCommand(sql, connection);
                 command.Parameters.Add("@PlayerId", SqlDbType.NVarChar, 50).Value = playerId;
                 command.Parameters.Add("@ItemTypeId", SqlDbType.NVarChar, 50).Value = item.ItemType;
                 command.Parameters.Add("@Quantity", SqlDbType.Int).Value = item.Quantity;
-                command.Parameters.Add("@SlotPosition", SqlDbType.Int).Value = nextSlot;
+                command.Parameters.Add("@SlotIndex", SqlDbType.Int).Value = nextSlot;
 
                 int result = await command.ExecuteNonQueryAsync();
                 
@@ -230,14 +230,14 @@ namespace CombatMechanix.Data
 
                 const string sql = @"
                     WITH SlotNumbers AS (
-                        SELECT TOP 20 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS SlotPosition
+                        SELECT TOP 20 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS SlotIndex
                         FROM sys.objects
                     )
-                    SELECT TOP 1 s.SlotPosition
+                    SELECT TOP 1 s.SlotIndex
                     FROM SlotNumbers s
-                    LEFT JOIN PlayerInventory pi ON pi.PlayerId = @PlayerId AND pi.SlotPosition = s.SlotPosition
-                    WHERE pi.SlotPosition IS NULL
-                    ORDER BY s.SlotPosition";
+                    LEFT JOIN PlayerInventory pi ON pi.PlayerId = @PlayerId AND pi.SlotIndex = s.SlotIndex
+                    WHERE pi.SlotIndex IS NULL
+                    ORDER BY s.SlotIndex";
 
                 using var command = new SqlCommand(sql, connection);
                 command.Parameters.Add("@PlayerId", SqlDbType.NVarChar, 50).Value = playerId;
@@ -282,7 +282,7 @@ namespace CombatMechanix.Data
                         it.ItemRarity as Rarity,
                         it.ItemCategory,
                         pi.Quantity,
-                        pi.SlotPosition,
+                        pi.SlotIndex,
                         it.MaxStackSize,
                         0 as AttackPower,
                         0 as DefensePower,
@@ -292,7 +292,7 @@ namespace CombatMechanix.Data
                         pi.ItemLevel as Level
                     FROM PlayerInventory pi
                     INNER JOIN ItemTypes it ON pi.ItemTypeId = it.ItemTypeId
-                    WHERE pi.PlayerId = @PlayerId AND pi.SlotPosition = @SlotIndex";
+                    WHERE pi.PlayerId = @PlayerId AND pi.SlotIndex = @SlotIndex";
 
                 using var command = new SqlCommand(sql, connection);
                 command.Parameters.Add("@PlayerId", SqlDbType.NVarChar, 50).Value = playerId;
@@ -356,7 +356,7 @@ namespace CombatMechanix.Data
 
                 const string sql = @"
                     DELETE FROM PlayerInventory 
-                    WHERE PlayerId = @PlayerId AND SlotPosition = @SlotIndex";
+                    WHERE PlayerId = @PlayerId AND SlotIndex = @SlotIndex";
 
                 using var command = new SqlCommand(sql, connection);
                 command.Parameters.Add("@PlayerId", SqlDbType.NVarChar, 50).Value = playerId;
@@ -386,20 +386,37 @@ namespace CombatMechanix.Data
         {
             return new InventoryItem
             {
-                ItemId = reader["InventoryId"].ToString() ?? string.Empty,
+                ItemId = "", // Empty to save space - client doesn't need unique IDs for display
                 ItemType = reader["ItemTypeId"].ToString() ?? string.Empty,
-                ItemName = reader["ItemName"].ToString() ?? string.Empty,
-                ItemDescription = reader["ItemDescription"]?.ToString() ?? string.Empty,
-                Rarity = reader["Rarity"].ToString() ?? "Common",
+                ItemName = reader["ItemTypeId"].ToString() ?? string.Empty, // Use ItemType as name (shorter)
+                ItemDescription = "", // Empty for network efficiency
+                Rarity = CompressRarity(reader["Rarity"].ToString() ?? "Common"), // Convert to single character
+                ItemCategory = reader["ItemCategory"].ToString() ?? string.Empty, // Include for consumable detection
                 Quantity = Convert.ToInt32(reader["Quantity"]),
-                SlotIndex = Convert.ToInt32(reader["SlotPosition"]),
-                IconName = reader["IconName"]?.ToString() ?? string.Empty,
+                SlotIndex = Convert.ToInt32(reader["SlotIndex"]),
+                IconName = reader["ItemTypeId"].ToString() ?? string.Empty, // Use ItemType as IconName
                 IsStackable = Convert.ToBoolean(reader["IsStackable"]),
                 MaxStackSize = Convert.ToInt32(reader["MaxStackSize"]),
-                AttackPower = Convert.ToInt32(reader["AttackPower"]),
-                DefensePower = Convert.ToInt32(reader["DefensePower"]),
-                Value = Convert.ToInt32(reader["Value"]),
-                Level = Convert.ToInt32(reader["Level"])
+                AttackPower = 0, 
+                DefensePower = 0,  
+                Value = 0,
+                Level = 1
+            };
+        }
+        
+        /// <summary>
+        /// Compress full rarity names to single characters for network efficiency
+        /// </summary>
+        private static string CompressRarity(string rarity)
+        {
+            return rarity?.ToLower() switch
+            {
+                "common" => "C",
+                "uncommon" => "U", 
+                "rare" => "R",
+                "epic" => "E",
+                "legendary" => "L",
+                _ => "C" // Default to Common
             };
         }
     }

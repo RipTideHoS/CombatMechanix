@@ -57,17 +57,17 @@ namespace CombatMechanix.Services
                     return;
                 }
 
-                // Get a random Common rarity item from the database
+                // Get a random item from all rarities (with weighted probability)
                 InventoryItem? lootItem;
                 using (var scope = _serviceProvider.CreateScope())
                 {
                     var itemRepository = scope.ServiceProvider.GetRequiredService<IItemRepository>();
-                    lootItem = await itemRepository.GetRandomItemByRarityAsync(DefaultRarity);
+                    lootItem = await itemRepository.GetRandomItemFromAllRaritiesAsync();
                 }
 
                 if (lootItem == null)
                 {
-                    _logger.LogWarning("No Common rarity items found in database for loot drop");
+                    _logger.LogWarning("No items found in database for loot drop");
                     return;
                 }
 

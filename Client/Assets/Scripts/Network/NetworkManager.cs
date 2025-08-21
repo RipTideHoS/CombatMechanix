@@ -147,6 +147,7 @@ public class NetworkManager : MonoBehaviour
     private async Task ReceiveLoop()
     {
         var buffer = new byte[1024 * 4];
+        var messageBuffer = new List<byte>();
         
         try
         {
@@ -156,8 +157,20 @@ public class NetworkManager : MonoBehaviour
                 
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
-                    var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    ProcessMessage(message);
+                    // Add received bytes to message buffer
+                    for (int i = 0; i < result.Count; i++)
+                    {
+                        messageBuffer.Add(buffer[i]);
+                    }
+                    
+                    // If this is the end of the message, process the complete message
+                    if (result.EndOfMessage)
+                    {
+                        var message = Encoding.UTF8.GetString(messageBuffer.ToArray());
+                        ProcessMessage(message);
+                        messageBuffer.Clear(); // Clear for next message
+                    }
+                    // If not end of message, continue accumulating bytes
                 }
                 else if (result.MessageType == WebSocketMessageType.Close)
                 {
@@ -559,6 +572,41 @@ public class NetworkManager : MonoBehaviour
         {
             Debug.LogError($"Failed to send loot pickup request: {ex.Message}");
         }
+    }
+
+    public async Task SendItemUseRequest(NetworkMessages.ItemUseRequestMessage useRequest)
+    {
+        if (!IsConnected || string.IsNullOrEmpty(ConnectionId)) return;
+        
+        try
+        {
+            await SendMessage("ItemUseRequest", useRequest);
+            Debug.Log($"[NetworkManager] Sent item use request for {useRequest.ItemType} in slot {useRequest.SlotIndex}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send item use request: {ex.Message}");
+        }
+    }
+
+    public async Task SendItemSellRequest(NetworkMessages.ItemSellRequestMessage sellRequest)
+    {
+        if (!IsConnected || string.IsNullOrEmpty(ConnectionId)) return;
+        
+        try
+        {
+            await SendMessage("ItemSellRequest", sellRequest);
+            Debug.Log($"[NetworkManager] Sent item sell request for {sellRequest.ItemType} in slot {sellRequest.SlotIndex}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send item sell request: {ex.Message}");
+        }
+    }
+
+    public string GetPlayerId()
+    {
+        return ConnectionId;
     }
 
     private async Task SendHeartbeat()

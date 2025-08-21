@@ -411,10 +411,12 @@ public class InventoryUI : MonoBehaviour
     
     private void HandleSlotClicked(int slotIndex, InventoryItem item)
     {
-        Debug.Log($"[InventoryUI] Slot {slotIndex} clicked - Item: {item?.ItemName ?? "Empty"}");
+        Debug.Log($"[InventoryUI] Slot {slotIndex} left-clicked - Item: {item?.ItemName ?? "Empty"}");
         
         if (item != null)
         {
+            // Left click = Use item (for consumables)
+            UseItem(item, slotIndex);
             OnItemClicked?.Invoke(item);
         }
     }
@@ -425,7 +427,115 @@ public class InventoryUI : MonoBehaviour
         
         if (item != null)
         {
+            // Right click = Sell item
+            SellItem(item, slotIndex);
             OnItemRightClicked?.Invoke(item);
+        }
+    }
+    
+    /// <summary>
+    /// Use an item (consumables only)
+    /// </summary>
+    private async void UseItem(InventoryItem item, int slotIndex)
+    {
+        if (item == null) return;
+        
+        // Check if item is consumable
+        bool isConsumable = IsConsumableItem(item);
+        
+        if (!isConsumable)
+        {
+            Debug.Log($"[InventoryUI] Item {item.ItemName} is not consumable - cannot use");
+            ShowMessage($"{item.ItemName} is not usable");
+            return;
+        }
+        
+        Debug.Log($"[InventoryUI] Using consumable item: {item.ItemName} from slot {slotIndex}");
+        
+        // Send use request to server
+        var networkManager = FindObjectOfType<NetworkManager>();
+        if (networkManager != null)
+        {
+            var useRequest = new NetworkMessages.ItemUseRequestMessage
+            {
+                PlayerId = networkManager.GetPlayerId(),
+                SlotIndex = slotIndex,
+                ItemType = item.ItemType
+            };
+            
+            await networkManager.SendItemUseRequest(useRequest);
+        }
+        else
+        {
+            Debug.LogError("[InventoryUI] NetworkManager not found for item use!");
+        }
+    }
+    
+    /// <summary>
+    /// Sell an item (framework for future implementation)
+    /// </summary>
+    private async void SellItem(InventoryItem item, int slotIndex)
+    {
+        if (item == null) return;
+        
+        Debug.Log($"[InventoryUI] Attempting to sell item: {item.ItemName} from slot {slotIndex}");
+        
+        // TODO: Implement sell functionality when shop system is ready
+        ShowMessage($"Selling {item.ItemName} - Shop system coming soon!");
+        
+        // Framework for future sell request
+        /*
+        var networkManager = FindObjectOfType<NetworkManager>();
+        if (networkManager != null)
+        {
+            var sellRequest = new NetworkMessages.ItemSellRequestMessage
+            {
+                PlayerId = networkManager.GetPlayerId(),
+                SlotIndex = slotIndex,
+                ItemType = item.ItemType,
+                Quantity = 1 // Default to selling one item
+            };
+            
+            await networkManager.SendItemSellRequest(sellRequest);
+        }
+        */
+    }
+    
+    /// <summary>
+    /// Check if an item is consumable
+    /// </summary>
+    private bool IsConsumableItem(InventoryItem item)
+    {
+        if (item == null) return false;
+        
+        // Check by ItemCategory
+        if (!string.IsNullOrEmpty(item.ItemCategory))
+        {
+            string category = item.ItemCategory.ToLower();
+            return category == "consumable" || category == "medical" || category == "food";
+        }
+        
+        // Fallback: Check by ItemType for common consumables
+        string itemType = item.ItemType.ToLower();
+        return itemType.Contains("potion") || 
+               itemType.Contains("elixir") || 
+               itemType.Contains("food") ||
+               itemType.Contains("medicine");
+    }
+    
+    /// <summary>
+    /// Show a message to the player
+    /// </summary>
+    private void ShowMessage(string message)
+    {
+        // Try to use the GameManager's UI system
+        if (GameManager.Instance?.UIManager != null)
+        {
+            GameManager.Instance.UIManager.ShowMessage(message);
+        }
+        else
+        {
+            Debug.Log($"[InventoryUI] Message: {message}");
         }
     }
     
@@ -487,9 +597,9 @@ public class InventoryUI : MonoBehaviour
     {
         var details = new System.Text.StringBuilder();
         
-        // Item name and rarity
+        // Item name and rarity (expand single-character rarity codes)
         details.AppendLine($"<b>{item.ItemName}</b>");
-        details.AppendLine($"Rarity: {item.Rarity}");
+        details.AppendLine($"Rarity: {InventorySlot.ExpandRarityCode(item.Rarity)}");
         
         // Description
         if (!string.IsNullOrEmpty(item.ItemDescription))

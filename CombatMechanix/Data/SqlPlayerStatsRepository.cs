@@ -21,6 +21,10 @@ namespace CombatMechanix.Data
         Task ResetFailedAttemptsAsync(string playerId);
         Task UpdateSessionTokenAsync(string playerId, string sessionToken, DateTime expiry);
         Task ClearSessionTokenAsync(string playerId);
+        
+        // Health management methods
+        Task<PlayerStats?> GetPlayerStatsAsync(string playerId);
+        Task UpdatePlayerHealthAsync(string playerId, int newHealth);
     }
 
     public class SqlPlayerStatsRepository : IPlayerStatsRepository
@@ -537,6 +541,44 @@ namespace CombatMechanix.Data
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error clearing session token for player: {PlayerId}", playerId);
+                throw;
+            }
+        }
+
+        public async Task<PlayerStats?> GetPlayerStatsAsync(string playerId)
+        {
+            return await GetByIdAsync(playerId);
+        }
+
+        public async Task UpdatePlayerHealthAsync(string playerId, int newHealth)
+        {
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                const string sql = @"
+                    UPDATE Players 
+                    SET Health = @Health,
+                        LastSave = @LastSave
+                    WHERE PlayerId = @PlayerId";
+
+                using var command = new SqlCommand(sql, connection);
+                command.Parameters.Add("@PlayerId", SqlDbType.NVarChar, 50).Value = playerId;
+                command.Parameters.Add("@Health", SqlDbType.Float).Value = (float)newHealth;
+                command.Parameters.Add("@LastSave", SqlDbType.DateTime2).Value = DateTime.UtcNow;
+
+                var rowsAffected = await command.ExecuteNonQueryAsync();
+                if (rowsAffected == 0)
+                {
+                    throw new InvalidOperationException($"Player {playerId} not found for health update");
+                }
+
+                _logger.LogDebug("Updated health for player {PlayerId} to {Health}", playerId, newHealth);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating player health for {PlayerId}", playerId);
                 throw;
             }
         }

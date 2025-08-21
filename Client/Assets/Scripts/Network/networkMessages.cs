@@ -176,6 +176,40 @@ public class NetworkMessages
         public string UpdateType { get; set; } = string.Empty; // "Add", "Remove", "Update", "Clear"
     }
 
+    public class ItemUseRequestMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public int SlotIndex { get; set; }
+        public string ItemType { get; set; } = string.Empty;
+    }
+
+    public class ItemUseResponseMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public string ItemType { get; set; } = string.Empty;
+        public int RemainingQuantity { get; set; }
+    }
+
+    public class ItemSellRequestMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public int SlotIndex { get; set; }
+        public string ItemType { get; set; } = string.Empty;
+        public int Quantity { get; set; } = 1;
+    }
+
+    public class ItemSellResponseMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public string ItemType { get; set; } = string.Empty;
+        public int GoldEarned { get; set; }
+        public int RemainingQuantity { get; set; }
+    }
+
     public class LoginResponseMessage
     {
         public bool Success { get; set; }
@@ -319,6 +353,7 @@ public class InventoryItem
     public int SlotIndex { get; set; } = -1; // -1 means not equipped/placed
     public string IconName { get; set; } = string.Empty; // Icon file name for UI
     public string Rarity { get; set; } = "Common"; // "Common", "Rare", "Epic", "Legendary"
+    public string ItemCategory { get; set; } = string.Empty; // "Consumable", "Weapon", "Armor", etc.
     public int Level { get; set; } = 1; // Item level
     public bool IsStackable { get; set; } = false; // Can multiple items stack in one slot
     public int MaxStackSize { get; set; } = 1; // Maximum stack size

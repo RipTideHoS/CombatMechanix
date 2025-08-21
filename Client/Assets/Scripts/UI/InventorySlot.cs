@@ -130,10 +130,14 @@ public class InventorySlot : MonoBehaviour, IPointerClickHandler, IPointerEnterH
     /// </summary>
     private Color GetRarityColor(string rarity)
     {
-        switch (rarity?.ToLower())
+        string expandedRarity = ExpandRarityCode(rarity);
+        
+        switch (expandedRarity?.ToLower())
         {
             case "common":
                 return Color.white;
+            case "uncommon":
+                return Color.green;
             case "rare":
                 return Color.blue;
             case "epic":
@@ -142,6 +146,28 @@ public class InventorySlot : MonoBehaviour, IPointerClickHandler, IPointerEnterH
                 return Color.yellow;
             default:
                 return Color.gray;
+        }
+    }
+    
+    /// <summary>
+    /// Expand single-character rarity codes to full text for UI display
+    /// </summary>
+    public static string ExpandRarityCode(string rarityCode)
+    {
+        switch (rarityCode?.ToUpper())
+        {
+            case "C":
+                return "Common";
+            case "U":
+                return "Uncommon";
+            case "R":
+                return "Rare";
+            case "E":
+                return "Epic";
+            case "L":
+                return "Legendary";
+            default:
+                return rarityCode ?? "Unknown";
         }
     }
     
