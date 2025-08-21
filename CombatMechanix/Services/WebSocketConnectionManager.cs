@@ -1594,6 +1594,14 @@ namespace CombatMechanix.Services
                     case "common_health_potion":
                         return await ApplyHealthPotion(playerId, 50); // Heal 50 HP
                     
+                    case "bandage":
+                    case "common_bandage":
+                        return await ApplyHealthPotion(playerId, 25); // Heal 25 HP (less than potion)
+                    
+                    case "bread":
+                    case "common_bread":
+                        return await ApplyHealthPotion(playerId, 10); // Heal 10 HP (basic food)
+                    
                     case "uncommon_magic_potion":
                         return await ApplyMagicPotion(playerId, 25); // Restore 25 mana (placeholder)
                     

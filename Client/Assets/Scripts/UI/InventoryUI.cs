@@ -520,7 +520,8 @@ public class InventoryUI : MonoBehaviour
         return itemType.Contains("potion") || 
                itemType.Contains("elixir") || 
                itemType.Contains("food") ||
-               itemType.Contains("medicine");
+               itemType.Contains("medicine") ||
+               itemType.Contains("bandage");
     }
     
     /// <summary>
