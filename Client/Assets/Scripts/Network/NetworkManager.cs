@@ -49,6 +49,8 @@ public class NetworkManager : MonoBehaviour
         }
     }
     
+    public static event Action<NetworkMessages.RespawnResponseMessage> OnRespawnResponse;
+    
     public static event Action<NetworkMessages.ExperienceGainMessage> OnExperienceGain;
     
     // Enemy-related events
@@ -60,6 +62,10 @@ public class NetworkManager : MonoBehaviour
     // Inventory-related events
     public static event Action<NetworkMessages.InventoryResponseMessage> OnInventoryResponse;
     public static event Action<NetworkMessages.InventoryUpdateMessage> OnInventoryUpdate;
+    
+    // Equipment-related events
+    public static event Action<NetworkMessages.EquipmentResponseMessage> OnEquipmentResponse;
+    public static event Action<NetworkMessages.EquipmentUpdateMessage> OnEquipmentUpdate;
     
     // Loot-related events
     public static event Action<NetworkMessages.LootDropMessage> OnLootDrop;
@@ -273,6 +279,13 @@ public class NetworkManager : MonoBehaviour
                                 gameManager.LocalPlayerId = loginResponse.PlayerId;
                             }
                             
+                            // Process PlayerStats from LoginResponse if present
+                            if (loginResponse.PlayerStats != null)
+                            {
+                                Debug.Log($"[CLIENT] Processing PlayerStats from LoginResponse - Health: {loginResponse.PlayerStats.Health}, PlayerId: {loginResponse.PlayerStats.PlayerId}");
+                                OnPlayerStatsUpdate?.Invoke(loginResponse.PlayerStats);
+                            }
+                            
                             // Notify LoginUI of success
                             if (loginUI != null)
                             {
@@ -316,6 +329,12 @@ public class NetworkManager : MonoBehaviour
                         _onHealthChange?.Invoke(healthMsg);
                         Debug.Log($"[CLIENT] OnHealthChange event invoked");
                     });
+                    break;
+                    
+                case "RespawnResponse":
+                    var respawnMsg = JsonConvert.DeserializeObject<NetworkMessages.RespawnResponseMessage>(wrapper.Data.ToString());
+                    Debug.Log($"[CLIENT] Received RespawnResponse: Success={respawnMsg.Success}, PlayerId={respawnMsg.PlayerId}, NewHealth={respawnMsg.NewHealth}");
+                    QueueMainThreadAction(() => OnRespawnResponse?.Invoke(respawnMsg));
                     break;
                     
                 case "ExperienceGain":
@@ -397,6 +416,16 @@ public class NetworkManager : MonoBehaviour
                 case "InventoryUpdate":
                     var inventoryUpdateMsg = JsonConvert.DeserializeObject<NetworkMessages.InventoryUpdateMessage>(wrapper.Data.ToString());
                     QueueMainThreadAction(() => OnInventoryUpdate?.Invoke(inventoryUpdateMsg));
+                    break;
+                    
+                case "EquipmentResponse":
+                    var equipmentResponseMsg = JsonConvert.DeserializeObject<NetworkMessages.EquipmentResponseMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => OnEquipmentResponse?.Invoke(equipmentResponseMsg));
+                    break;
+                    
+                case "EquipmentUpdate":
+                    var equipmentUpdateMsg = JsonConvert.DeserializeObject<NetworkMessages.EquipmentUpdateMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => OnEquipmentUpdate?.Invoke(equipmentUpdateMsg));
                     break;
                     
                 case "LootDrop":
@@ -601,6 +630,90 @@ public class NetworkManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Failed to send item sell request: {ex.Message}");
+        }
+    }
+
+    #endregion
+
+    #region Equipment Methods
+
+    public async Task RequestEquipment()
+    {
+        if (!IsConnected) return;
+
+        try
+        {
+            var equipmentRequest = new NetworkMessages.EquipmentRequestMessage
+            {
+                PlayerId = ConnectionId
+            };
+            
+            await SendMessage("EquipmentRequest", equipmentRequest);
+            Debug.Log("[NetworkManager] Sent equipment request");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to request equipment: {ex.Message}");
+        }
+    }
+
+    public async Task SendItemEquipRequest(NetworkMessages.ItemEquipRequestMessage equipRequest)
+    {
+        if (!IsConnected || string.IsNullOrEmpty(ConnectionId)) return;
+        
+        try
+        {
+            await SendMessage("ItemEquipRequest", equipRequest);
+            Debug.Log($"[NetworkManager] Sent item equip request for {equipRequest.ItemType} to slot {equipRequest.SlotType}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send item equip request: {ex.Message}");
+        }
+    }
+
+    public async Task SendItemUnequipRequest(NetworkMessages.ItemUnequipRequestMessage unequipRequest)
+    {
+        if (!IsConnected || string.IsNullOrEmpty(ConnectionId)) return;
+        
+        try
+        {
+            await SendMessage("ItemUnequipRequest", unequipRequest);
+            Debug.Log($"[NetworkManager] Sent item unequip request for slot {unequipRequest.SlotType}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send item unequip request: {ex.Message}");
+        }
+    }
+
+    public async void SendRespawnRequest()
+    {
+        Debug.Log("[NetworkManager] SendRespawnRequest called");
+        
+        if (!IsConnected)
+        {
+            Debug.LogWarning("Cannot send respawn request - not connected to server");
+            return;
+        }
+
+        try
+        {
+            // Use the actual PlayerId from GameManager, not ConnectionId
+            string playerId = GameManager.Instance?.LocalPlayerId ?? ConnectionId;
+            
+            var respawnRequest = new NetworkMessages.RespawnRequestMessage
+            {
+                PlayerId = playerId
+            };
+
+            Debug.Log($"[NetworkManager] Sending respawn request for player {playerId} (ConnectionId: {ConnectionId})");
+            await SendMessage("RespawnRequest", respawnRequest);
+            Debug.Log($"[NetworkManager] Sent respawn request successfully");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send respawn request: {ex.Message}");
         }
     }
 

@@ -86,6 +86,9 @@ public class AutoSceneSetup : MonoBehaviour
         // 11. Setup Level Up Banner and Audio System
         SetupLevelUpSystem();
 
+        // 11.5. Setup Death Banner System
+        SetupDeathBanner();
+
         // 12. Setup Inventory System
         SetupInventorySystem();
 
@@ -554,11 +557,14 @@ public class AutoSceneSetup : MonoBehaviour
         // Create the inventory panel
         GameObject inventoryPanel = CreateInventoryPanel(canvasObj);
         
+        // Create the character panel
+        GameObject characterPanel = CreateCharacterPanel(canvasObj);
+        
         // Create the login panel
         GameObject loginPanel = CreateLoginPanel(canvasObj);
         
         // Connect the panels to UIManager
-        ConnectUIManagerReferences(inventoryPanel, loginPanel);
+        ConnectUIManagerReferences(inventoryPanel, characterPanel, loginPanel);
         
         // Force Canvas to update
         Canvas.ForceUpdateCanvases();
@@ -1091,6 +1097,65 @@ public class AutoSceneSetup : MonoBehaviour
         Debug.Log("- Positioned in main UI Canvas");
     }
 
+    private void SetupDeathBanner()
+    {
+        Debug.Log("Setting up Death Banner...");
+
+        // Check if DeathBanner already exists
+        if (FindObjectOfType<DeathBanner>() != null)
+        {
+            Debug.Log("DeathBanner already exists in scene");
+            return;
+        }
+
+        // Find the main UI Canvas
+        Canvas[] allCanvases = FindObjectsOfType<Canvas>();
+        Canvas mainCanvas = null;
+        
+        foreach (Canvas c in allCanvases)
+        {
+            if (c.renderMode == RenderMode.ScreenSpaceOverlay)
+            {
+                mainCanvas = c;
+                Debug.Log($"Found UI Canvas for Death Banner: {c.name}");
+                break;
+            }
+        }
+
+        if (mainCanvas == null)
+        {
+            Debug.LogError("No ScreenSpaceOverlay Canvas found for Death Banner!");
+            return;
+        }
+
+        // Create Death Banner GameObject
+        GameObject bannerObj = new GameObject("DeathBanner");
+        bannerObj.transform.SetParent(mainCanvas.transform, false);
+        
+        // Add DeathBanner component
+        var deathBanner = bannerObj.AddComponent<DeathBanner>();
+        
+        // Configure banner settings
+        deathBanner.FadeInDuration = 0.5f;
+        deathBanner.FadeOutDuration = 0.5f;
+        deathBanner.BannerText = "YOU ARE DEAD!";
+        deathBanner.BannerColor = Color.red;
+        deathBanner.FontSize = 48;
+        deathBanner.FontStyle = FontStyle.Bold;
+        deathBanner.RespawnButtonText = "RESPAWN";
+        deathBanner.PlaySoundEffect = true;
+        deathBanner.SoundVolume = 0.8f;
+
+        // Set high sorting order to appear above other UI (higher than level up banner)
+        bannerObj.transform.SetSiblingIndex(mainCanvas.transform.childCount - 1);
+
+        Debug.Log("DeathBanner created and configured");
+        Debug.Log("- Fade in/out animation on player death");
+        Debug.Log("- Red death text with respawn button");
+        Debug.Log("- Network respawn integration");
+        Debug.Log("- Positioned in main UI Canvas above all other elements");
+    }
+
     private void SetupSimplePlayerHealthBar()
     {
         Debug.Log("=== Setting up Simple Player Health Bar ===");
@@ -1497,6 +1562,58 @@ public class AutoSceneSetup : MonoBehaviour
         
         Debug.Log("InventoryPanel created successfully");
         return inventoryPanel;
+    }
+
+    private GameObject CreateCharacterPanel(GameObject canvasObj)
+    {
+        Debug.Log("Creating new CharacterPanel...");
+        
+        // Create character panel
+        GameObject characterPanel = new GameObject("CharacterPanel");
+        characterPanel.transform.SetParent(canvasObj.transform, false);
+        
+        // Add Image component for background - dark box style
+        var image = characterPanel.AddComponent<UnityEngine.UI.Image>();
+        image.color = new Color(0.15f, 0.15f, 0.25f, 0.85f); // Slightly blue tint to distinguish from inventory
+        image.raycastTarget = true;
+        
+        // Set up RectTransform for positioning (same location as inventory panel - right side)
+        var rectTransform = characterPanel.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.75f, 0.25f);  // Right side of screen (same as inventory)
+        rectTransform.anchorMax = new Vector2(0.98f, 0.85f);  // Same size and position as inventory
+        rectTransform.anchoredPosition = Vector2.zero;
+        rectTransform.sizeDelta = Vector2.zero;
+        rectTransform.offsetMin = Vector2.zero;
+        rectTransform.offsetMax = Vector2.zero;
+        
+        // Add title text
+        GameObject titleObj = new GameObject("Title");
+        titleObj.transform.SetParent(characterPanel.transform, false);
+        var titleText = titleObj.AddComponent<UnityEngine.UI.Text>();
+        titleText.text = "CHARACTER";
+        titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        titleText.fontSize = 20;
+        titleText.color = Color.white;
+        titleText.alignment = TextAnchor.MiddleCenter;
+        titleText.fontStyle = FontStyle.Bold;
+        
+        var titleRect = titleObj.GetComponent<RectTransform>();
+        titleRect.anchorMin = new Vector2(0, 0.85f);
+        titleRect.anchorMax = new Vector2(1, 1f);
+        titleRect.anchoredPosition = Vector2.zero;
+        titleRect.sizeDelta = Vector2.zero;
+        
+        // Add CharacterUI component to handle the equipment display
+        var characterUI = characterPanel.AddComponent<CharacterUI>();
+        
+        // Set the CharacterContainer reference
+        SetFieldValue(characterUI, "CharacterContainer", characterPanel.transform);
+        
+        // Start with panel hidden
+        characterPanel.SetActive(false);
+        
+        Debug.Log("CharacterPanel created successfully with CharacterUI component");
+        return characterPanel;
     }
 
     // OLD CreateMainUIHealthSlider method removed - using CreateSimpleHealthSlider instead
@@ -1914,15 +2031,36 @@ public class AutoSceneSetup : MonoBehaviour
         }
     }
 
-    private void ConnectUIManagerReferences(GameObject inventoryPanel, GameObject loginPanel)
+    private void ConnectUIManagerReferences(GameObject inventoryPanel, GameObject characterPanel, GameObject loginPanel)
     {
-        // Find the UIManager component
+        Debug.Log("Connecting UI Manager references - ensuring UIManager is active...");
+        
+        // Find the UIManager component - wait for it to be properly initialized
         UIManager uiManager = FindObjectOfType<UIManager>();
         
-        if (uiManager != null)
+        // If UIManager not found, wait a frame and try again
+        if (uiManager == null)
         {
+            Debug.LogWarning("UIManager not found on first attempt - GameManager may still be initializing...");
+            
+            // Try to find GameManager and get UIManager from it
+            var gameManager = FindObjectOfType<GameManager>();
+            if (gameManager != null)
+            {
+                uiManager = gameManager.GetComponent<UIManager>();
+                Debug.Log($"Found UIManager via GameManager: {uiManager != null}");
+            }
+        }
+        
+        if (uiManager != null && uiManager.gameObject.activeInHierarchy)
+        {
+            Debug.Log("UIManager found and active - connecting panel references...");
+            
             // Set the InventoryPanel field
             SetFieldValue(uiManager, "InventoryPanel", inventoryPanel);
+            
+            // Set the CharacterPanel field
+            SetFieldValue(uiManager, "CharacterPanel", characterPanel);
             
             // Set the LoginPanel field  
             SetFieldValue(uiManager, "LoginPanel", loginPanel);
@@ -1938,10 +2076,13 @@ public class AutoSceneSetup : MonoBehaviour
             {
                 Debug.LogWarning("LoginUI component not found on login panel");
             }
+            
+            Debug.Log("All UI panels successfully connected to UIManager");
         }
         else
         {
-            Debug.LogWarning("UIManager not found - panels will not be connected");
+            Debug.LogWarning("UIManager not found or not active - panels will not be connected");
+            Debug.LogWarning("This means the GameManager system may not have been created properly");
         }
     }
 }

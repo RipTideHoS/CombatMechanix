@@ -127,6 +127,19 @@ public class NetworkMessages
         public string Source { get; set; } = string.Empty;
     }
 
+    public class RespawnRequestMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+    }
+
+    public class RespawnResponseMessage
+    {
+        public bool Success { get; set; }
+        public string PlayerId { get; set; } = string.Empty;
+        public int NewHealth { get; set; }
+        public string ErrorMessage { get; set; } = string.Empty;
+    }
+
     // Enemy-specific network messages
     public class EnemySpawnMessage
     {
@@ -208,6 +221,58 @@ public class NetworkMessages
         public string ItemType { get; set; } = string.Empty;
         public int GoldEarned { get; set; }
         public int RemainingQuantity { get; set; }
+    }
+
+    // Equipment Messages - Following inventory message patterns
+    public class EquipmentRequestMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+    }
+
+    public class EquipmentResponseMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public List<EquippedItem> Items { get; set; } = new();
+        public bool Success { get; set; } = true;
+        public string ErrorMessage { get; set; } = string.Empty;
+    }
+
+    public class ItemEquipRequestMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public int SlotIndex { get; set; } // Inventory slot index of item to equip
+        public string ItemType { get; set; } = string.Empty; // ItemTypeId to equip
+        public string SlotType { get; set; } = string.Empty; // Target equipment slot
+    }
+
+    public class ItemEquipResponseMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public bool Success { get; set; } = false;
+        public string ErrorMessage { get; set; } = string.Empty;
+        public EquippedItem EquippedItem { get; set; } = new(); // The item that was equipped
+        public InventoryItem UnequippedItem { get; set; } = new(); // Item that was replaced (if any)
+    }
+
+    public class ItemUnequipRequestMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public string SlotType { get; set; } = string.Empty; // Equipment slot to unequip
+    }
+
+    public class ItemUnequipResponseMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public bool Success { get; set; } = false;
+        public string ErrorMessage { get; set; } = string.Empty;
+        public InventoryItem UnequippedItem { get; set; } = new(); // Item moved back to inventory
+    }
+
+    public class EquipmentUpdateMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public List<EquippedItem> UpdatedItems { get; set; } = new();
+        public string UpdateType { get; set; } = string.Empty; // "Equip", "Unequip", "Replace"
     }
 
     public class LoginResponseMessage
@@ -362,4 +427,26 @@ public class InventoryItem
     public int AttackPower { get; set; } = 0;
     public int DefensePower { get; set; } = 0;
     public int Value { get; set; } = 0; // Gold value
+}
+
+[System.Serializable]
+public class EquippedItem
+{
+    public string EquipmentId { get; set; } = string.Empty; // Unique equipment record ID
+    public string ItemType { get; set; } = string.Empty; // "common_sword", "iron_helmet", etc.
+    public string SlotType { get; set; } = string.Empty; // "Helmet", "Chest", "Legs", "Weapon", "Offhand", "Accessory"
+    public string ItemName { get; set; } = string.Empty; // Display name like "Iron Sword"
+    public string ItemDescription { get; set; } = string.Empty; // Tooltip description
+    public string IconName { get; set; } = string.Empty; // Icon file name for UI
+    public string Rarity { get; set; } = "Common"; // "Common", "Rare", "Epic", "Legendary"
+    public string ItemCategory { get; set; } = string.Empty; // "Weapon", "Armor", etc.
+    
+    // Item stats (for equipment)
+    public int AttackPower { get; set; } = 0;
+    public int DefensePower { get; set; } = 0;
+    public int Value { get; set; } = 0; // Gold value
+    
+    // Equipment tracking
+    public System.DateTime DateEquipped { get; set; } = System.DateTime.UtcNow;
+    public System.DateTime DateModified { get; set; } = System.DateTime.UtcNow;
 }
