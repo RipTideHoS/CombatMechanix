@@ -42,7 +42,11 @@ public class InventoryUI : MonoBehaviour
         NetworkManager.OnInventoryResponse += HandleInventoryResponse;
         NetworkManager.OnInventoryUpdate += HandleInventoryUpdate;
         
-        Debug.Log("[InventoryUI] Subscribed to inventory network events");
+        // Subscribe to equipment network events for feedback
+        NetworkManager.OnEquipmentResponse += HandleEquipmentResponse;
+        NetworkManager.OnEquipmentUpdate += HandleEquipmentUpdate;
+        
+        Debug.Log("[InventoryUI] Subscribed to inventory and equipment network events");
     }
     
     private void OnDestroy()
@@ -50,6 +54,8 @@ public class InventoryUI : MonoBehaviour
         // Unsubscribe from events
         NetworkManager.OnInventoryResponse -= HandleInventoryResponse;
         NetworkManager.OnInventoryUpdate -= HandleInventoryUpdate;
+        NetworkManager.OnEquipmentResponse -= HandleEquipmentResponse;
+        NetworkManager.OnEquipmentUpdate -= HandleEquipmentUpdate;
     }
     
     private void Start()
@@ -106,10 +112,10 @@ public class InventoryUI : MonoBehaviour
             var bgImage = _goldDisplayPanel.AddComponent<Image>();
             bgImage.color = new Color(0.2f, 0.15f, 0.05f, 0.9f); // Golden-brown background
             
-            // Position much closer to the grid (moved up ~15%)
+            // Position on left half of inventory panel
             var goldRect = _goldDisplayPanel.GetComponent<RectTransform>();
             goldRect.anchorMin = new Vector2(0.05f, 0.37f);
-            goldRect.anchorMax = new Vector2(0.95f, 0.41f);
+            goldRect.anchorMax = new Vector2(0.5f, 0.41f);
             goldRect.anchoredPosition = Vector2.zero;
             goldRect.sizeDelta = Vector2.zero;
         }
@@ -124,7 +130,7 @@ public class InventoryUI : MonoBehaviour
             _goldDisplayText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             _goldDisplayText.fontSize = 18;
             _goldDisplayText.color = new Color(1f, 0.84f, 0f, 1f); // Golden color
-            _goldDisplayText.alignment = TextAnchor.MiddleCenter;
+            _goldDisplayText.alignment = TextAnchor.MiddleLeft;
             _goldDisplayText.fontStyle = FontStyle.Bold;
             _goldDisplayText.text = "Gold: 0";
             
@@ -218,10 +224,10 @@ public class InventoryUI : MonoBehaviour
             gridLayout.startAxis = GridLayoutGroup.Axis.Horizontal;
             gridLayout.childAlignment = TextAnchor.UpperLeft;
             
-            // Position the grid within the inventory container (leave space for gold display and details panel)
+            // Position the grid within the inventory container (leave space for title, gold display and details panel)
             var gridRect = gridContainer.GetComponent<RectTransform>();
             gridRect.anchorMin = new Vector2(0.05f, 0.26f);
-            gridRect.anchorMax = new Vector2(0.95f, 0.95f);
+            gridRect.anchorMax = new Vector2(0.95f, 0.90f);
             gridRect.anchoredPosition = Vector2.zero;
             gridRect.sizeDelta = Vector2.zero;
         }
@@ -371,6 +377,32 @@ public class InventoryUI : MonoBehaviour
         UpdateInventoryDisplay();
     }
     
+    private void HandleEquipmentResponse(NetworkMessages.EquipmentResponseMessage response)
+    {
+        Debug.Log($"[InventoryUI] Received equipment response: {(response.Success ? "Success" : "Failed")}");
+        
+        if (!response.Success)
+        {
+            ShowMessage($"Equipment error: {response.ErrorMessage}");
+        }
+    }
+    
+    private void HandleEquipmentUpdate(NetworkMessages.EquipmentUpdateMessage update)
+    {
+        Debug.Log($"[InventoryUI] Received equipment update: {update.UpdateType}");
+        
+        if (update.UpdateType == "Equip" && update.UpdatedItems.Count > 0)
+        {
+            var equippedItem = update.UpdatedItems[0];
+            ShowMessage($"Equipped {equippedItem.ItemName} to {equippedItem.SlotType} slot");
+        }
+        else if (update.UpdateType == "Unequip" && update.UpdatedItems.Count > 0)
+        {
+            var unequippedItem = update.UpdatedItems[0];
+            ShowMessage($"Unequipped {unequippedItem.ItemName} from {unequippedItem.SlotType} slot");
+        }
+    }
+    
     private void AddOrUpdateItem(InventoryItem newItem)
     {
         var existingItem = _inventoryData.FirstOrDefault(i => i.ItemId == newItem.ItemId);
@@ -413,6 +445,14 @@ public class InventoryUI : MonoBehaviour
     {
         Debug.Log($"[InventoryUI] Slot {slotIndex} left-clicked - Item: {item?.ItemName ?? "Empty"}");
         
+        // Check if player is dead - prevent item usage while dead
+        var playerStats = FindObjectOfType<ClientPlayerStats>();
+        if (playerStats != null && !playerStats.IsAlive())
+        {
+            Debug.Log("[InventoryUI] Cannot use items while dead");
+            return;
+        }
+        
         if (item != null)
         {
             // Left click = Use item (for consumables)
@@ -425,10 +465,30 @@ public class InventoryUI : MonoBehaviour
     {
         Debug.Log($"[InventoryUI] Slot {slotIndex} right-clicked - Item: {item?.ItemName ?? "Empty"}");
         
+        // Check if player is dead - prevent item interactions while dead
+        var playerStats = FindObjectOfType<ClientPlayerStats>();
+        if (playerStats != null && !playerStats.IsAlive())
+        {
+            Debug.Log("[InventoryUI] Cannot interact with items while dead");
+            return;
+        }
+        
         if (item != null)
         {
-            // Right click = Sell item
-            SellItem(item, slotIndex);
+            // Check if item can be equipped
+            string targetSlotType = GetEquipmentSlotForItem(item);
+            
+            if (!string.IsNullOrEmpty(targetSlotType))
+            {
+                // Right click = Equip item
+                EquipItem(item, slotIndex, targetSlotType);
+            }
+            else
+            {
+                // Right click = Sell item (for non-equippable items)
+                SellItem(item, slotIndex);
+            }
+            
             OnItemRightClicked?.Invoke(item);
         }
     }
@@ -633,6 +693,22 @@ public class InventoryUI : MonoBehaviour
         details.AppendLine($"Value: {item.Value} gold");
         details.AppendLine($"Level: {item.Level}");
         
+        // Equipment information
+        string equipSlot = GetEquipmentSlotForItem(item);
+        if (!string.IsNullOrEmpty(equipSlot))
+        {
+            details.AppendLine($"Equippable to: {equipSlot} slot");
+            details.AppendLine("Right-click to equip");
+        }
+        else if (IsConsumableItem(item))
+        {
+            details.AppendLine("Left-click to use");
+        }
+        else
+        {
+            details.AppendLine("Right-click to sell");
+        }
+        
         return details.ToString();
     }
     
@@ -655,5 +731,113 @@ public class InventoryUI : MonoBehaviour
         // TODO: Integrate with actual player currency system
         // For now, return 0 as placeholder
         return 0;
+    }
+    
+    /// <summary>
+    /// Determine which equipment slot an item can be equipped to based on its category
+    /// Returns null if the item cannot be equipped
+    /// </summary>
+    private string GetEquipmentSlotForItem(InventoryItem item)
+    {
+        if (item == null || string.IsNullOrEmpty(item.ItemCategory))
+            return null;
+        
+        string category = item.ItemCategory.ToLower();
+        
+        // Map item categories to equipment slot types (matching server logic)
+        switch (category)
+        {
+            case "helmet":
+            case "armor" when item.ItemType.ToLower().Contains("helmet"):
+                return "Helmet";
+                
+            case "chest":
+            case "armor" when item.ItemType.ToLower().Contains("chest"):
+                return "Chest";
+                
+            case "legs":
+            case "armor" when item.ItemType.ToLower().Contains("legs"):
+                return "Legs";
+                
+            case "weapon":
+            case "sword":
+            case "axe":
+            case "bow":
+            case "staff":
+                return "Weapon";
+                
+            case "shield":
+            case "offhand":
+                return "Offhand";
+                
+            case "ring":
+            case "amulet":
+            case "accessory":
+                return "Accessory";
+                
+            default:
+                return null; // Item cannot be equipped
+        }
+    }
+    
+    /// <summary>
+    /// Equip an item from inventory to the appropriate equipment slot
+    /// </summary>
+    private async void EquipItem(InventoryItem item, int slotIndex, string targetSlotType)
+    {
+        if (item == null || string.IsNullOrEmpty(targetSlotType)) return;
+        
+        // Client-side validation before sending to server
+        if (!ValidateItemEquippable(item, targetSlotType))
+        {
+            ShowMessage($"Cannot equip {item.ItemName} to {targetSlotType} slot");
+            return;
+        }
+        
+        Debug.Log($"[InventoryUI] Attempting to equip item: {item.ItemName} to slot {targetSlotType}");
+        ShowMessage($"Equipping {item.ItemName}...");
+        
+        // Send equip request to server
+        var networkManager = FindObjectOfType<NetworkManager>();
+        if (networkManager != null)
+        {
+            var equipRequest = new NetworkMessages.ItemEquipRequestMessage
+            {
+                PlayerId = networkManager.GetPlayerId(),
+                SlotIndex = slotIndex,
+                ItemType = item.ItemType,
+                SlotType = targetSlotType
+            };
+            
+            await networkManager.SendItemEquipRequest(equipRequest);
+        }
+        else
+        {
+            Debug.LogError("[InventoryUI] NetworkManager not found for item equip!");
+            ShowMessage("Failed to equip item - no network connection");
+        }
+    }
+    
+    /// <summary>
+    /// Client-side validation to check if an item can be equipped to a specific slot
+    /// </summary>
+    private bool ValidateItemEquippable(InventoryItem item, string targetSlotType)
+    {
+        if (item == null || string.IsNullOrEmpty(item.ItemCategory) || string.IsNullOrEmpty(targetSlotType))
+            return false;
+        
+        string category = item.ItemCategory.ToLower();
+        
+        // Validate category matches target slot type (matching server logic)
+        return targetSlotType switch
+        {
+            "Helmet" => category is "helmet" or "armor" && item.ItemType.ToLower().Contains("helmet"),
+            "Chest" => category is "chest" or "armor" && item.ItemType.ToLower().Contains("chest"),
+            "Legs" => category is "legs" or "armor" && item.ItemType.ToLower().Contains("legs"),
+            "Weapon" => category is "weapon" or "sword" or "axe" or "bow" or "staff",
+            "Offhand" => category is "shield" or "offhand" or "weapon",
+            "Accessory" => category is "ring" or "amulet" or "accessory",
+            _ => false
+        };
     }
 }
