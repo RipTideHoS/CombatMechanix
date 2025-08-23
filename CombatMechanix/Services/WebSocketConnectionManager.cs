@@ -177,6 +177,15 @@ namespace CombatMechanix.Services
                     case "ItemSellRequest":
                         await HandleItemSellRequest(connection, wrapper.Data);
                         break;
+                    case "EquipmentRequest":
+                        await HandleEquipmentRequest(connection, wrapper.Data);
+                        break;
+                    case "ItemEquipRequest":
+                        await HandleItemEquipRequest(connection, wrapper.Data);
+                        break;
+                    case "ItemUnequipRequest":
+                        await HandleItemUnequipRequest(connection, wrapper.Data);
+                        break;
                     case "SessionValidation":
                         await HandleSessionValidation(connection, wrapper.Data);
                         break;
@@ -191,6 +200,9 @@ namespace CombatMechanix.Services
                         break;
                     case "HealthChange":
                         await HandleHealthChange(connection, wrapper.Data);
+                        break;
+                    case "RespawnRequest":
+                        await HandleRespawnRequest(connection, wrapper.Data);
                         break;
                     case "LootPickupRequest":
                         await HandleLootPickupRequest(connection, wrapper.Data);
@@ -351,7 +363,9 @@ namespace CombatMechanix.Services
             if (connection != null && _players.TryGetValue(connection.ConnectionId, out var player))
             {
                 float baseDamage = 10f; // Base attack damage
-                float strengthBonus = player.Strength * 0.5f; // Strength scaling
+                
+                // Use TotalAttackPower instead of just Strength - this includes equipment bonuses!
+                float attackPowerBonus = player.TotalAttackPower * 0.8f; // Equipment + Strength scaling (increased from 0.5f)
                 float levelBonus = player.Level * 2f; // Level scaling
                 
                 // Attack type modifiers
@@ -363,9 +377,9 @@ namespace CombatMechanix.Services
                     _ => 1.0f
                 };
                 
-                float totalDamage = (baseDamage + strengthBonus + levelBonus) * typeMultiplier;
+                float totalDamage = (baseDamage + attackPowerBonus + levelBonus) * typeMultiplier;
                 
-                _logger.LogDebug($"Damage calculation for {playerId}: Base={baseDamage}, Str={strengthBonus}, Level={levelBonus}, Type={typeMultiplier}, Total={totalDamage}");
+                _logger.LogInformation($"Combat damage calculation for player {playerId}: Base={baseDamage}, AttackPower={attackPowerBonus} (Total ATK: {player.TotalAttackPower} = Base STR {player.Strength} + Equipment {player.EquipmentAttackPower}), Level={levelBonus}, Type={typeMultiplier}x, Final={totalDamage}");
                 
                 return totalDamage;
             }
@@ -641,6 +655,9 @@ namespace CombatMechanix.Services
                     LastUpdate = DateTime.UtcNow
                 };
 
+                // Populate equipment stats from database
+                await PopulateEquipmentStatsAsync(player);
+
                 _players.TryAdd(connection.ConnectionId, player);
                 connection.PlayerId = authData.PlayerId;  // Use actual player ID from authentication data
                 
@@ -835,6 +852,87 @@ namespace CombatMechanix.Services
             }
         }
 
+        private async Task HandleRespawnRequest(WebSocketConnection connection, object? data)
+        {
+            if (data == null) return;
+            
+            var respawnData = JsonSerializer.Deserialize<NetworkMessages.RespawnRequestMessage>(data.ToString()!);
+            if (respawnData == null) return;
+
+            _logger.LogInformation($"Respawn request for player: {respawnData.PlayerId}");
+
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var playerStatsRepository = scope.ServiceProvider.GetRequiredService<IPlayerStatsRepository>();
+
+                // Get current player stats
+                var player = await playerStatsRepository.GetPlayerStatsAsync(respawnData.PlayerId);
+                if (player == null)
+                {
+                    await SendToConnection(connection.ConnectionId, "RespawnResponse", new NetworkMessages.RespawnResponseMessage
+                    {
+                        Success = false,
+                        PlayerId = respawnData.PlayerId,
+                        ErrorMessage = "Player not found"
+                    });
+                    return;
+                }
+
+                // Check if player is actually dead
+                if (player.Health > 0)
+                {
+                    await SendToConnection(connection.ConnectionId, "RespawnResponse", new NetworkMessages.RespawnResponseMessage
+                    {
+                        Success = false,
+                        PlayerId = respawnData.PlayerId,
+                        ErrorMessage = "Player is not dead"
+                    });
+                    return;
+                }
+
+                // Respawn player with full health
+                await playerStatsRepository.UpdatePlayerHealthAsync(respawnData.PlayerId, player.MaxHealth);
+
+                // Update in-memory player state
+                if (_players.TryGetValue(connection.ConnectionId, out var playerState))
+                {
+                    playerState.Health = player.MaxHealth;
+                    Console.WriteLine($"[DEBUG] Updated in-memory health for player {respawnData.PlayerId} to {player.MaxHealth}");
+                }
+
+                // Send successful respawn response
+                await SendToConnection(connection.ConnectionId, "RespawnResponse", new NetworkMessages.RespawnResponseMessage
+                {
+                    Success = true,
+                    PlayerId = respawnData.PlayerId,
+                    NewHealth = player.MaxHealth
+                });
+
+                // Send health change notification to update UI
+                await SendToConnection(connection.ConnectionId, "HealthChange", new NetworkMessages.HealthChangeMessage
+                {
+                    PlayerId = respawnData.PlayerId,
+                    NewHealth = player.MaxHealth,
+                    HealthChange = player.MaxHealth - 0, // Full heal from 0
+                    Source = "Respawn"
+                });
+
+                _logger.LogInformation($"Player {respawnData.PlayerId} respawned successfully with {player.MaxHealth} health");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error handling respawn request for player {respawnData.PlayerId}");
+                
+                await SendToConnection(connection.ConnectionId, "RespawnResponse", new NetworkMessages.RespawnResponseMessage
+                {
+                    Success = false,
+                    PlayerId = respawnData.PlayerId,
+                    ErrorMessage = "Server error during respawn"
+                });
+            }
+        }
+
         private async Task HandleLogin(WebSocketConnection connection, object? data)
         {
             if (data == null) return;
@@ -871,6 +969,9 @@ namespace CombatMechanix.Services
                         IsOnline = true,
                         LastUpdate = DateTime.UtcNow
                     };
+
+                    // Populate equipment stats from database
+                    await PopulateEquipmentStatsAsync(player);
 
                     _players.TryAdd(connection.ConnectionId, player);
                     connection.PlayerId = actualPlayerId;  // Set connection PlayerId to actual database player ID
@@ -973,6 +1074,12 @@ namespace CombatMechanix.Services
                         IsOnline = true,
                         LastUpdate = DateTime.UtcNow
                     };
+
+                    // CRITICAL FIX: Populate equipment stats before caching to avoid overwriting
+                    Console.WriteLine($"[DEBUG] HandleLogin - About to populate equipment stats for player {playerState.PlayerId}");
+                    await PopulateEquipmentStatsAsync(playerState);
+                    Console.WriteLine($"[DEBUG] HandleLogin - Populated equipment stats: ATK +{playerState.EquipmentAttackPower}, DEF +{playerState.EquipmentDefensePower}");
+                    
                     _players[connection.ConnectionId] = playerState;
                     Console.WriteLine($"[DEBUG] Cached PlayerState for ConnectionId={connection.ConnectionId}, PlayerId={playerState.PlayerId}, Health={playerState.Health}");
                     
@@ -1034,6 +1141,9 @@ namespace CombatMechanix.Services
                         IsOnline = true,
                         LastUpdate = DateTime.UtcNow
                     };
+
+                    // Populate equipment stats from database
+                    await PopulateEquipmentStatsAsync(player);
 
                     _players.TryAdd(connection.ConnectionId, player);
                     connection.PlayerId = player.PlayerId;
@@ -1229,6 +1339,19 @@ namespace CombatMechanix.Services
 
         public int GetConnectionCount() => _connections.Count;
         public int GetPlayerCount() => _players.Count;
+
+        /// <summary>
+        /// Get cached player state by player ID for diagnostics
+        /// </summary>
+        public PlayerState? GetCachedPlayerByPlayerId(string playerId)
+        {
+            var connectionEntry = _connections.FirstOrDefault(kvp => kvp.Value.PlayerId == playerId);
+            if (connectionEntry.Value != null && _players.TryGetValue(connectionEntry.Key, out var cachedPlayerState))
+            {
+                return cachedPlayerState;
+            }
+            return null;
+        }
         
         /// <summary>
         /// Update player health in all in-memory caches (for AI consistency)
@@ -1305,9 +1428,26 @@ namespace CombatMechanix.Services
                                     IsOnline = true,
                                     LastUpdate = DateTime.UtcNow
                                 };
+                                
+                                // CRITICAL FIX: Populate equipment stats for complete PlayerState
+                                try
+                                {
+                                    var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
+                                    var (attackPower, defensePower) = await equipmentManager.CalculateEquipmentStatsAsync(connection.PlayerId);
+                                    playerState.EquipmentAttackPower = attackPower;
+                                    playerState.EquipmentDefensePower = defensePower;
+                                    
+                                    Console.WriteLine($"[DEBUG] Cache MISS fix: Populated equipment stats for player {connection.PlayerId}: ATK +{attackPower}, DEF +{defensePower}");
+                                }
+                                catch (Exception equipEx)
+                                {
+                                    _logger.LogError(equipEx, $"Failed to populate equipment stats for player {connection.PlayerId} during cache miss");
+                                    // Leave equipment stats at 0 on error
+                                }
+                                
                                 activePlayers.Add(playerState);
                                 
-                                // Cache it for next time
+                                // Cache it for next time with complete equipment stats
                                 _players[connection.ConnectionId] = playerState;
                             }
                         }
@@ -1424,6 +1564,289 @@ namespace CombatMechanix.Services
                     ErrorMessage = "Server error"
                 });
             }
+        }
+
+        private async Task HandleEquipmentRequest(WebSocketConnection connection, object data)
+        {
+            try
+            {
+                _logger.LogInformation($"Handling equipment request for connection: {connection.ConnectionId}");
+
+                if (string.IsNullOrEmpty(connection.PlayerId))
+                {
+                    _logger.LogWarning($"Equipment request from unauthenticated connection: {connection.ConnectionId}");
+                    await SendToConnection(connection.ConnectionId, "EquipmentResponse", new NetworkMessages.EquipmentResponseMessage
+                    {
+                        Success = false,
+                        ErrorMessage = "Not authenticated"
+                    });
+                    return;
+                }
+
+                // Get player's equipment from database
+                using var scope = _serviceProvider.CreateScope();
+                var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
+                
+                var equippedItems = await equipmentManager.GetPlayerEquipmentAsync(connection.PlayerId);
+                
+                // Get equipment stats from cached PlayerState (more efficient than recalculating)
+                int totalAttackPower = 0;
+                int totalDefensePower = 0;
+                
+                if (_players.TryGetValue(connection.ConnectionId, out var cachedPlayer))
+                {
+                    totalAttackPower = cachedPlayer.TotalAttackPower;
+                    totalDefensePower = cachedPlayer.TotalDefensePower;
+                    _logger.LogDebug("Using cached equipment stats for player {PlayerId}: ATK {Attack}, DEF {Defense}", 
+                        connection.PlayerId, totalAttackPower, totalDefensePower);
+                }
+                else
+                {
+                    // Fallback: calculate fresh from database if not cached
+                    var (equipmentAttackPower, equipmentDefensePower) = await equipmentManager.CalculateEquipmentStatsAsync(connection.PlayerId);
+                    totalAttackPower = equipmentAttackPower;
+                    totalDefensePower = equipmentDefensePower;
+                    _logger.LogWarning("Player {PlayerId} not found in cache, calculated equipment stats fresh from database", connection.PlayerId);
+                }
+
+                // Send equipment response
+                await SendToConnection(connection.ConnectionId, "EquipmentResponse", new NetworkMessages.EquipmentResponseMessage
+                {
+                    PlayerId = connection.PlayerId,
+                    Items = equippedItems,
+                    Success = true,
+                    TotalAttackPower = totalAttackPower,
+                    TotalDefensePower = totalDefensePower
+                });
+
+                _logger.LogInformation($"Sent equipment response to player {connection.PlayerId} with {equippedItems.Count} items");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling equipment request");
+                await SendToConnection(connection.ConnectionId, "EquipmentResponse", new NetworkMessages.EquipmentResponseMessage
+                {
+                    Success = false,
+                    ErrorMessage = "Server error"
+                });
+            }
+        }
+
+        private async Task HandleItemEquipRequest(WebSocketConnection connection, object data)
+        {
+            try
+            {
+                _logger.LogInformation($"Handling item equip request for connection: {connection.ConnectionId}");
+
+                if (string.IsNullOrEmpty(connection.PlayerId))
+                {
+                    _logger.LogWarning($"Equip request from unauthenticated connection: {connection.ConnectionId}");
+                    await SendToConnection(connection.ConnectionId, "ItemEquipResponse", new NetworkMessages.ItemEquipResponseMessage
+                    {
+                        Success = false,
+                        ErrorMessage = "Not authenticated"
+                    });
+                    return;
+                }
+
+                var equipRequest = JsonSerializer.Deserialize<NetworkMessages.ItemEquipRequestMessage>(
+                    JsonSerializer.Serialize(data));
+
+                if (equipRequest == null)
+                {
+                    await SendToConnection(connection.ConnectionId, "ItemEquipResponse", new NetworkMessages.ItemEquipResponseMessage
+                    {
+                        Success = false,
+                        ErrorMessage = "Invalid request format"
+                    });
+                    return;
+                }
+
+                // Process equip request using EquipmentManager
+                using var scope = _serviceProvider.CreateScope();
+                var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
+                
+                var result = await equipmentManager.EquipItemAsync(connection.PlayerId, equipRequest.SlotIndex, equipRequest.SlotType);
+
+                // Send equip response
+                await SendToConnection(connection.ConnectionId, "ItemEquipResponse", new NetworkMessages.ItemEquipResponseMessage
+                {
+                    PlayerId = connection.PlayerId,
+                    Success = result.Success,
+                    ErrorMessage = result.ErrorMessage,
+                    EquippedItem = result.EquippedItem,
+                    UnequippedItem = result.ReplacedItem
+                });
+
+                if (result.Success)
+                {
+                    _logger.LogInformation($"Player {connection.PlayerId} equipped item to {equipRequest.SlotType} slot");
+                    
+                    // Update cached equipment stats in PlayerState
+                    await UpdateCachedEquipmentStatsAsync(connection.PlayerId);
+                    
+                    // Send inventory update to refresh client inventory
+                    await RefreshPlayerInventory(connection.PlayerId);
+                    
+                    // Send equipment update to refresh client equipment
+                    await RefreshPlayerEquipment(connection.PlayerId);
+                }
+                else
+                {
+                    _logger.LogWarning($"Failed to equip item for player {connection.PlayerId}: {result.ErrorMessage}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling item equip request");
+                await SendToConnection(connection.ConnectionId, "ItemEquipResponse", new NetworkMessages.ItemEquipResponseMessage
+                {
+                    Success = false,
+                    ErrorMessage = "Server error"
+                });
+            }
+        }
+
+        private async Task HandleItemUnequipRequest(WebSocketConnection connection, object data)
+        {
+            try
+            {
+                _logger.LogInformation($"Handling item unequip request for connection: {connection.ConnectionId}");
+
+                if (string.IsNullOrEmpty(connection.PlayerId))
+                {
+                    _logger.LogWarning($"Unequip request from unauthenticated connection: {connection.ConnectionId}");
+                    await SendToConnection(connection.ConnectionId, "ItemUnequipResponse", new NetworkMessages.ItemUnequipResponseMessage
+                    {
+                        Success = false,
+                        ErrorMessage = "Not authenticated"
+                    });
+                    return;
+                }
+
+                var unequipRequest = JsonSerializer.Deserialize<NetworkMessages.ItemUnequipRequestMessage>(
+                    JsonSerializer.Serialize(data));
+
+                if (unequipRequest == null)
+                {
+                    await SendToConnection(connection.ConnectionId, "ItemUnequipResponse", new NetworkMessages.ItemUnequipResponseMessage
+                    {
+                        Success = false,
+                        ErrorMessage = "Invalid request format"
+                    });
+                    return;
+                }
+
+                // Process unequip request using EquipmentManager
+                using var scope = _serviceProvider.CreateScope();
+                var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
+                
+                var result = await equipmentManager.UnequipItemAsync(connection.PlayerId, unequipRequest.SlotType);
+
+                // Send unequip response
+                await SendToConnection(connection.ConnectionId, "ItemUnequipResponse", new NetworkMessages.ItemUnequipResponseMessage
+                {
+                    PlayerId = connection.PlayerId,
+                    Success = result.Success,
+                    ErrorMessage = result.ErrorMessage,
+                    UnequippedItem = result.UnequippedItem
+                });
+
+                if (result.Success)
+                {
+                    _logger.LogInformation($"Player {connection.PlayerId} unequipped item from {unequipRequest.SlotType} slot");
+                    
+                    // Update cached equipment stats in PlayerState
+                    await UpdateCachedEquipmentStatsAsync(connection.PlayerId);
+                    
+                    // Send inventory update to refresh client inventory
+                    await RefreshPlayerInventory(connection.PlayerId);
+                    
+                    // Send equipment update to refresh client equipment
+                    await RefreshPlayerEquipment(connection.PlayerId);
+                }
+                else
+                {
+                    _logger.LogWarning($"Failed to unequip item for player {connection.PlayerId}: {result.ErrorMessage}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling item unequip request");
+                await SendToConnection(connection.ConnectionId, "ItemUnequipResponse", new NetworkMessages.ItemUnequipResponseMessage
+                {
+                    Success = false,
+                    ErrorMessage = "Server error"
+                });
+            }
+        }
+
+        // Helper methods for refreshing client data
+        private async Task RefreshPlayerInventory(string playerId)
+        {
+            try
+            {
+                var connectionId = GetConnectionIdByPlayerId(playerId);
+                if (connectionId != null)
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var inventoryRepository = scope.ServiceProvider.GetRequiredService<IPlayerInventoryRepository>();
+                    var inventoryItems = await inventoryRepository.GetPlayerInventoryAsync(playerId);
+
+                    await SendToConnection(connectionId, "InventoryUpdate", new NetworkMessages.InventoryUpdateMessage
+                    {
+                        PlayerId = playerId,
+                        UpdatedItems = inventoryItems,
+                        UpdateType = "Refresh"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing inventory for player {PlayerId}", playerId);
+            }
+        }
+
+        private async Task RefreshPlayerEquipment(string playerId)
+        {
+            try
+            {
+                var connectionId = GetConnectionIdByPlayerId(playerId);
+                if (connectionId != null)
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
+                    var equippedItems = await equipmentManager.GetPlayerEquipmentAsync(playerId);
+
+                    // Get updated stats from cached PlayerState
+                    int totalAttackPower = 0;
+                    int totalDefensePower = 0;
+                    
+                    if (_players.TryGetValue(connectionId, out var cachedPlayer))
+                    {
+                        totalAttackPower = cachedPlayer.TotalAttackPower;
+                        totalDefensePower = cachedPlayer.TotalDefensePower;
+                    }
+
+                    await SendToConnection(connectionId, "EquipmentUpdate", new NetworkMessages.EquipmentUpdateMessage
+                    {
+                        PlayerId = playerId,
+                        UpdatedItems = equippedItems,
+                        UpdateType = "Refresh",
+                        TotalAttackPower = totalAttackPower,
+                        TotalDefensePower = totalDefensePower
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing equipment for player {PlayerId}", playerId);
+            }
+        }
+
+        private string? GetConnectionIdByPlayerId(string playerId)
+        {
+            return _connections.FirstOrDefault(kvp => kvp.Value.PlayerId == playerId).Key;
         }
 
         private async Task HandleItemUseRequest(WebSocketConnection connection, object data)
@@ -1682,6 +2105,72 @@ namespace CombatMechanix.Services
             {
                 _logger.LogError(ex, $"Error applying health potion to player {playerId}");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Helper method to populate equipment stats in PlayerState during login/authentication
+        /// </summary>
+        private async Task PopulateEquipmentStatsAsync(PlayerState playerState)
+        {
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
+                
+                // Calculate equipment stats from database
+                var (equipmentAttackPower, equipmentDefensePower) = await equipmentManager.CalculateEquipmentStatsAsync(playerState.PlayerId);
+                
+                // Populate equipment stats in PlayerState
+                playerState.EquipmentAttackPower = equipmentAttackPower;
+                playerState.EquipmentDefensePower = equipmentDefensePower;
+                
+                _logger.LogInformation("Populated equipment stats for player {PlayerId} during login: ATK +{Attack}, DEF +{Defense} (Base: STR {Strength}, DEF {Defense} | Total: ATK {TotalAttack}, DEF {TotalDefense})", 
+                    playerState.PlayerId, equipmentAttackPower, equipmentDefensePower, playerState.Strength, playerState.Defense, playerState.TotalAttackPower, playerState.TotalDefensePower);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error populating equipment stats for player {PlayerId}", playerState.PlayerId);
+                // Leave equipment stats as 0 on error
+                playerState.EquipmentAttackPower = 0;
+                playerState.EquipmentDefensePower = 0;
+            }
+        }
+
+        /// <summary>
+        /// Update cached equipment stats in PlayerState after equipment changes
+        /// This method handles cross-session updates by finding PlayerState by PlayerId
+        /// </summary>
+        private async Task UpdateCachedEquipmentStatsAsync(string playerId)
+        {
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
+                
+                // Calculate fresh equipment stats from database
+                var (equipmentAttackPower, equipmentDefensePower) = await equipmentManager.CalculateEquipmentStatsAsync(playerId);
+                
+                // Find and update PlayerState in cache (search by PlayerId, not ConnectionId)
+                var connectionEntry = _connections.FirstOrDefault(kvp => kvp.Value.PlayerId == playerId);
+                if (connectionEntry.Value != null && _players.TryGetValue(connectionEntry.Key, out var cachedPlayerState))
+                {
+                    // Update the cached equipment stats
+                    cachedPlayerState.EquipmentAttackPower = equipmentAttackPower;
+                    cachedPlayerState.EquipmentDefensePower = equipmentDefensePower;
+                    cachedPlayerState.LastUpdate = DateTime.UtcNow;
+                    
+                    _logger.LogInformation("Updated cached equipment stats for player {PlayerId}: ATK +{Attack}, DEF +{Defense} (Total: ATK {TotalAttack}, DEF {TotalDefense})", 
+                        playerId, equipmentAttackPower, equipmentDefensePower, cachedPlayerState.TotalAttackPower, cachedPlayerState.TotalDefensePower);
+                }
+                else
+                {
+                    _logger.LogWarning("Could not find cached PlayerState for player {PlayerId} to update equipment stats", playerId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating cached equipment stats for player {PlayerId}", playerId);
             }
         }
 

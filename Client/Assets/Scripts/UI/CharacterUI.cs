@@ -35,6 +35,10 @@ public class CharacterUI : MonoBehaviour
     private Text _statsDisplayText;
     private GameObject _statsDisplayPanel;
     
+    // Server-calculated stats (cached from equipment response)
+    private int _serverAttackPower = 0;
+    private int _serverDefensePower = 0;
+    
     // Events
     public System.Action<EquippedItem> OnItemClicked;
     public System.Action<EquippedItem> OnItemRightClicked;
@@ -61,9 +65,15 @@ public class CharacterUI : MonoBehaviour
         SetupItemIconManager();
         SetupStatsDisplayPanel();
         SetupItemDetailsPanel();
-        
-        // Request equipment data from server
-        RequestEquipmentFromServer();
+    }
+    
+    private void OnEnable()
+    {
+        // Request fresh equipment data from server every time panel is shown
+        if (gameObject.activeInHierarchy)
+        {
+            RequestEquipmentFromServer();
+        }
     }
     
     private void SetupCharacterUI()
@@ -350,7 +360,15 @@ public class CharacterUI : MonoBehaviour
         if (response.Success)
         {
             _equipmentData = response.Items;
+            
+            // Cache server-calculated stats
+            _serverAttackPower = response.TotalAttackPower;
+            _serverDefensePower = response.TotalDefensePower;
+            
+            Debug.Log($"[CharacterUI] Server calculated stats - ATK: {_serverAttackPower}, DEF: {_serverDefensePower}");
+            
             UpdateEquipmentDisplay();
+            UpdateStatsDisplay();
         }
         else
         {
@@ -379,12 +397,17 @@ public class CharacterUI : MonoBehaviour
                 break;
                 
             case "Replace":
-                foreach (var item in update.UpdatedItems)
-                {
-                    AddOrUpdateEquipment(item);
-                }
+            case "Refresh":
+                // For Replace and Refresh, update the entire equipment list
+                _equipmentData = update.UpdatedItems;
                 break;
         }
+        
+        // Update cached server stats from the update message
+        _serverAttackPower = update.TotalAttackPower;
+        _serverDefensePower = update.TotalDefensePower;
+        
+        Debug.Log($"[CharacterUI] Updated server stats from equipment update - ATK: {_serverAttackPower}, DEF: {_serverDefensePower}");
         
         UpdateEquipmentDisplay();
         UpdateStatsDisplay();
@@ -431,13 +454,19 @@ public class CharacterUI : MonoBehaviour
     {
         if (_statsDisplayText == null) return;
         
-        // Calculate total stats from equipped items
-        int totalAttackPower = _equipmentData.Sum(item => item.AttackPower);
-        int totalDefensePower = _equipmentData.Sum(item => item.DefensePower);
+        // Use server-calculated stats instead of client calculation
+        _statsDisplayText.text = $"ATK: +{_serverAttackPower}  DEF: +{_serverDefensePower}";
         
-        _statsDisplayText.text = $"ATK: +{totalAttackPower}  DEF: +{totalDefensePower}";
+        Debug.Log($"[CharacterUI] Updated equipment stats display (server-calculated): ATK +{_serverAttackPower}, DEF +{_serverDefensePower}");
         
-        Debug.Log($"[CharacterUI] Updated equipment stats: ATK +{totalAttackPower}, DEF +{totalDefensePower}");
+        // Additional debug: Show what would be calculated client-side vs server-side
+        int clientCalculatedAttack = _equipmentData.Sum(item => item.AttackPower);
+        int clientCalculatedDefense = _equipmentData.Sum(item => item.DefensePower);
+        
+        if (clientCalculatedAttack != _serverAttackPower || clientCalculatedDefense != _serverDefensePower)
+        {
+            Debug.LogWarning($"[CharacterUI] Client vs Server stat mismatch! Client: ATK +{clientCalculatedAttack}, DEF +{clientCalculatedDefense} | Server: ATK +{_serverAttackPower}, DEF +{_serverDefensePower}");
+        }
     }
     
     private void HandleSlotClicked(int slotIndex, EquippedItem item)
