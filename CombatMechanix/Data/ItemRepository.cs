@@ -25,7 +25,7 @@ namespace CombatMechanix.Data
         }
 
         /// <summary>
-        /// Get all items of a specific rarity from the ItemType table
+        /// Get all items of a specific rarity from the ItemTypes table
         /// </summary>
         public async Task<List<InventoryItem>> GetItemsByRarityAsync(string rarity)
         {
