@@ -386,9 +386,9 @@ namespace CombatMechanix.Data
         {
             return new InventoryItem
             {
-                ItemId = "", // Empty to save space - client doesn't need unique IDs for display
+                ItemId = reader["InventoryId"].ToString() ?? string.Empty, // Use database primary key for unique tracking
                 ItemType = reader["ItemTypeId"].ToString() ?? string.Empty,
-                ItemName = reader["ItemTypeId"].ToString() ?? string.Empty, // Use ItemType as name (shorter)
+                ItemName = reader["ItemName"].ToString() ?? string.Empty, // Use proper display name from database
                 ItemDescription = "", // Empty for network efficiency
                 Rarity = CompressRarity(reader["Rarity"].ToString() ?? "Common"), // Convert to single character
                 ItemCategory = reader["ItemCategory"].ToString() ?? string.Empty, // Include for consumable detection
