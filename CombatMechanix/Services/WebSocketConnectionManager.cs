@@ -143,7 +143,18 @@ namespace CombatMechanix.Services
                 var wrapper = JsonSerializer.Deserialize<MessageWrapper>(jsonMessage);
                 if (wrapper?.Type == null) return;
 
-                _logger.LogDebug($"Processing message type: {wrapper.Type} from {connection.ConnectionId}");
+                // Log ALL message types - this is temporary debugging
+                if (wrapper.Type != "PlayerMovement")
+                {
+                    _logger.LogInformation($"[DEBUG ALL MESSAGES] Processing message type: {wrapper.Type} from {connection.ConnectionId}");
+                }
+                
+                // Special logging for equipment-related messages
+                if (wrapper.Type.Contains("Equip") || wrapper.Type == "ItemEquipRequest" || wrapper.Type == "ItemUnequipRequest")
+                {
+                    _logger.LogInformation($"[DEBUG EQUIPMENT] Processing message type: {wrapper.Type} from {connection.ConnectionId}");
+                    _logger.LogInformation($"[DEBUG RAW MESSAGE] Raw message ({jsonMessage.Length} chars): {jsonMessage}");
+                }
 
                 switch (wrapper.Type)
                 {
@@ -181,7 +192,9 @@ namespace CombatMechanix.Services
                         await HandleEquipmentRequest(connection, wrapper.Data);
                         break;
                     case "ItemEquipRequest":
+                        _logger.LogInformation($"[DEBUG SWITCH] About to call HandleItemEquipRequest for {connection.ConnectionId}");
                         await HandleItemEquipRequest(connection, wrapper.Data);
+                        _logger.LogInformation($"[DEBUG SWITCH] Finished HandleItemEquipRequest for {connection.ConnectionId}");
                         break;
                     case "ItemUnequipRequest":
                         await HandleItemUnequipRequest(connection, wrapper.Data);
@@ -227,7 +240,8 @@ namespace CombatMechanix.Services
             var movementData = JsonSerializer.Deserialize<NetworkMessages.PlayerMovementMessage>(data.ToString()!);
             if (movementData == null) return;
 
-            _logger.LogInformation($"Received PlayerMovement from {connection.ConnectionId}: Position=({movementData.Position.X:F2}, {movementData.Position.Y:F2}, {movementData.Position.Z:F2})");
+            // Player movement is too frequent for logging
+            // _logger.LogInformation($"Received PlayerMovement from {connection.ConnectionId}: Position=({movementData.Position.X:F2}, {movementData.Position.Y:F2}, {movementData.Position.Z:F2})");
 
             // Update player state
             if (_players.TryGetValue(connection.ConnectionId, out var player))
@@ -424,7 +438,51 @@ namespace CombatMechanix.Services
                 }
             }
             
-            // Add more validation as needed (cooldowns, resources, etc.)
+            // Attack timing validation based on weapon speed
+            if (_players.TryGetValue(connection.ConnectionId, out var playerState))
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var attackTimingService = scope.ServiceProvider.GetRequiredService<IAttackTimingService>();
+                
+                var timingResult = attackTimingService.ValidateAttackTiming(playerState);
+                if (!timingResult.IsValid)
+                {
+                    _logger.LogDebug("Attack timing validation failed for player {PlayerId}: {Message} (Remaining: {RemainingMs}ms)", 
+                        connection.PlayerId, timingResult.Message, timingResult.TimeUntilNextAttack.TotalMilliseconds);
+                    
+                    // Send user-friendly system message to chat
+                    var remainingSeconds = timingResult.TimeUntilNextAttack.TotalSeconds;
+                    string friendlyMessage;
+                    
+                    if (remainingSeconds > 1.0)
+                    {
+                        friendlyMessage = $"Weapon not ready yet! ({remainingSeconds:F1}s remaining)";
+                    }
+                    else if (remainingSeconds > 0.5)
+                    {
+                        friendlyMessage = "I'm not ready to attack!";
+                    }
+                    else
+                    {
+                        friendlyMessage = "Too soon! Let me prepare...";
+                    }
+                    
+                    _ = Task.Run(async () =>
+                    {
+                        await SendSystemMessage(connection.ConnectionId, friendlyMessage);
+                    });
+                    
+                    return false;
+                }
+                
+                // Record this attack attempt for future timing validation
+                attackTimingService.RecordAttack(playerState);
+            }
+            else
+            {
+                _logger.LogWarning("Could not find player state for timing validation: {PlayerId}", connection.PlayerId);
+            }
+            
             return true;
         }
 
@@ -1323,6 +1381,24 @@ namespace CombatMechanix.Services
             await Task.WhenAll(tasks);
         }
 
+        /// <summary>
+        /// Send a system message to a specific connection's chat
+        /// </summary>
+        private Task SendSystemMessage(string connectionId, string message)
+        {
+            var systemMessage = new NetworkMessages.ChatMessage
+            {
+                SenderId = "SYSTEM",
+                SenderName = "System",
+                Message = message,
+                ChannelType = "System",
+                TargetId = null,
+                Timestamp = DateTime.UtcNow
+            };
+
+            return SendToConnection(connectionId, "ChatMessage", systemMessage);
+        }
+
         private Task SendWorldUpdate(string connectionId)
         {
             var worldUpdate = new NetworkMessages.WorldUpdateMessage
@@ -1396,7 +1472,8 @@ namespace CombatMechanix.Services
                         cachedPlayer.LastUpdate = DateTime.UtcNow;
                         
                         // DEBUG: Log health value from cache
-                        Console.WriteLine($"[DEBUG] GetActivePlayersForAI: Returning cached player {cachedPlayer.PlayerId} with Health={cachedPlayer.Health}");
+                        // Too frequent for logging
+                        // Console.WriteLine($"[DEBUG] GetActivePlayersForAI: Returning cached player {cachedPlayer.PlayerId} with Health={cachedPlayer.Health}");
                         
                         // Return the ACTUAL cached object, not a copy
                         activePlayers.Add(cachedPlayer);
@@ -1433,11 +1510,12 @@ namespace CombatMechanix.Services
                                 try
                                 {
                                     var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
-                                    var (attackPower, defensePower) = await equipmentManager.CalculateEquipmentStatsAsync(connection.PlayerId);
+                                    var (attackPower, defensePower, attackSpeed) = await equipmentManager.CalculateEquipmentStatsAsync(connection.PlayerId);
                                     playerState.EquipmentAttackPower = attackPower;
                                     playerState.EquipmentDefensePower = defensePower;
+                                    playerState.EquipmentAttackSpeed = attackSpeed;
                                     
-                                    Console.WriteLine($"[DEBUG] Cache MISS fix: Populated equipment stats for player {connection.PlayerId}: ATK +{attackPower}, DEF +{defensePower}");
+                                    Console.WriteLine($"[DEBUG] Cache MISS fix: Populated equipment stats for player {connection.PlayerId}: ATK +{attackPower}, DEF +{defensePower}, SPD {attackSpeed}");
                                 }
                                 catch (Exception equipEx)
                                 {
@@ -1603,7 +1681,7 @@ namespace CombatMechanix.Services
                 else
                 {
                     // Fallback: calculate fresh from database if not cached
-                    var (equipmentAttackPower, equipmentDefensePower) = await equipmentManager.CalculateEquipmentStatsAsync(connection.PlayerId);
+                    var (equipmentAttackPower, equipmentDefensePower, _) = await equipmentManager.CalculateEquipmentStatsAsync(connection.PlayerId);
                     totalAttackPower = equipmentAttackPower;
                     totalDefensePower = equipmentDefensePower;
                     _logger.LogWarning("Player {PlayerId} not found in cache, calculated equipment stats fresh from database", connection.PlayerId);
@@ -1649,11 +1727,14 @@ namespace CombatMechanix.Services
                     return;
                 }
 
+                _logger.LogInformation($"[DEBUG] Player ID: {connection.PlayerId}");
+
                 var equipRequest = JsonSerializer.Deserialize<NetworkMessages.ItemEquipRequestMessage>(
                     JsonSerializer.Serialize(data));
 
                 if (equipRequest == null)
                 {
+                    _logger.LogWarning($"[DEBUG] equipRequest is null");
                     await SendToConnection(connection.ConnectionId, "ItemEquipResponse", new NetworkMessages.ItemEquipResponseMessage
                     {
                         Success = false,
@@ -1662,11 +1743,15 @@ namespace CombatMechanix.Services
                     return;
                 }
 
+                _logger.LogInformation($"[DEBUG] Parsed request - SlotIndex: {equipRequest.SlotIndex}, ItemType: {equipRequest.ItemType}, SlotType: {equipRequest.SlotType}");
+
                 // Process equip request using EquipmentManager
                 using var scope = _serviceProvider.CreateScope();
                 var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
                 
+                _logger.LogInformation($"[DEBUG] About to call EquipItemAsync");
                 var result = await equipmentManager.EquipItemAsync(connection.PlayerId, equipRequest.SlotIndex, equipRequest.SlotType);
+                _logger.LogInformation($"[DEBUG] EquipItemAsync returned - Success: {result.Success}, Error: {result.ErrorMessage}");
 
                 // Send equip response
                 await SendToConnection(connection.ConnectionId, "ItemEquipResponse", new NetworkMessages.ItemEquipResponseMessage
@@ -2119,14 +2204,15 @@ namespace CombatMechanix.Services
                 var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
                 
                 // Calculate equipment stats from database
-                var (equipmentAttackPower, equipmentDefensePower) = await equipmentManager.CalculateEquipmentStatsAsync(playerState.PlayerId);
+                var (equipmentAttackPower, equipmentDefensePower, equipmentAttackSpeed) = await equipmentManager.CalculateEquipmentStatsAsync(playerState.PlayerId);
                 
                 // Populate equipment stats in PlayerState
                 playerState.EquipmentAttackPower = equipmentAttackPower;
                 playerState.EquipmentDefensePower = equipmentDefensePower;
+                playerState.EquipmentAttackSpeed = equipmentAttackSpeed;
                 
-                _logger.LogInformation("Populated equipment stats for player {PlayerId} during login: ATK +{Attack}, DEF +{Defense} (Base: STR {Strength}, DEF {Defense} | Total: ATK {TotalAttack}, DEF {TotalDefense})", 
-                    playerState.PlayerId, equipmentAttackPower, equipmentDefensePower, playerState.Strength, playerState.Defense, playerState.TotalAttackPower, playerState.TotalDefensePower);
+                _logger.LogInformation("Populated equipment stats for player {PlayerId} during login: ATK +{Attack}, DEF +{Defense}, SPD {Speed} (Base: STR {Strength}, DEF {Defense} | Total: ATK {TotalAttack}, DEF {TotalDefense}, SPD {TotalSpeed})", 
+                    playerState.PlayerId, equipmentAttackPower, equipmentDefensePower, equipmentAttackSpeed, playerState.Strength, playerState.Defense, playerState.TotalAttackPower, playerState.TotalDefensePower, playerState.TotalAttackSpeed);
             }
             catch (Exception ex)
             {
@@ -2149,7 +2235,7 @@ namespace CombatMechanix.Services
                 var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
                 
                 // Calculate fresh equipment stats from database
-                var (equipmentAttackPower, equipmentDefensePower) = await equipmentManager.CalculateEquipmentStatsAsync(playerId);
+                var (equipmentAttackPower, equipmentDefensePower, equipmentAttackSpeed) = await equipmentManager.CalculateEquipmentStatsAsync(playerId);
                 
                 // Find and update PlayerState in cache (search by PlayerId, not ConnectionId)
                 var connectionEntry = _connections.FirstOrDefault(kvp => kvp.Value.PlayerId == playerId);
@@ -2158,10 +2244,11 @@ namespace CombatMechanix.Services
                     // Update the cached equipment stats
                     cachedPlayerState.EquipmentAttackPower = equipmentAttackPower;
                     cachedPlayerState.EquipmentDefensePower = equipmentDefensePower;
+                    cachedPlayerState.EquipmentAttackSpeed = equipmentAttackSpeed;
                     cachedPlayerState.LastUpdate = DateTime.UtcNow;
                     
-                    _logger.LogInformation("Updated cached equipment stats for player {PlayerId}: ATK +{Attack}, DEF +{Defense} (Total: ATK {TotalAttack}, DEF {TotalDefense})", 
-                        playerId, equipmentAttackPower, equipmentDefensePower, cachedPlayerState.TotalAttackPower, cachedPlayerState.TotalDefensePower);
+                    _logger.LogInformation("Updated cached equipment stats for player {PlayerId}: ATK +{Attack}, DEF +{Defense}, SPD {Speed} (Total: ATK {TotalAttack}, DEF {TotalDefense}, SPD {TotalSpeed})", 
+                        playerId, equipmentAttackPower, equipmentDefensePower, equipmentAttackSpeed, cachedPlayerState.TotalAttackPower, cachedPlayerState.TotalDefensePower, cachedPlayerState.TotalAttackSpeed);
                 }
                 else
                 {

@@ -76,6 +76,10 @@ namespace CombatMechanix.Services
                     };
                 }
 
+                // DEBUG: Log inventory item details
+                _logger.LogInformation("DEBUG: Inventory item in slot {SlotIndex} - ItemType: '{ItemType}', ItemName: '{ItemName}'", 
+                    inventorySlotIndex, inventoryItem.ItemType ?? "NULL", inventoryItem.ItemName ?? "NULL");
+
                 // 2. Validate the item can be equipped to this slot
                 var validationResult = await ValidateItemForSlotAsync(inventoryItem.ItemType, targetSlotType);
                 if (!validationResult.IsValid)
@@ -258,12 +262,17 @@ namespace CombatMechanix.Services
                 var itemDetails = await _itemRepository.GetItemByIdAsync(itemType);
                 if (itemDetails == null)
                 {
+                    _logger.LogWarning("DEBUG: Item type '{ItemType}' not found in ItemTypes table", itemType ?? "NULL");
                     return new ValidationResult 
                     { 
                         IsValid = false, 
                         ErrorMessage = $"Item type '{itemType}' not found" 
                     };
                 }
+
+                // DEBUG: Log what we found in the database
+                _logger.LogInformation("DEBUG: Found item in database - ItemType: '{ItemType}', ItemName: '{ItemName}', ItemCategory: '{ItemCategory}'", 
+                    itemDetails.ItemType ?? "NULL", itemDetails.ItemName ?? "NULL", itemDetails.ItemCategory ?? "NULL");
 
                 // Check if slot type exists
                 if (!_slotItemCategories.ContainsKey(slotType))
@@ -278,6 +287,25 @@ namespace CombatMechanix.Services
                 // Check if item category matches slot
                 var allowedCategories = _slotItemCategories[slotType];
                 var itemCategory = itemDetails.ItemCategory ?? string.Empty;
+
+                // DEBUG: Log the validation details
+                _logger.LogInformation($"DEBUG VALIDATION: ItemCategory from DB: '{itemCategory}' (length: {itemCategory.Length})");
+                _logger.LogInformation($"DEBUG VALIDATION: SlotType: '{slotType}', Allowed categories: [{string.Join(", ", allowedCategories.Select(c => $"'{c}'"))}]");
+
+                // FALLBACK: If ItemCategory is null/empty, try to infer from item type name
+                if (string.IsNullOrEmpty(itemCategory))
+                {
+                    itemCategory = InferCategoryFromItemType(itemType);
+                    _logger.LogWarning($"ItemCategory was null/empty for {itemType}, inferred category: {itemCategory}");
+                }
+
+                // DEBUG: Test each allowed category individually
+                _logger.LogInformation($"DEBUG VALIDATION: Testing itemCategory '{itemCategory}' against allowed categories:");
+                foreach (var allowedCat in allowedCategories)
+                {
+                    var matches = itemCategory.Equals(allowedCat, StringComparison.OrdinalIgnoreCase);
+                    _logger.LogInformation($"  - '{itemCategory}' == '{allowedCat}' ? {matches}");
+                }
 
                 var isValidCategory = allowedCategories.Any(category => 
                     itemCategory.Equals(category, StringComparison.OrdinalIgnoreCase));
@@ -305,10 +333,10 @@ namespace CombatMechanix.Services
         }
 
         /// <summary>
-        /// Calculate equipment-derived attack and defense power for a player
+        /// Calculate equipment-derived attack power, defense power, and attack speed for a player
         /// This method does not cache - caching is handled by PlayerState in WebSocketConnectionManager
         /// </summary>
-        public async Task<(int AttackPower, int DefensePower)> CalculateEquipmentStatsAsync(string playerId)
+        public async Task<(int AttackPower, int DefensePower, decimal AttackSpeed)> CalculateEquipmentStatsAsync(string playerId)
         {
             try
             {
@@ -319,26 +347,89 @@ namespace CombatMechanix.Services
                 int totalAttackPower = equippedItems.Sum(item => item.AttackPower);
                 int totalDefensePower = equippedItems.Sum(item => item.DefensePower);
                 
-                _logger.LogInformation("Calculated equipment stats for player {PlayerId}: ATK +{Attack}, DEF +{Defense} from {ItemCount} items", 
-                    playerId, totalAttackPower, totalDefensePower, equippedItems.Count);
+                // Calculate attack speed - use weapon's attack speed, default to 1.0 if no weapon equipped
+                decimal totalAttackSpeed = 1.0m; // Default attack speed
+                var weaponItem = equippedItems.FirstOrDefault(item => 
+                    item.SlotType.Equals("Weapon", StringComparison.OrdinalIgnoreCase));
+                
+                if (weaponItem != null)
+                {
+                    totalAttackSpeed = weaponItem.AttackSpeed;
+                }
+                
+                _logger.LogInformation("Calculated equipment stats for player {PlayerId}: ATK +{Attack}, DEF +{Defense}, SPD {Speed}/sec from {ItemCount} items", 
+                    playerId, totalAttackPower, totalDefensePower, totalAttackSpeed, equippedItems.Count);
                 
                 // Debug: Log individual item contributions
                 foreach (var item in equippedItems)
                 {
-                    if (item.AttackPower > 0 || item.DefensePower > 0)
+                    if (item.AttackPower > 0 || item.DefensePower > 0 || item.AttackSpeed != 1.0m)
                     {
-                        _logger.LogDebug("  - {ItemName} ({SlotType}): ATK +{Attack}, DEF +{Defense}", 
-                            item.ItemName, item.SlotType, item.AttackPower, item.DefensePower);
+                        _logger.LogDebug("  - {ItemName} ({SlotType}): ATK +{Attack}, DEF +{Defense}, SPD {Speed}", 
+                            item.ItemName, item.SlotType, item.AttackPower, item.DefensePower, item.AttackSpeed);
                     }
                 }
                 
-                return (totalAttackPower, totalDefensePower);
+                return (totalAttackPower, totalDefensePower, totalAttackSpeed);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error calculating equipment stats for player {PlayerId}", playerId);
-                return (0, 0); // Return default values on error
+                return (0, 0, 1.0m); // Return default values on error
             }
+        }
+
+        /// <summary>
+        /// Infer item category from item type name when ItemCategory is null/empty in database
+        /// This is a fallback mechanism for items with missing category data
+        /// </summary>
+        private string InferCategoryFromItemType(string itemType)
+        {
+            var lowerItemType = itemType.ToLower();
+            
+            // Weapon patterns
+            if (lowerItemType.Contains("sword") || lowerItemType.Contains("blade") || 
+                lowerItemType.Contains("axe") || lowerItemType.Contains("bow") || 
+                lowerItemType.Contains("staff") || lowerItemType.Contains("dagger") ||
+                lowerItemType.Contains("weapon"))
+            {
+                return "Weapon";
+            }
+            
+            // Armor patterns
+            if (lowerItemType.Contains("helmet") || lowerItemType.Contains("hat") || 
+                lowerItemType.Contains("cap"))
+            {
+                return "Helmet";
+            }
+            
+            if (lowerItemType.Contains("chest") || lowerItemType.Contains("armor") || 
+                lowerItemType.Contains("chestplate") || lowerItemType.Contains("tunic"))
+            {
+                return "Chest";
+            }
+            
+            if (lowerItemType.Contains("legs") || lowerItemType.Contains("pants") || 
+                lowerItemType.Contains("greaves") || lowerItemType.Contains("leggings"))
+            {
+                return "Legs";
+            }
+            
+            // Shield patterns
+            if (lowerItemType.Contains("shield"))
+            {
+                return "Shield";
+            }
+            
+            // Accessory patterns
+            if (lowerItemType.Contains("ring") || lowerItemType.Contains("amulet") || 
+                lowerItemType.Contains("accessory") || lowerItemType.Contains("necklace"))
+            {
+                return "Ring"; // Using Ring as the primary accessory category
+            }
+            
+            // Default fallback - if it's being equipped to a weapon slot, assume it's a weapon
+            return "Weapon";
         }
     }
 

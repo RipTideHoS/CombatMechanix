@@ -123,6 +123,19 @@ namespace CombatMechanix.Models
             public string Source { get; set; } = string.Empty; // "Combat", "Potion", "Regeneration", etc.
         }
 
+        public class RespawnRequestMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+        }
+
+        public class RespawnResponseMessage
+        {
+            public bool Success { get; set; }
+            public string PlayerId { get; set; } = string.Empty;
+            public int NewHealth { get; set; }
+            public string ErrorMessage { get; set; } = string.Empty;
+        }
+
         public class LoginMessage
         {
             public string Username { get; set; } = string.Empty;
@@ -232,6 +245,66 @@ namespace CombatMechanix.Models
             public int RemainingQuantity { get; set; }
         }
 
+        // Equipment Messages - Following inventory message patterns
+        public class EquipmentRequestMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+        }
+
+        public class EquipmentResponseMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public List<EquippedItem> Items { get; set; } = new();
+            public bool Success { get; set; } = true;
+            public string ErrorMessage { get; set; } = string.Empty;
+            
+            // Calculated total stats from equipped items
+            public int TotalAttackPower { get; set; } = 0;
+            public int TotalDefensePower { get; set; } = 0;
+        }
+
+        public class ItemEquipRequestMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public int SlotIndex { get; set; } // Inventory slot index of item to equip
+            public string ItemType { get; set; } = string.Empty; // ItemTypeId to equip
+            public string SlotType { get; set; } = string.Empty; // Target equipment slot
+        }
+
+        public class ItemEquipResponseMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public bool Success { get; set; } = false;
+            public string ErrorMessage { get; set; } = string.Empty;
+            public EquippedItem? EquippedItem { get; set; } // The item that was equipped
+            public InventoryItem? UnequippedItem { get; set; } // Item that was replaced (if any)
+        }
+
+        public class ItemUnequipRequestMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public string SlotType { get; set; } = string.Empty; // Equipment slot to unequip
+        }
+
+        public class ItemUnequipResponseMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public bool Success { get; set; } = false;
+            public string ErrorMessage { get; set; } = string.Empty;
+            public InventoryItem? UnequippedItem { get; set; } // Item moved back to inventory
+        }
+
+        public class EquipmentUpdateMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public List<EquippedItem> UpdatedItems { get; set; } = new();
+            public string UpdateType { get; set; } = string.Empty; // "Equip", "Unequip", "Replace"
+            
+            // Include calculated total stats for immediate UI update
+            public int TotalAttackPower { get; set; } = 0;
+            public int TotalDefensePower { get; set; } = 0;
+        }
+
         // Loot drop system messages
         public class LootDropMessage
         {
@@ -257,6 +330,37 @@ namespace CombatMechanix.Models
             public string Message { get; set; } = string.Empty; // Success message or error reason
             public InventoryItem? Item { get; set; } // The item that was picked up (null if failed)
         }
+
+        /// <summary>
+        /// Message sent to client when an attack is rejected due to timing/cooldown
+        /// </summary>
+        public class AttackRejectedMessage
+        {
+            /// <summary>
+            /// Reason for rejection (e.g., "AttackSpeed", "Dead", "Range")
+            /// </summary>
+            public string Reason { get; set; } = string.Empty;
+            
+            /// <summary>
+            /// Human-readable message explaining the rejection
+            /// </summary>
+            public string Message { get; set; } = string.Empty;
+            
+            /// <summary>
+            /// Remaining cooldown time in milliseconds (0 if not applicable)
+            /// </summary>
+            public int CooldownRemainingMs { get; set; } = 0;
+            
+            /// <summary>
+            /// Player's current attack speed (attacks per second)
+            /// </summary>
+            public decimal AttackSpeed { get; set; } = 1.0m;
+            
+            /// <summary>
+            /// Timestamp when the rejection occurred
+            /// </summary>
+            public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+        }
     }
 
     public class PlayerState
@@ -271,10 +375,28 @@ namespace CombatMechanix.Models
         public int Level { get; set; } = 1;
         public long Experience { get; set; } = 0;
         public int Strength { get; set; } = 10;
-        public int Defense { get; set; } = 10;
+        public int Defense { get; set; } = 10; // Base defense from character stats
         public int Speed { get; set; } = 10;
         public bool IsOnline { get; set; } = true;
         public DateTime LastUpdate { get; set; } = DateTime.UtcNow;
+        
+        // Equipment-derived stat bonuses (cached from equipped items)
+        public int EquipmentAttackPower { get; set; } = 0;
+        public int EquipmentDefensePower { get; set; } = 0;
+        public decimal EquipmentAttackSpeed { get; set; } = 1.0m; // Default 1 attack per second
+        
+        // Combat timing tracking
+        public DateTime LastAttackTime { get; set; } = DateTime.MinValue;
+        
+        // Computed total values for easy access during combat
+        [JsonIgnore]
+        public int TotalAttackPower => Strength + EquipmentAttackPower;
+        
+        [JsonIgnore] 
+        public int TotalDefensePower => Defense + EquipmentDefensePower;
+        
+        [JsonIgnore]
+        public decimal TotalAttackSpeed => EquipmentAttackSpeed; // For now, only equipment affects attack speed
     }
 
     public class EnemyState
@@ -360,4 +482,27 @@ namespace CombatMechanix.Models
         public int DefensePower { get; set; } = 0;
         public int Value { get; set; } = 0; // Gold value
     }
+
+    public class EquippedItem
+    {
+        public string EquipmentId { get; set; } = string.Empty; // Unique equipment record ID
+        public string ItemType { get; set; } = string.Empty; // "common_sword", "iron_helmet", etc.
+        public string SlotType { get; set; } = string.Empty; // "Helmet", "Chest", "Legs", "Weapon", "Offhand", "Accessory"
+        public string ItemName { get; set; } = string.Empty; // Display name like "Iron Sword"
+        public string ItemDescription { get; set; } = string.Empty; // Tooltip description
+        public string IconName { get; set; } = string.Empty; // Icon file name for UI
+        public string Rarity { get; set; } = "Common"; // "Common", "Rare", "Epic", "Legendary"
+        public string ItemCategory { get; set; } = string.Empty; // "Weapon", "Armor", etc.
+        
+        // Item stats (for equipment)
+        public int AttackPower { get; set; } = 0;
+        public int DefensePower { get; set; } = 0;
+        public decimal AttackSpeed { get; set; } = 1.0m; // Attacks per second
+        public int Value { get; set; } = 0; // Gold value
+        
+        // Equipment tracking
+        public DateTime DateEquipped { get; set; } = DateTime.UtcNow;
+        public DateTime DateModified { get; set; } = DateTime.UtcNow;
+    }
+
 }

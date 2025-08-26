@@ -40,6 +40,7 @@ builder.Services.AddScoped<IItemRepository, ItemRepository>();
 builder.Services.AddScoped<IPlayerInventoryRepository, PlayerInventoryRepository>();
 builder.Services.AddScoped<IPlayerEquipmentRepository, PlayerEquipmentRepository>();
 builder.Services.AddScoped<CombatMechanix.Services.IAuthenticationService, CombatMechanix.Services.AuthenticationService>();
+builder.Services.AddScoped<IAttackTimingService, AttackTimingService>();
 builder.Services.AddLogging();
 
 // Configure CORS for Unity client
@@ -518,11 +519,12 @@ app.MapPost("/debug/refresh-equipment/{playerId}", async (string playerId, WebSo
         // Force recalculate equipment stats
         using var scope = serviceProvider.CreateScope();
         var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
-        var (equipmentAttackPower, equipmentDefensePower) = await equipmentManager.CalculateEquipmentStatsAsync(playerId);
+        var (equipmentAttackPower, equipmentDefensePower, equipmentAttackSpeed) = await equipmentManager.CalculateEquipmentStatsAsync(playerId);
         
         // Update cached player stats
         cachedPlayer.EquipmentAttackPower = equipmentAttackPower;
         cachedPlayer.EquipmentDefensePower = equipmentDefensePower;
+        cachedPlayer.EquipmentAttackSpeed = equipmentAttackSpeed;
         cachedPlayer.LastUpdate = DateTime.UtcNow;
         
         Console.WriteLine($"[DEBUG] After refresh - Equipment stats: ATK +{cachedPlayer.EquipmentAttackPower}, DEF +{cachedPlayer.EquipmentDefensePower}");
@@ -544,6 +546,36 @@ app.MapPost("/debug/refresh-equipment/{playerId}", async (string playerId, WebSo
     {
         Console.WriteLine($"[DEBUG] Error refreshing equipment stats: {ex.Message}");
         return Results.BadRequest(new { Error = ex.Message, StackTrace = ex.ToString() });
+    }
+});
+
+// Diagnostic endpoint to test AttackTimingService functionality
+app.MapGet("/debug/attack-timing", (IServiceProvider serviceProvider) =>
+{
+    try
+    {
+        using var scope = serviceProvider.CreateScope();
+        var attackTimingService = scope.ServiceProvider.GetRequiredService<IAttackTimingService>();
+        
+        var basicTestResults = AttackTimingServiceTests.RunBasicTests(attackTimingService);
+        var performanceTestResults = AttackTimingServiceTests.RunPerformanceTest(attackTimingService, 1000);
+        
+        return Results.Ok(new 
+        {
+            Timestamp = DateTime.UtcNow,
+            Service = "AttackTimingService",
+            BasicTests = basicTestResults,
+            PerformanceTests = performanceTestResults
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new 
+        {
+            Error = ex.Message,
+            StackTrace = ex.StackTrace,
+            Timestamp = DateTime.UtcNow
+        });
     }
 });
 
