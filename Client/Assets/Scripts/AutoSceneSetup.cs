@@ -560,11 +560,14 @@ public class AutoSceneSetup : MonoBehaviour
         // Create the character panel
         GameObject characterPanel = CreateCharacterPanel(canvasObj);
         
+        // Create the chat panel
+        GameObject chatPanel = CreateChatPanel(canvasObj);
+        
         // Create the login panel
         GameObject loginPanel = CreateLoginPanel(canvasObj);
         
         // Connect the panels to UIManager
-        ConnectUIManagerReferences(inventoryPanel, characterPanel, loginPanel);
+        ConnectUIManagerReferences(inventoryPanel, characterPanel, chatPanel, loginPanel);
         
         // Force Canvas to update
         Canvas.ForceUpdateCanvases();
@@ -1207,15 +1210,15 @@ public class AutoSceneSetup : MonoBehaviour
         GameObject simpleHealthBarContainer = new GameObject("SimplePlayerHealthBar");
         simpleHealthBarContainer.transform.SetParent(mainCanvas.transform, false);
 
-        // Position at bottom center (same as old PlayerHealthUI)
+        // Position at center top of screen
         var containerRect = simpleHealthBarContainer.GetComponent<RectTransform>();
         if (containerRect == null)
         {
             containerRect = simpleHealthBarContainer.AddComponent<RectTransform>();
         }
         
-        containerRect.anchorMin = new Vector2(0.3f, 0.02f);
-        containerRect.anchorMax = new Vector2(0.7f, 0.08f);
+        containerRect.anchorMin = new Vector2(0.3f, 0.92f);
+        containerRect.anchorMax = new Vector2(0.7f, 0.98f);
         containerRect.anchoredPosition = Vector2.zero;
         containerRect.sizeDelta = Vector2.zero;
 
@@ -1574,7 +1577,7 @@ public class AutoSceneSetup : MonoBehaviour
         
         // Add Image component for background - dark box style
         var image = characterPanel.AddComponent<UnityEngine.UI.Image>();
-        image.color = new Color(0.15f, 0.15f, 0.25f, 0.85f); // Slightly blue tint to distinguish from inventory
+        image.color = new Color(0.2f, 0.2f, 0.2f, 0.85f); // Same dark gray as inventory panel for consistency
         image.raycastTarget = true;
         
         // Set up RectTransform for positioning (same location as inventory panel - right side)
@@ -1614,6 +1617,112 @@ public class AutoSceneSetup : MonoBehaviour
         
         Debug.Log("CharacterPanel created successfully with CharacterUI component");
         return characterPanel;
+    }
+
+    private GameObject CreateChatPanel(GameObject canvasObj)
+    {
+        Debug.Log("Creating new ChatPanel...");
+        
+        // Create chat panel
+        GameObject chatPanel = new GameObject("ChatPanel");
+        chatPanel.transform.SetParent(canvasObj.transform, false);
+        
+        // Add Image component for background - dark box style (matching inventory panel)
+        var image = chatPanel.AddComponent<UnityEngine.UI.Image>();
+        image.color = new Color(0.2f, 0.2f, 0.2f, 0.85f); // Same dark gray as inventory panel
+        image.raycastTarget = true;
+        
+        // Set up RectTransform for positioning (bottom left, thinner width)
+        var rectTransform = chatPanel.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.02f, 0.02f);
+        rectTransform.anchorMax = new Vector2(0.35f, 0.4f);
+        rectTransform.anchoredPosition = Vector2.zero;
+        rectTransform.sizeDelta = Vector2.zero;
+        rectTransform.offsetMin = Vector2.zero;
+        rectTransform.offsetMax = Vector2.zero;
+        
+        // Add title text
+        GameObject titleObj = new GameObject("Title");
+        titleObj.transform.SetParent(chatPanel.transform, false);
+        var titleText = titleObj.AddComponent<UnityEngine.UI.Text>();
+        titleText.text = "CHAT";
+        titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        titleText.fontSize = 20;
+        titleText.color = Color.white;
+        titleText.alignment = TextAnchor.MiddleCenter;
+        titleText.fontStyle = FontStyle.Bold;
+        
+        var titleRect = titleObj.GetComponent<RectTransform>();
+        titleRect.anchorMin = new Vector2(0, 0.9f);
+        titleRect.anchorMax = new Vector2(1, 1f);
+        titleRect.anchoredPosition = Vector2.zero;
+        titleRect.sizeDelta = Vector2.zero;
+        
+        // Create chat display area (scrollable text)
+        GameObject chatDisplayObj = new GameObject("ChatDisplay");
+        chatDisplayObj.transform.SetParent(chatPanel.transform, false);
+        var chatDisplay = chatDisplayObj.AddComponent<UnityEngine.UI.Text>();
+        chatDisplay.text = "Welcome to Combat Mechanix!\nPress Enter to type...";
+        chatDisplay.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        chatDisplay.fontSize = 12;
+        chatDisplay.color = Color.white;
+        chatDisplay.alignment = TextAnchor.UpperLeft;
+        chatDisplay.fontStyle = FontStyle.Normal;
+        
+        var chatDisplayRect = chatDisplayObj.GetComponent<RectTransform>();
+        chatDisplayRect.anchorMin = new Vector2(0.02f, 0.15f);
+        chatDisplayRect.anchorMax = new Vector2(0.98f, 0.88f);
+        chatDisplayRect.anchoredPosition = Vector2.zero;
+        chatDisplayRect.sizeDelta = Vector2.zero;
+        
+        // Create chat input field at bottom
+        GameObject chatInputObj = CreateInputField(chatPanel, "ChatInput", "Message", 0.02f, 0.12f);
+        var chatInput = chatInputObj.GetComponent<UnityEngine.UI.InputField>();
+        chatInput.placeholder.GetComponent<UnityEngine.UI.Text>().text = "Type message...";
+        
+        // Create channel dropdown
+        GameObject channelDropdownObj = new GameObject("ChannelDropdown");
+        channelDropdownObj.transform.SetParent(chatPanel.transform, false);
+        
+        // Add background for dropdown
+        var dropdownImage = channelDropdownObj.AddComponent<UnityEngine.UI.Image>();
+        dropdownImage.color = new Color(0.3f, 0.3f, 0.3f, 1f);
+        
+        var dropdown = channelDropdownObj.AddComponent<UnityEngine.UI.Dropdown>();
+        dropdown.options.Clear();
+        dropdown.options.Add(new UnityEngine.UI.Dropdown.OptionData("Global"));
+        dropdown.options.Add(new UnityEngine.UI.Dropdown.OptionData("Local"));
+        dropdown.options.Add(new UnityEngine.UI.Dropdown.OptionData("Private"));
+        
+        var dropdownRect = channelDropdownObj.GetComponent<RectTransform>();
+        dropdownRect.anchorMin = new Vector2(0.7f, 0.02f);
+        dropdownRect.anchorMax = new Vector2(0.98f, 0.12f);
+        dropdownRect.anchoredPosition = Vector2.zero;
+        dropdownRect.sizeDelta = Vector2.zero;
+        
+        // Create dropdown label
+        GameObject labelObj = new GameObject("Label");
+        labelObj.transform.SetParent(channelDropdownObj.transform, false);
+        var labelText = labelObj.AddComponent<UnityEngine.UI.Text>();
+        labelText.text = "Global";
+        labelText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        labelText.fontSize = 12;
+        labelText.color = Color.white;
+        labelText.alignment = TextAnchor.MiddleCenter;
+        
+        var labelRect = labelObj.GetComponent<RectTransform>();
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.anchoredPosition = Vector2.zero;
+        labelRect.sizeDelta = Vector2.zero;
+        
+        dropdown.captionText = labelText;
+        
+        // Start with panel hidden
+        chatPanel.SetActive(false);
+        
+        Debug.Log("ChatPanel created successfully with chat display, input field, and channel dropdown");
+        return chatPanel;
     }
 
     // OLD CreateMainUIHealthSlider method removed - using CreateSimpleHealthSlider instead
@@ -2031,7 +2140,7 @@ public class AutoSceneSetup : MonoBehaviour
         }
     }
 
-    private void ConnectUIManagerReferences(GameObject inventoryPanel, GameObject characterPanel, GameObject loginPanel)
+    private void ConnectUIManagerReferences(GameObject inventoryPanel, GameObject characterPanel, GameObject chatPanel, GameObject loginPanel)
     {
         Debug.Log("Connecting UI Manager references - ensuring UIManager is active...");
         
@@ -2062,8 +2171,34 @@ public class AutoSceneSetup : MonoBehaviour
             // Set the CharacterPanel field
             SetFieldValue(uiManager, "CharacterPanel", characterPanel);
             
+            // Set the ChatPanel field
+            SetFieldValue(uiManager, "ChatPanel", chatPanel);
+            
             // Set the LoginPanel field  
             SetFieldValue(uiManager, "LoginPanel", loginPanel);
+            
+            // Connect ChatDisplay and ChatInput to UIManager
+            var chatDisplay = chatPanel.transform.Find("ChatDisplay")?.GetComponent<UnityEngine.UI.Text>();
+            var chatInput = chatPanel.transform.Find("ChatInput")?.GetComponent<UnityEngine.UI.InputField>();
+            var channelDropdown = chatPanel.transform.Find("ChannelDropdown")?.GetComponent<UnityEngine.UI.Dropdown>();
+            
+            if (chatDisplay != null)
+            {
+                SetFieldValue(uiManager, "ChatDisplay", chatDisplay);
+                Debug.Log("ChatDisplay connected to UIManager");
+            }
+            
+            if (chatInput != null)
+            {
+                SetFieldValue(uiManager, "ChatInput", chatInput);
+                Debug.Log("ChatInput connected to UIManager");
+            }
+            
+            if (channelDropdown != null)
+            {
+                SetFieldValue(uiManager, "ChannelDropdown", channelDropdown);
+                Debug.Log("ChannelDropdown connected to UIManager");
+            }
             
             // Set the LoginUIComponent field
             var loginUIComponent = loginPanel.GetComponent<LoginUI>();

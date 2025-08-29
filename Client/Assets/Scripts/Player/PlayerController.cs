@@ -174,6 +174,14 @@ public class PlayerController : MonoBehaviour
         {
             HandleInventoryToggle();
         }
+
+        // Character panel toggle (C key)
+        if (Input.GetKeyDown(KeyCode.C))
+        {
+            HandleCharacterToggle();
+        }
+
+        // Note: T key for chat is handled by UIManager.Update() to avoid conflicts
     }
 
     private void HandleMovement()
@@ -409,6 +417,34 @@ public class PlayerController : MonoBehaviour
             inventoryPanel.SetActive(!currentState);
         }
     }
+
+    private void HandleCharacterToggle()
+    {
+        // Try UIManager first
+        var uiManager = GameManager.Instance?.UIManager;
+        if (uiManager != null)
+        {
+            uiManager.ToggleCharacterPanel();
+            return;
+        }
+        
+        // Fallback 1: Try to find UIManager directly
+        UIManager directUIManager = FindObjectOfType<UIManager>();
+        if (directUIManager != null)
+        {
+            directUIManager.ToggleCharacterPanel();
+            return;
+        }
+        
+        // Fallback 2: Direct panel toggle
+        GameObject characterPanel = GameObject.Find("CharacterPanel");
+        if (characterPanel != null)
+        {
+            bool currentState = characterPanel.activeSelf;
+            characterPanel.SetActive(!currentState);
+        }
+    }
+
 
     // ===============================================
     // PUBLIC METHODS FOR EXTERNAL CONTROL

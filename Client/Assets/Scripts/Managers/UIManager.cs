@@ -13,6 +13,7 @@ public class UIManager : MonoBehaviour
     public GameObject ConnectionLostPanel;
     public GameObject ChatPanel;
     public GameObject InventoryPanel;
+    public GameObject CharacterPanel;
     public GameObject PlayerStatsPanel;
 
     [Header("HUD Elements")]
@@ -46,6 +47,7 @@ public class UIManager : MonoBehaviour
 
         // Subscribe to player health events
         ClientPlayerStats.OnHealthChanged += OnPlayerHealthChanged;
+        ClientPlayerStats.OnHealthChanged += OnPlayerDeathCheck;
         ClientPlayerStats.OnStatsUpdated += OnPlayerStatsUpdated;
 
         // Initialize UI - Always start with login screen
@@ -126,10 +128,13 @@ public class UIManager : MonoBehaviour
             }
         }
 
-        // Toggle chat
+        // Toggle chat - but only if chat input is not focused
         if (Input.GetKeyDown(KeyCode.T))
         {
-            ToggleChat();
+            if (ChatInput == null || !ChatInput.isFocused)
+            {
+                ToggleChat();
+            }
         }
     }
 
@@ -325,10 +330,25 @@ private void OnLoginButtonClicked()
 
     public void ToggleInventory()
     {
+        // Check if player is dead - prevent inventory access while dead
+        var playerStats = FindObjectOfType<ClientPlayerStats>();
+        if (playerStats != null && !playerStats.IsAlive())
+        {
+            ShowNotification("Cannot access inventory while dead!", Color.red);
+            return;
+        }
+        
         if (InventoryPanel != null)
         {
             bool currentState = InventoryPanel.activeSelf;
             bool newState = !currentState;
+            
+            // Implement mutual exclusion - hide character panel when showing inventory
+            if (newState && CharacterPanel != null && CharacterPanel.activeSelf)
+            {
+                CharacterPanel.SetActive(false);
+                Debug.Log("Hiding character panel to show inventory");
+            }
             
             // Toggle inventory panel
             InventoryPanel.SetActive(newState);
@@ -374,6 +394,12 @@ private void OnLoginButtonClicked()
                 bool currentState = InventoryPanel.activeSelf;
                 bool newState = !currentState;
                 
+                // Implement mutual exclusion
+                if (newState && CharacterPanel != null && CharacterPanel.activeSelf)
+                {
+                    CharacterPanel.SetActive(false);
+                }
+                
                 InventoryPanel.SetActive(newState);
                 
                 // Also toggle player stats panel
@@ -392,11 +418,99 @@ private void OnLoginButtonClicked()
         }
     }
 
-    private void ToggleChat()
+    public void ToggleCharacterPanel()
+    {
+        // Check if player is dead - prevent character panel access while dead
+        var playerStats = FindObjectOfType<ClientPlayerStats>();
+        if (playerStats != null && !playerStats.IsAlive())
+        {
+            ShowNotification("Cannot access character panel while dead!", Color.red);
+            return;
+        }
+        
+        if (CharacterPanel != null)
+        {
+            bool currentState = CharacterPanel.activeSelf;
+            bool newState = !currentState;
+            
+            // Implement mutual exclusion - hide inventory when showing character panel
+            if (newState && InventoryPanel != null && InventoryPanel.activeSelf)
+            {
+                InventoryPanel.SetActive(false);
+                if (PlayerStatsPanel != null)
+                {
+                    PlayerStatsPanel.SetActive(false);
+                }
+                Debug.Log("Hiding inventory panel to show character panel");
+            }
+            
+            // Toggle character panel
+            CharacterPanel.SetActive(newState);
+            
+            // Debug information
+            if (newState) // Panel is now visible
+            {
+                var rectTransform = CharacterPanel.GetComponent<RectTransform>();
+                var canvas = CharacterPanel.GetComponentInParent<Canvas>();
+                Debug.Log($"Character panel shown - Active: {CharacterPanel.activeSelf}");
+                Debug.Log($"Panel position: {rectTransform.anchoredPosition}, Size: {rectTransform.rect.size}");
+                Debug.Log($"Canvas: {(canvas != null ? canvas.name : "null")}, RenderMode: {(canvas != null ? canvas.renderMode.ToString() : "null")}");
+            }
+            else
+            {
+                Debug.Log($"Character panel hidden");
+            }
+        }
+        else
+        {
+            // Try to find the character panel if not assigned
+            GameObject foundPanel = GameObject.Find("CharacterPanel");
+            if (foundPanel != null)
+            {
+                CharacterPanel = foundPanel; // Cache the reference
+                bool currentState = CharacterPanel.activeSelf;
+                bool newState = !currentState;
+                
+                // Implement mutual exclusion
+                if (newState && InventoryPanel != null && InventoryPanel.activeSelf)
+                {
+                    InventoryPanel.SetActive(false);
+                    if (PlayerStatsPanel != null)
+                    {
+                        PlayerStatsPanel.SetActive(false);
+                    }
+                }
+                
+                CharacterPanel.SetActive(newState);
+                Debug.Log($"Found and toggled character panel: {newState}");
+            }
+            else
+            {
+                Debug.LogWarning("CharacterPanel not found! Make sure it exists in the scene.");
+            }
+        }
+    }
+
+    public void ToggleChat()
     {
         if (ChatPanel != null)
         {
             ChatPanel.SetActive(!ChatPanel.activeSelf);
+        }
+        else
+        {
+            // Try to find the chat panel if not assigned
+            GameObject foundPanel = GameObject.Find("ChatPanel");
+            if (foundPanel != null)
+            {
+                ChatPanel = foundPanel; // Cache the reference
+                ChatPanel.SetActive(!ChatPanel.activeSelf);
+                Debug.Log("Found and toggled chat panel");
+            }
+            else
+            {
+                Debug.LogWarning("ChatPanel not found! Make sure it exists in the scene.");
+            }
         }
     }
 
@@ -506,6 +620,55 @@ private void OnLoginButtonClicked()
         }
     }
 
+    // ===============================================
+    // CHARACTER PANEL UI METHODS
+    // ===============================================
+
+    public void ShowCharacterPanel()
+    {
+        // Implement mutual exclusion - hide inventory when showing character
+        if (InventoryPanel != null && InventoryPanel.activeSelf)
+        {
+            InventoryPanel.SetActive(false);
+            if (PlayerStatsPanel != null)
+            {
+                PlayerStatsPanel.SetActive(false);
+            }
+        }
+        
+        if (CharacterPanel != null)
+        {
+            CharacterPanel.SetActive(true);
+        }
+        else
+        {
+            // Try to find the character panel if not assigned
+            GameObject foundPanel = GameObject.Find("CharacterPanel");
+            if (foundPanel != null)
+            {
+                CharacterPanel = foundPanel; // Cache the reference
+                CharacterPanel.SetActive(true);
+                Debug.Log("Found and showed character panel");
+            }
+            else
+            {
+                Debug.LogWarning("CharacterPanel not found! Make sure it exists in the scene.");
+            }
+        }
+    }
+
+    public void HideCharacterPanel()
+    {
+        if (CharacterPanel != null)
+        {
+            CharacterPanel.SetActive(false);
+        }
+        else
+        {
+            Debug.LogWarning("CharacterPanel reference is null");
+        }
+    }
+
     private void InitializePlayerHealthUI()
     {
         // Find SimplePlayerHealthBar component and connect legacy UI elements
@@ -559,6 +722,35 @@ private void OnLoginButtonClicked()
             }
         }
     }
+    
+    private void OnPlayerDeathCheck(int newHealth, int healthChange)
+    {
+        // Check if player died (health <= 0) and close panels if needed
+        if (newHealth <= 0)
+        {
+            // Close inventory and character panels immediately upon death
+            if (InventoryPanel != null && InventoryPanel.activeSelf)
+            {
+                InventoryPanel.SetActive(false);
+                Debug.Log("Closed inventory panel due to player death");
+            }
+            
+            if (CharacterPanel != null && CharacterPanel.activeSelf)
+            {
+                CharacterPanel.SetActive(false);
+                Debug.Log("Closed character panel due to player death");
+            }
+            
+            if (PlayerStatsPanel != null && PlayerStatsPanel.activeSelf)
+            {
+                PlayerStatsPanel.SetActive(false);
+                Debug.Log("Closed player stats panel due to player death");
+            }
+            
+            // Show death notification
+            ShowNotification("You have died! Wait for respawn...", Color.red);
+        }
+    }
 
     private void OnPlayerStatsUpdated(ClientPlayerStats stats)
     {
@@ -575,6 +767,7 @@ private void OnLoginButtonClicked()
         NetworkManager.OnChatMessage -= HandleChatMessage;
         NetworkManager.OnSystemNotification -= HandleSystemNotification;
         ClientPlayerStats.OnHealthChanged -= OnPlayerHealthChanged;
+        ClientPlayerStats.OnHealthChanged -= OnPlayerDeathCheck;
         ClientPlayerStats.OnStatsUpdated -= OnPlayerStatsUpdated;
     }
 }
