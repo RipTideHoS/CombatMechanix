@@ -14,6 +14,7 @@ public class UIManager : MonoBehaviour
     public GameObject ChatPanel;
     public GameObject InventoryPanel;
     public GameObject CharacterPanel;
+    public GameObject VendorPanel;
     public GameObject PlayerStatsPanel;
 
     [Header("HUD Elements")]
@@ -50,25 +51,74 @@ public class UIManager : MonoBehaviour
         ClientPlayerStats.OnHealthChanged += OnPlayerDeathCheck;
         ClientPlayerStats.OnStatsUpdated += OnPlayerStatsUpdated;
 
-        // Initialize UI - Always start with login screen
-        ShowLoginPanel();
+        // Subscribe to vendor events
+        Vendor.OnVendorInteracted += HandleVendorInteraction;
+
+        // Initialize UI - Always start with login screen (with retry for timing)
+        StartCoroutine(InitializeUIWithRetry());
         SetupChatUI();
         InitializePlayerHealthUI();
         
-        Debug.Log("UIManager initialized - Login screen should be visible");
+        Debug.Log("UIManager initialized - Login screen initialization started");
+    }
+
+    private IEnumerator InitializeUIWithRetry()
+    {
+        int attempts = 0;
+        while (LoginPanel == null && attempts < 10)
+        {
+            Debug.Log($"Attempt {attempts + 1}: Waiting for LoginPanel to be connected...");
+            yield return new WaitForSeconds(0.1f);
+            attempts++;
+        }
+
+        if (LoginPanel != null)
+        {
+            Debug.Log("LoginPanel found - showing login screen");
+            ShowLoginPanel();
+        }
+        else
+        {
+            Debug.LogError("LoginPanel still null after 10 attempts - UI setup may have failed");
+        }
     }
 
     public void ShowLoginPanel()
     {
-        if (LoginPanel != null) LoginPanel.SetActive(true);
+        Debug.Log($"ShowLoginPanel called - LoginPanel null: {LoginPanel == null}");
+        
+        if (LoginPanel != null) 
+        {
+            LoginPanel.SetActive(true);
+            Debug.Log($"LoginPanel activated - active: {LoginPanel.activeInHierarchy}, parent: {LoginPanel.transform.parent?.name}");
+        }
+        else
+        {
+            Debug.LogError("LoginPanel is null in UIManager!");
+        }
+        
         if (GameUI != null) GameUI.SetActive(false);
         if (ConnectionLostPanel != null) ConnectionLostPanel.SetActive(false);
+        
+        // Hide all game panels
+        if (InventoryPanel != null) InventoryPanel.SetActive(false);
+        if (CharacterPanel != null) CharacterPanel.SetActive(false);
+        if (VendorPanel != null) VendorPanel.SetActive(false);
+        if (ChatPanel != null) ChatPanel.SetActive(false);
+        if (PlayerStatsPanel != null) PlayerStatsPanel.SetActive(false);
         
         // Notify LoginUI component
         if (LoginUIComponent != null)
         {
             LoginUIComponent.ShowLoginPanel();
+            Debug.Log("Notified LoginUI component to show");
         }
+        else
+        {
+            Debug.LogWarning("LoginUIComponent is null!");
+        }
+        
+        Debug.Log("Login panel shown, all game UI panels hidden");
     }
 
     public void ShowGameUI()
@@ -760,6 +810,74 @@ private void OnLoginButtonClicked()
             UpdatePlayerInfo();
         }
     }
+    
+    private void HandleVendorInteraction(Vendor vendor)
+    {
+        Debug.Log($"UIManager: Vendor '{vendor.VendorName}' interaction received!");
+        
+        // Show notification
+        ShowNotification($"Opening {vendor.VendorName} shop...", Color.green);
+        
+        // Open vendor UI panel
+        OpenVendorPanel(vendor);
+    }
+    
+    private void OpenVendorPanel(Vendor vendor)
+    {
+        if (VendorPanel != null)
+        {
+            // Close other panels for better focus (leave chat panel as-is)
+            if (InventoryPanel != null && InventoryPanel.activeSelf)
+                InventoryPanel.SetActive(false);
+            if (CharacterPanel != null && CharacterPanel.activeSelf)
+                CharacterPanel.SetActive(false);
+            
+            // Open vendor panel
+            VendorPanel.SetActive(true);
+            
+            // Get VendorUI component and initialize
+            VendorUI vendorUI = VendorPanel.GetComponent<VendorUI>();
+            if (vendorUI != null)
+            {
+                vendorUI.ShowVendorPanel();
+                
+                // Subscribe to sell events if not already subscribed
+                vendorUI.OnItemSellClicked -= HandleItemSell;
+                vendorUI.OnItemSellClicked += HandleItemSell;
+            }
+            
+            Debug.Log($"Opened vendor panel for {vendor.VendorName}");
+        }
+        else
+        {
+            Debug.LogWarning("VendorPanel is null - cannot open vendor interface");
+            ShowNotification("Vendor interface not available", Color.red);
+        }
+    }
+    
+    private void HandleItemSell(InventoryItem item, int slotIndex)
+    {
+        Debug.Log($"UIManager: Player wants to sell {item.ItemName} from slot {slotIndex}");
+        
+        // TODO Phase 3: Send sell request to server
+        ShowNotification($"Selling {item.ItemName} - Server integration coming soon!", Color.yellow);
+        
+        // Framework for future server sell request:
+        /*
+        var networkManager = FindObjectOfType<NetworkManager>();
+        if (networkManager != null)
+        {
+            var sellRequest = new NetworkMessages.ItemSellRequestMessage
+            {
+                PlayerId = networkManager.GetPlayerId(),
+                SlotIndex = slotIndex,
+                ItemType = item.ItemType,
+                Quantity = 1
+            };
+            await networkManager.SendItemSellRequest(sellRequest);
+        }
+        */
+    }
 
     private void OnDestroy()
     {
@@ -769,5 +887,6 @@ private void OnLoginButtonClicked()
         ClientPlayerStats.OnHealthChanged -= OnPlayerHealthChanged;
         ClientPlayerStats.OnHealthChanged -= OnPlayerDeathCheck;
         ClientPlayerStats.OnStatsUpdated -= OnPlayerStatsUpdated;
+        Vendor.OnVendorInteracted -= HandleVendorInteraction;
     }
 }

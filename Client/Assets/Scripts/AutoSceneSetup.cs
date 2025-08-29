@@ -61,13 +61,16 @@ public class AutoSceneSetup : MonoBehaviour
         if (SetupCamera)
             SetupMainCamera();
 
-        // 6. Create Reference Box
-        if (CreateReferenceBox)
-            CreateReferenceBoxObject();
+        // 6. Create Reference Box (disabled - replaced by vendor)
+        // if (CreateReferenceBox)
+        //     CreateReferenceBoxObject();
 
         // 7. Create Test Enemy (disabled by default - use network enemies)
         if (CreateTestEnemy)
             CreateTestEnemyObject();
+
+        // 7.5. Create Vendor
+        CreateVendorObject();
 
         // 8. Setup Enemy Network Manager
         if (SetupEnemyNetworkManager)
@@ -402,18 +405,34 @@ public class AutoSceneSetup : MonoBehaviour
 
     private void CreateReferenceBoxObject()
     {
-        // Check if ReferenceBox already exists
-        if (GameObject.Find("ReferenceBox") != null)
+        // DEPRECATED: This method is disabled - replaced by CreateVendorObject()
+        // Keeping for backward compatibility but not used
+        Debug.Log("CreateReferenceBoxObject called but disabled - using CreateVendorObject instead");
+    }
+
+    private void CreateVendorObject()
+    {
+        // Check if Vendor already exists
+        if (GameObject.Find("Vendor") != null)
         {
-            Debug.Log("ReferenceBox already exists in scene");
+            Debug.Log("Vendor already exists in scene");
             return;
         }
 
-        Debug.Log("Creating ReferenceBox GameObject...");
-        GameObject referenceBoxObj = new GameObject("ReferenceBox");
-        ReferenceBox referenceBox = referenceBoxObj.AddComponent<ReferenceBox>();
+        Debug.Log("Creating Vendor GameObject...");
+        GameObject vendorObj = new GameObject("Vendor");
         
-        Debug.Log("ReferenceBox created with collision and positioned relative to player/camera");
+        // Position vendor at a fixed location in the world (can be adjusted later)
+        vendorObj.transform.position = new Vector3(10f, 0f, 10f);
+        
+        // Add the Vendor component
+        Vendor vendor = vendorObj.AddComponent<Vendor>();
+        
+        // Configure vendor settings
+        vendor.VendorName = "General Merchant";
+        vendor.InteractionRange = 5f;
+        
+        Debug.Log($"Vendor '{vendor.VendorName}' created at position {vendorObj.transform.position}");
     }
 
     private void CreateTestEnemyObject()
@@ -563,11 +582,14 @@ public class AutoSceneSetup : MonoBehaviour
         // Create the chat panel
         GameObject chatPanel = CreateChatPanel(canvasObj);
         
+        // Create the vendor panel
+        GameObject vendorPanel = CreateVendorPanel(canvasObj);
+        
         // Create the login panel
         GameObject loginPanel = CreateLoginPanel(canvasObj);
         
         // Connect the panels to UIManager
-        ConnectUIManagerReferences(inventoryPanel, characterPanel, chatPanel, loginPanel);
+        ConnectUIManagerReferences(inventoryPanel, characterPanel, chatPanel, vendorPanel, loginPanel);
         
         // Force Canvas to update
         Canvas.ForceUpdateCanvases();
@@ -671,7 +693,9 @@ public class AutoSceneSetup : MonoBehaviour
         // Start with panel visible (login should show first)
         loginPanel.SetActive(true);
         
-        Debug.Log("Login panel created with username/password fields and LoginUI component");
+        // Double-check Canvas parent and panel setup
+        Debug.Log($"Login panel created: parent={loginPanel.transform.parent?.name}, active={loginPanel.activeInHierarchy}, canvas={canvasObj.name}");
+        Debug.Log($"Login panel rect: {loginPanel.GetComponent<RectTransform>().rect}");
         return loginPanel;
     }
 
@@ -1725,6 +1749,128 @@ public class AutoSceneSetup : MonoBehaviour
         return chatPanel;
     }
 
+    private GameObject CreateVendorPanel(GameObject canvasObj)
+    {
+        Debug.Log("Creating new VendorPanel...");
+        
+        // Create vendor panel (start disabled to prevent showing before login)
+        GameObject vendorPanel = new GameObject("VendorPanel");
+        vendorPanel.transform.SetParent(canvasObj.transform, false);
+        vendorPanel.SetActive(false); // Ensure it starts disabled
+        
+        // Add Image component for background - dark box style (matching other panels)
+        var image = vendorPanel.AddComponent<UnityEngine.UI.Image>();
+        image.color = new Color(0.2f, 0.2f, 0.2f, 0.9f); // Slightly more opaque for main panel
+        image.raycastTarget = true;
+        
+        // Set up RectTransform for center positioning (larger than other panels)
+        var rectTransform = vendorPanel.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.2f, 0.1f);
+        rectTransform.anchorMax = new Vector2(0.8f, 0.9f);
+        rectTransform.anchoredPosition = Vector2.zero;
+        rectTransform.sizeDelta = Vector2.zero;
+        rectTransform.offsetMin = Vector2.zero;
+        rectTransform.offsetMax = Vector2.zero;
+        
+        // Add title text
+        GameObject titleObj = new GameObject("VendorTitle");
+        titleObj.transform.SetParent(vendorPanel.transform, false);
+        var titleText = titleObj.AddComponent<UnityEngine.UI.Text>();
+        titleText.text = "GENERAL MERCHANT - SELL ITEMS";
+        titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        titleText.fontSize = 18;
+        titleText.color = Color.white;
+        titleText.alignment = TextAnchor.MiddleCenter;
+        titleText.fontStyle = FontStyle.Bold;
+        
+        var titleRect = titleObj.GetComponent<RectTransform>();
+        titleRect.anchorMin = new Vector2(0, 0.92f);
+        titleRect.anchorMax = new Vector2(1, 1f);
+        titleRect.anchoredPosition = Vector2.zero;
+        titleRect.sizeDelta = Vector2.zero;
+        
+        // Add gold display
+        GameObject goldObj = new GameObject("PlayerGold");
+        goldObj.transform.SetParent(vendorPanel.transform, false);
+        var goldText = goldObj.AddComponent<UnityEngine.UI.Text>();
+        goldText.text = "Gold: 0";
+        goldText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        goldText.fontSize = 14;
+        goldText.color = Color.yellow;
+        goldText.alignment = TextAnchor.MiddleLeft;
+        goldText.fontStyle = FontStyle.Bold;
+        
+        var goldRect = goldObj.GetComponent<RectTransform>();
+        goldRect.anchorMin = new Vector2(0.02f, 0.85f);
+        goldRect.anchorMax = new Vector2(0.3f, 0.92f);
+        goldRect.anchoredPosition = Vector2.zero;
+        goldRect.sizeDelta = Vector2.zero;
+        
+        // Create vendor container (for item slots)
+        GameObject vendorContainer = new GameObject("VendorContainer");
+        vendorContainer.transform.SetParent(vendorPanel.transform, false);
+        
+        // Add RectTransform for UI positioning (regular GameObjects don't have this automatically)
+        var containerRect = vendorContainer.AddComponent<RectTransform>();
+        containerRect.anchorMin = new Vector2(0.05f, 0.1f);
+        containerRect.anchorMax = new Vector2(0.95f, 0.8f);
+        containerRect.anchoredPosition = Vector2.zero;
+        containerRect.sizeDelta = Vector2.zero;
+        
+        // Add close button
+        GameObject closeButtonObj = new GameObject("CloseButton");
+        closeButtonObj.transform.SetParent(vendorPanel.transform, false);
+        
+        var closeButton = closeButtonObj.AddComponent<UnityEngine.UI.Button>();
+        var closeImage = closeButtonObj.AddComponent<UnityEngine.UI.Image>();
+        closeImage.color = new Color(0.8f, 0.2f, 0.2f, 1f); // Red close button
+        
+        // Get or add RectTransform (Button component should have added it)
+        var closeRect = closeButtonObj.GetComponent<RectTransform>();
+        if (closeRect == null)
+        {
+            Debug.LogWarning("Close button missing RectTransform - adding manually");
+            closeRect = closeButtonObj.AddComponent<RectTransform>();
+        }
+        closeRect.anchorMin = new Vector2(0.92f, 0.92f);
+        closeRect.anchorMax = new Vector2(0.98f, 0.98f);
+        closeRect.anchoredPosition = Vector2.zero;
+        closeRect.sizeDelta = Vector2.zero;
+        
+        // Add close button text
+        GameObject closeTextObj = new GameObject("CloseText");
+        closeTextObj.transform.SetParent(closeButtonObj.transform, false);
+        var closeText = closeTextObj.AddComponent<UnityEngine.UI.Text>();
+        closeText.text = "X";
+        closeText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        closeText.fontSize = 16;
+        closeText.color = Color.white;
+        closeText.alignment = TextAnchor.MiddleCenter;
+        closeText.fontStyle = FontStyle.Bold;
+        
+        var closeTextRect = closeTextObj.GetComponent<RectTransform>();
+        closeTextRect.anchorMin = Vector2.zero;
+        closeTextRect.anchorMax = Vector2.one;
+        closeTextRect.anchoredPosition = Vector2.zero;
+        closeTextRect.sizeDelta = Vector2.zero;
+        
+        // Add VendorUI component
+        var vendorUI = vendorPanel.AddComponent<VendorUI>();
+        vendorUI.VendorName = "General Merchant";
+        vendorUI.VendorContainer = vendorContainer.transform;
+        vendorUI.VendorTitleText = titleText;
+        vendorUI.PlayerGoldText = goldText;
+        
+        // Configure close button to hide vendor panel
+        closeButton.onClick.AddListener(() => {
+            vendorPanel.SetActive(false);
+            Debug.Log("Vendor panel closed via close button");
+        });
+        
+        Debug.Log("VendorPanel created successfully with container, gold display, and close button (starts disabled)");
+        return vendorPanel;
+    }
+
     // OLD CreateMainUIHealthSlider method removed - using CreateSimpleHealthSlider instead
 
     private void ConnectHealthUIToUIManager()
@@ -2140,7 +2286,7 @@ public class AutoSceneSetup : MonoBehaviour
         }
     }
 
-    private void ConnectUIManagerReferences(GameObject inventoryPanel, GameObject characterPanel, GameObject chatPanel, GameObject loginPanel)
+    private void ConnectUIManagerReferences(GameObject inventoryPanel, GameObject characterPanel, GameObject chatPanel, GameObject vendorPanel, GameObject loginPanel)
     {
         Debug.Log("Connecting UI Manager references - ensuring UIManager is active...");
         
@@ -2174,8 +2320,16 @@ public class AutoSceneSetup : MonoBehaviour
             // Set the ChatPanel field
             SetFieldValue(uiManager, "ChatPanel", chatPanel);
             
+            // Set the VendorPanel field
+            SetFieldValue(uiManager, "VendorPanel", vendorPanel);
+            
             // Set the LoginPanel field  
             SetFieldValue(uiManager, "LoginPanel", loginPanel);
+            Debug.Log($"Connected LoginPanel to UIManager: panel={loginPanel?.name}, active={loginPanel?.activeInHierarchy}");
+            
+            // Verify the field was set correctly
+            var verifyLoginPanel = uiManager.LoginPanel;
+            Debug.Log($"Verification - UIManager.LoginPanel is now: {(verifyLoginPanel == null ? "NULL" : verifyLoginPanel.name)}");
             
             // Connect ChatDisplay and ChatInput to UIManager
             var chatDisplay = chatPanel.transform.Find("ChatDisplay")?.GetComponent<UnityEngine.UI.Text>();
