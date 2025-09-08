@@ -45,6 +45,7 @@ public class UIManager : MonoBehaviour
         // Subscribe to network events
         NetworkManager.OnChatMessage += HandleChatMessage;
         NetworkManager.OnSystemNotification += HandleSystemNotification;
+        NetworkManager.OnItemSellResponse += HandleItemSellResponse;
 
         // Subscribe to player health events
         ClientPlayerStats.OnHealthChanged += OnPlayerHealthChanged;
@@ -855,15 +856,11 @@ private void OnLoginButtonClicked()
         }
     }
     
-    private void HandleItemSell(InventoryItem item, int slotIndex)
+    private async void HandleItemSell(InventoryItem item, int slotIndex)
     {
         Debug.Log($"UIManager: Player wants to sell {item.ItemName} from slot {slotIndex}");
         
-        // TODO Phase 3: Send sell request to server
-        ShowNotification($"Selling {item.ItemName} - Server integration coming soon!", Color.yellow);
-        
-        // Framework for future server sell request:
-        /*
+        // Send sell request to server
         var networkManager = FindObjectOfType<NetworkManager>();
         if (networkManager != null)
         {
@@ -874,9 +871,51 @@ private void OnLoginButtonClicked()
                 ItemType = item.ItemType,
                 Quantity = 1
             };
+            
+            ShowNotification($"Selling {item.ItemName}...", Color.yellow);
             await networkManager.SendItemSellRequest(sellRequest);
+            Debug.Log($"UIManager: Sent sell request for {item.ItemName} to server");
         }
-        */
+        else
+        {
+            Debug.LogError("UIManager: NetworkManager not found - cannot sell item");
+            ShowNotification("Cannot sell item - no network connection", Color.red);
+        }
+    }
+    
+    private void HandleItemSellResponse(NetworkMessages.ItemSellResponseMessage response)
+    {
+        if (response == null) return;
+        
+        Debug.Log($"UIManager: Received sell response - Success: {response.Success}, Message: {response.Message}");
+        
+        if (response.Success)
+        {
+            // Show success message with gold earned
+            ShowNotification(response.Message, Color.green);
+            
+            // TODO: Update player gold display when currency system is implemented
+            // For now, we just show the gold earned in the message
+            
+            Debug.Log($"UIManager: Item sold successfully - Earned {response.GoldEarned} gold");
+            
+            // Refresh vendor panel inventory if it's currently open
+            if (VendorPanel != null && VendorPanel.activeInHierarchy)
+            {
+                Debug.Log("UIManager: Vendor panel is open, requesting fresh inventory after successful sale");
+                var networkManager = FindObjectOfType<NetworkManager>();
+                if (networkManager != null)
+                {
+                    _ = networkManager.RequestInventory();
+                }
+            }
+        }
+        else
+        {
+            // Show error message
+            ShowNotification($"Failed to sell item: {response.Message}", Color.red);
+            Debug.LogWarning($"UIManager: Sell failed - {response.Message}");
+        }
     }
 
     private void OnDestroy()
@@ -884,6 +923,7 @@ private void OnLoginButtonClicked()
         // Unsubscribe from events
         NetworkManager.OnChatMessage -= HandleChatMessage;
         NetworkManager.OnSystemNotification -= HandleSystemNotification;
+        NetworkManager.OnItemSellResponse -= HandleItemSellResponse;
         ClientPlayerStats.OnHealthChanged -= OnPlayerHealthChanged;
         ClientPlayerStats.OnHealthChanged -= OnPlayerDeathCheck;
         ClientPlayerStats.OnStatsUpdated -= OnPlayerStatsUpdated;
