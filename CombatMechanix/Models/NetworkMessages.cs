@@ -98,6 +98,7 @@ namespace CombatMechanix.Models
             public int Defense { get; set; }
             public int Speed { get; set; }
             public long ExperienceToNextLevel { get; set; }
+            public int Gold { get; set; } = 100;
         }
 
         public class ExperienceGainMessage
@@ -242,6 +243,7 @@ namespace CombatMechanix.Models
             public string Message { get; set; } = string.Empty;
             public string ItemType { get; set; } = string.Empty;
             public int GoldEarned { get; set; }
+            public int CurrentGold { get; set; } // Player's total gold after the sale
             public int RemainingQuantity { get; set; }
         }
 
@@ -377,6 +379,7 @@ namespace CombatMechanix.Models
         public int Strength { get; set; } = 10;
         public int Defense { get; set; } = 10; // Base defense from character stats
         public int Speed { get; set; } = 10;
+        public int Gold { get; set; } = 100;
         public bool IsOnline { get; set; } = true;
         public DateTime LastUpdate { get; set; } = DateTime.UtcNow;
         

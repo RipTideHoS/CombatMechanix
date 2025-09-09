@@ -15,6 +15,7 @@ public class ClientPlayerStats : MonoBehaviour
     public int Defense = 10;
     public int Speed = 10;
     public long ExperienceToNextLevel = 100;
+    public int Gold = 100;
 
     [Header("Display Settings")]
     public bool ShowDebugStats = true;
@@ -24,6 +25,8 @@ public class ClientPlayerStats : MonoBehaviour
     public static event Action<int> OnLevelUp;
     public static event Action<int, int> OnHealthChanged; // (newHealth, healthChange)
     public static event Action<long, string> OnExperienceGained; // (experience, source)
+    public static event Action<int> OnGoldChanged; // (newGold)
+    public static event Action OnPlayerDeath; // New death event
 
     private void Awake()
     {
@@ -99,7 +102,10 @@ public class ClientPlayerStats : MonoBehaviour
 
     private void HandlePlayerStatsUpdate(NetworkMessages.PlayerStatsUpdateMessage statsUpdate)
     {
-        Debug.Log($"Received player stats update: Level {statsUpdate.Level}, Health {statsUpdate.Health}/{statsUpdate.MaxHealth}, Experience {statsUpdate.Experience}");
+        Debug.Log($"Received player stats update: Level {statsUpdate.Level}, Health {statsUpdate.Health}/{statsUpdate.MaxHealth}, Experience {statsUpdate.Experience}, Gold {statsUpdate.Gold}");
+        
+        // Track gold change
+        int previousGold = Gold;
         
         // Update all stats from server
         Level = statsUpdate.Level;
@@ -110,13 +116,44 @@ public class ClientPlayerStats : MonoBehaviour
         Defense = statsUpdate.Defense;
         Speed = statsUpdate.Speed;
         ExperienceToNextLevel = statsUpdate.ExperienceToNextLevel;
+        Gold = statsUpdate.Gold;
+        
+        // Fire gold changed event if gold actually changed
+        if (Gold != previousGold)
+        {
+            OnGoldChanged?.Invoke(Gold);
+        }
+
+        // Check if player is dead and trigger death event if needed
+        if (Health <= 0)
+        {
+            Debug.Log("[CLIENT] Player loaded as dead - triggering OnPlayerDeath event");
+            OnPlayerDeath?.Invoke();
+        }
 
         // Notify UI systems
         OnStatsUpdated?.Invoke(this);
 
         if (ShowDebugStats)
         {
-            Debug.Log($"Stats Updated - Level: {Level}, Health: {Health}/{MaxHealth}, Experience: {Experience}/{Experience + ExperienceToNextLevel}, Str: {Strength}, Def: {Defense}, Spd: {Speed}");
+            Debug.Log($"Stats Updated - Level: {Level}, Health: {Health}/{MaxHealth}, Experience: {Experience}/{Experience + ExperienceToNextLevel}, Str: {Strength}, Def: {Defense}, Spd: {Speed}, Gold: {Gold}");
+        }
+    }
+    
+    /// <summary>
+    /// Public method to update gold from external sources (like VendorUI) and fire events
+    /// </summary>
+    public void UpdateGold(int newGold)
+    {
+        int previousGold = Gold;
+        Gold = newGold;
+        
+        // Fire events if gold actually changed
+        if (Gold != previousGold)
+        {
+            OnGoldChanged?.Invoke(Gold);
+            OnStatsUpdated?.Invoke(this);
+            Debug.Log($"[ClientPlayerStats] Gold updated from {previousGold} to {Gold}");
         }
     }
 
@@ -159,6 +196,13 @@ public class ClientPlayerStats : MonoBehaviour
         Health = healthChange.NewHealth;
         
         Debug.Log($"[CLIENT] Health updated from {oldHealth} to {Health}");
+
+        // Check for death (health reached 0)
+        if (Health <= 0 && oldHealth > 0)
+        {
+            Debug.Log("[CLIENT] Player died - triggering OnPlayerDeath event");
+            OnPlayerDeath?.Invoke();
+        }
 
         // Trigger health change event
         Debug.Log($"[CLIENT] About to invoke OnHealthChanged static event. Subscribers: {OnHealthChanged?.GetInvocationList()?.Length ?? 0}");
@@ -272,6 +316,33 @@ public class ClientPlayerStats : MonoBehaviour
         if (GUILayout.Button("Test Health (Server Only)"))
         {
             Debug.Log("Health changes are now server-authoritative only. No client test available.");
+        }
+        
+        if (GUILayout.Button("Force Death Check"))
+        {
+            Debug.Log($"[CLIENT] Current Health: {Health}, IsAlive: {IsAlive()}");
+            if (Health <= 0)
+            {
+                Debug.Log("[CLIENT] Health <= 0, triggering OnPlayerDeath");
+                OnPlayerDeath?.Invoke();
+            }
+            else
+            {
+                Debug.Log("[CLIENT] Health > 0, no death event triggered");
+            }
+        }
+        
+        if (GUILayout.Button("Show Death Banner"))
+        {
+            var deathBanner = FindObjectOfType<DeathBanner>();
+            if (deathBanner != null)
+            {
+                deathBanner.ForceShowDeathBanner();
+            }
+            else
+            {
+                Debug.LogError("DeathBanner not found!");
+            }
         }
         
         if (GUILayout.Button("Test Event Subscription"))

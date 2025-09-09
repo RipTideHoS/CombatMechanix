@@ -46,7 +46,11 @@ public class InventoryUI : MonoBehaviour
         NetworkManager.OnEquipmentResponse += HandleEquipmentResponse;
         NetworkManager.OnEquipmentUpdate += HandleEquipmentUpdate;
         
-        Debug.Log("[InventoryUI] Subscribed to inventory and equipment network events");
+        // Subscribe to player stats events for gold updates
+        ClientPlayerStats.OnStatsUpdated += HandlePlayerStatsUpdate;
+        ClientPlayerStats.OnGoldChanged += HandleGoldChanged;
+        
+        Debug.Log("[InventoryUI] Subscribed to inventory, equipment, and player stats network events");
     }
     
     private void OnDestroy()
@@ -56,6 +60,10 @@ public class InventoryUI : MonoBehaviour
         NetworkManager.OnInventoryUpdate -= HandleInventoryUpdate;
         NetworkManager.OnEquipmentResponse -= HandleEquipmentResponse;
         NetworkManager.OnEquipmentUpdate -= HandleEquipmentUpdate;
+        
+        // Unsubscribe from player stats events
+        ClientPlayerStats.OnStatsUpdated -= HandlePlayerStatsUpdate;
+        ClientPlayerStats.OnGoldChanged -= HandleGoldChanged;
     }
     
     private void Start()
@@ -67,6 +75,15 @@ public class InventoryUI : MonoBehaviour
         
         // Request inventory data from server
         RequestInventoryFromServer();
+    }
+    
+    private void OnEnable()
+    {
+        // Refresh gold display whenever inventory panel is shown
+        if (_goldDisplayText != null)
+        {
+            UpdateGoldDisplay(GetPlayerGold());
+        }
     }
     
     private void SetupInventoryUI()
@@ -142,8 +159,8 @@ public class InventoryUI : MonoBehaviour
             textRect.sizeDelta = Vector2.zero;
         }
         
-        // Update gold display with current amount (placeholder for now)
-        UpdateGoldDisplay(0);
+        // Update gold display with current player gold
+        UpdateGoldDisplay(GetPlayerGold());
         
         Debug.Log("[InventoryUI] Gold display panel created");
     }
@@ -367,6 +384,16 @@ public class InventoryUI : MonoBehaviour
                 {
                     AddOrUpdateItem(item);
                 }
+                break;
+                
+            case "Refresh":
+                // Clear existing data and replace with updated items
+                _inventoryData.Clear();
+                foreach (var item in update.UpdatedItems)
+                {
+                    AddOrUpdateItem(item);
+                }
+                Debug.Log($"[InventoryUI] Refreshed inventory with {update.UpdatedItems.Count} items");
                 break;
                 
             case "Clear":
@@ -724,13 +751,33 @@ public class InventoryUI : MonoBehaviour
     }
     
     /// <summary>
-    /// Get current gold amount (placeholder - will be integrated with player currency system)
+    /// Get current gold amount from ClientPlayerStats
     /// </summary>
     public int GetPlayerGold()
     {
-        // TODO: Integrate with actual player currency system
-        // For now, return 0 as placeholder
-        return 0;
+        var playerStats = FindObjectOfType<ClientPlayerStats>();
+        return playerStats != null ? playerStats.Gold : 0;
+    }
+    
+    /// <summary>
+    /// Handle player stats updates (including gold changes)
+    /// </summary>
+    private void HandlePlayerStatsUpdate(ClientPlayerStats stats)
+    {
+        if (stats != null)
+        {
+            UpdateGoldDisplay(stats.Gold);
+            Debug.Log($"[InventoryUI] Updated gold display from player stats: {stats.Gold}");
+        }
+    }
+    
+    /// <summary>
+    /// Handle specific gold changes
+    /// </summary>
+    private void HandleGoldChanged(int newGold)
+    {
+        UpdateGoldDisplay(newGold);
+        Debug.Log($"[InventoryUI] Gold changed to: {newGold}");
     }
     
     /// <summary>
@@ -831,11 +878,11 @@ public class InventoryUI : MonoBehaviour
         // Validate category matches target slot type (matching server logic)
         return targetSlotType switch
         {
-            "Helmet" => category is "helmet" or "armor" && item.ItemType.ToLower().Contains("helmet"),
-            "Chest" => category is "chest" or "armor" && item.ItemType.ToLower().Contains("chest"),
-            "Legs" => category is "legs" or "armor" && item.ItemType.ToLower().Contains("legs"),
+            "Helmet" => category is "helmet" or "armor",
+            "Chest" => category is "chest" or "armor", 
+            "Legs" => category is "legs" or "armor",
             "Weapon" => category is "weapon" or "sword" or "axe" or "bow" or "staff",
-            "Offhand" => category is "shield" or "offhand" or "weapon",
+            "Offhand" => category is "shield" or "offhand" or "weapon", 
             "Accessory" => category is "ring" or "amulet" or "accessory",
             _ => false
         };

@@ -1854,12 +1854,119 @@ public class AutoSceneSetup : MonoBehaviour
         closeTextRect.anchoredPosition = Vector2.zero;
         closeTextRect.sizeDelta = Vector2.zero;
         
+        // Create item details panel directly (since VendorUI creation seems to be failing)
+        GameObject itemDetailsPanel = new GameObject("ItemDetailsPanel");
+        itemDetailsPanel.transform.SetParent(vendorContainer.transform, false);
+        
+        // Add Image component for background
+        var detailsBgImage = itemDetailsPanel.AddComponent<UnityEngine.UI.Image>();
+        detailsBgImage.color = new Color(0.1f, 0.1f, 0.1f, 0.9f); // Default dark background
+        detailsBgImage.raycastTarget = false; // Don't block hover events
+        
+        // Position below the grid layout (bottom 25% of VendorContainer)
+        var detailsRect = itemDetailsPanel.GetComponent<RectTransform>();
+        detailsRect.anchorMin = new Vector2(0.0f, 0.0f);
+        detailsRect.anchorMax = new Vector2(1.0f, 0.25f);
+        detailsRect.anchoredPosition = Vector2.zero;
+        detailsRect.sizeDelta = Vector2.zero;
+        
+        // Create text component for item details
+        GameObject detailsTextObj = new GameObject("VendorDetailsText");
+        detailsTextObj.transform.SetParent(itemDetailsPanel.transform, false);
+        
+        var detailsText = detailsTextObj.AddComponent<UnityEngine.UI.Text>();
+        detailsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        detailsText.fontSize = 14;
+        detailsText.color = Color.white;
+        detailsText.alignment = TextAnchor.UpperLeft;
+        detailsText.verticalOverflow = VerticalWrapMode.Overflow;
+        detailsText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        detailsText.text = "Debug: ItemDetailsPanel created by AutoSceneSetup";
+        
+        // Position text to fill the panel with padding
+        var detailsTextRect = detailsTextObj.GetComponent<RectTransform>();
+        detailsTextRect.anchorMin = new Vector2(0.02f, 0.02f);
+        detailsTextRect.anchorMax = new Vector2(0.98f, 0.98f);
+        detailsTextRect.anchoredPosition = Vector2.zero;
+        detailsTextRect.sizeDelta = Vector2.zero;
+        
+        // Make the panel visible for debugging
+        itemDetailsPanel.SetActive(true);
+        
+        Debug.Log("[AutoSceneSetup] Created ItemDetailsPanel directly in AutoSceneSetup");
+        
+        // Immediate verification
+        if (itemDetailsPanel == null)
+        {
+            Debug.LogError("[AutoSceneSetup] CRITICAL: ItemDetailsPanel is null immediately after creation!");
+        }
+        else
+        {
+            Debug.Log($"[AutoSceneSetup] ItemDetailsPanel verification - Name: {itemDetailsPanel.name}, Parent: {itemDetailsPanel.transform.parent?.name ?? "NULL"}, Active: {itemDetailsPanel.activeSelf}");
+        }
+        
         // Add VendorUI component
-        var vendorUI = vendorPanel.AddComponent<VendorUI>();
-        vendorUI.VendorName = "General Merchant";
-        vendorUI.VendorContainer = vendorContainer.transform;
-        vendorUI.VendorTitleText = titleText;
-        vendorUI.PlayerGoldText = goldText;
+        Debug.Log("[AutoSceneSetup] Adding VendorUI component to vendorPanel");
+        try 
+        {
+            var vendorUI = vendorPanel.AddComponent<VendorUI>();
+            if (vendorUI == null)
+            {
+                Debug.LogError("[AutoSceneSetup] Failed to add VendorUI component - AddComponent returned null!");
+            }
+            else
+            {
+                Debug.Log("[AutoSceneSetup] VendorUI component successfully added");
+                vendorUI.VendorName = "General Merchant";
+                vendorUI.VendorContainer = vendorContainer.transform;
+                vendorUI.VendorTitleText = titleText;
+                vendorUI.PlayerGoldText = goldText;
+                vendorUI.ItemDetailsPanel = itemDetailsPanel;
+                Debug.Log($"[AutoSceneSetup] VendorUI configured - Container: {vendorContainer.name}, VendorUI: {vendorUI != null}, ItemDetailsPanel: {itemDetailsPanel != null}");
+                
+                // Check if ItemDetailsPanel still exists after assignment
+                if (itemDetailsPanel == null)
+                {
+                    Debug.LogError("[AutoSceneSetup] CRITICAL: ItemDetailsPanel became null after VendorUI assignment!");
+                }
+                else
+                {
+                    try 
+                    {
+                        string panelName = itemDetailsPanel.name; // This will throw if destroyed
+                        Debug.Log($"[AutoSceneSetup] ItemDetailsPanel still exists after VendorUI assignment - Name: {panelName}");
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError($"[AutoSceneSetup] ItemDetailsPanel was destroyed after VendorUI assignment! Exception: {e.Message}");
+                    }
+                }
+                
+                // Verify the component was actually added
+                var verifyComponent = vendorPanel.GetComponent<VendorUI>();
+                if (verifyComponent == null)
+                {
+                    Debug.LogError("[AutoSceneSetup] VERIFICATION FAILED: VendorUI component not found on vendorPanel after adding!");
+                }
+                else
+                {
+                    Debug.Log("[AutoSceneSetup] VERIFICATION SUCCESS: VendorUI component confirmed on vendorPanel");
+                }
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[AutoSceneSetup] Exception while adding VendorUI component: {e.Message}");
+            Debug.Log("[AutoSceneSetup] Creating ItemDetailsPanel manually as fallback");
+            CreateVendorItemDetailsPanelFallback(vendorContainer);
+        }
+        
+        // Fallback check: if VendorUI component still doesn't exist, create ItemDetailsPanel manually
+        if (vendorPanel.GetComponent<VendorUI>() == null)
+        {
+            Debug.LogWarning("[AutoSceneSetup] VendorUI component missing, creating ItemDetailsPanel as fallback");
+            CreateVendorItemDetailsPanelFallback(vendorContainer);
+        }
         
         // Configure close button to hide vendor panel
         closeButton.onClick.AddListener(() => {
@@ -1869,6 +1976,52 @@ public class AutoSceneSetup : MonoBehaviour
         
         Debug.Log("VendorPanel created successfully with container, gold display, and close button (starts disabled)");
         return vendorPanel;
+    }
+    
+    private void CreateVendorItemDetailsPanelFallback(GameObject vendorContainer)
+    {
+        Debug.Log("[AutoSceneSetup] Creating ItemDetailsPanel fallback");
+        
+        // Create item details panel (positioned on the right side)
+        GameObject itemDetailsPanel = new GameObject("ItemDetailsPanel");
+        itemDetailsPanel.transform.SetParent(vendorContainer.transform, false);
+        
+        // Add Image component for background
+        var detailsBgImage = itemDetailsPanel.AddComponent<UnityEngine.UI.Image>();
+        detailsBgImage.color = new Color(0.1f, 0.1f, 0.1f, 0.9f); // Dark background
+        detailsBgImage.raycastTarget = false; // Don't block hover events
+        
+        // Position panel on the right side of vendor container
+        var detailsRect = itemDetailsPanel.GetComponent<RectTransform>();
+        detailsRect.anchorMin = new Vector2(0.65f, 0.05f);
+        detailsRect.anchorMax = new Vector2(0.95f, 0.55f);
+        detailsRect.anchoredPosition = Vector2.zero;
+        detailsRect.sizeDelta = Vector2.zero;
+        
+        // Create text component for item details
+        GameObject detailsTextObj = new GameObject("VendorDetailsText");
+        detailsTextObj.transform.SetParent(itemDetailsPanel.transform, false);
+        
+        var detailsText = detailsTextObj.AddComponent<UnityEngine.UI.Text>();
+        detailsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        detailsText.fontSize = 14;
+        detailsText.color = Color.white;
+        detailsText.alignment = TextAnchor.UpperLeft;
+        detailsText.verticalOverflow = VerticalWrapMode.Overflow;
+        detailsText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        detailsText.text = "Hover over items to see details (VendorUI component missing)";
+        
+        // Position text to fill the panel with padding
+        var detailsTextRect = detailsTextObj.GetComponent<RectTransform>();
+        detailsTextRect.anchorMin = new Vector2(0.05f, 0.05f);
+        detailsTextRect.anchorMax = new Vector2(0.95f, 0.95f);
+        detailsTextRect.anchoredPosition = Vector2.zero;
+        detailsTextRect.sizeDelta = Vector2.zero;
+        
+        // Make the panel visible so you can see it in the hierarchy
+        itemDetailsPanel.SetActive(true);
+        
+        Debug.Log("[AutoSceneSetup] ItemDetailsPanel fallback created and made visible");
     }
 
     // OLD CreateMainUIHealthSlider method removed - using CreateSimpleHealthSlider instead

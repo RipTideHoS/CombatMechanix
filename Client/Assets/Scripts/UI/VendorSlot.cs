@@ -6,7 +6,7 @@ using UnityEngine.EventSystems;
 /// Handles individual vendor slot interactions and display
 /// Shows item icons, names, and sell prices
 /// </summary>
-public class VendorSlot : MonoBehaviour, IPointerClickHandler
+public class VendorSlot : MonoBehaviour, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler
 {
     [Header("Slot Components")]
     public Image SlotBackground;
@@ -25,13 +25,16 @@ public class VendorSlot : MonoBehaviour, IPointerClickHandler
     
     // Events
     public System.Action<int> OnSlotClicked;
+    public System.Action<int, InventoryItem> OnSlotHoverEnter;
+    public System.Action<int, InventoryItem> OnSlotHoverExit;
     
     private ItemIconManager _iconManager;
     private bool _isInitialized = false;
     
     private void Awake()
     {
-        InitializeComponents();
+        // Component references will be set directly by VendorUI
+        // Just initialize visual state when components are available
     }
     
     private void Start()
@@ -45,18 +48,46 @@ public class VendorSlot : MonoBehaviour, IPointerClickHandler
         _isInitialized = true;
     }
     
+    /// <summary>
+    /// Set the ItemIconManager reference (called by VendorUI)
+    /// </summary>
+    public void SetIconManager(ItemIconManager iconManager)
+    {
+        _iconManager = iconManager;
+    }
+    
     private void InitializeComponents()
     {
+        Debug.Log($"[VendorSlot] InitializeComponents called for {gameObject.name}");
+        
         // Auto-find components if not assigned
         if (SlotBackground == null)
+        {
             SlotBackground = GetComponent<Image>();
-            
+            Debug.Log($"[VendorSlot] SlotBackground found: {SlotBackground != null}");
+        }
+        
+        // Use more robust component finding that waits for child creation
+        StartCoroutine(FindChildComponentsWhenReady());
+    }
+    
+    private System.Collections.IEnumerator FindChildComponentsWhenReady()
+    {
+        // Wait a frame to ensure child objects are created
+        yield return null;
+        
         if (ItemIcon == null)
+        {
             ItemIcon = transform.Find("ItemIcon")?.GetComponent<Image>();
+            Debug.Log($"[VendorSlot] ItemIcon found after delay: {ItemIcon != null}");
+        }
             
         if (PriceText == null)
+        {
             PriceText = transform.Find("PriceText")?.GetComponent<Text>();
-            
+            Debug.Log($"[VendorSlot] PriceText found after delay: {PriceText != null}");
+        }
+        
         // Start with empty appearance
         UpdateVisualState(false);
     }
@@ -66,16 +97,50 @@ public class VendorSlot : MonoBehaviour, IPointerClickHandler
         CurrentItem = item;
         SellPrice = sellPrice;
         
+        // Emergency component finder - ensure components are available
+        EnsureComponentsAreFound();
+        
+        Debug.Log($"[VendorSlot] UpdateSlot called - Item: {item?.ItemName}, Price: {sellPrice}g, ItemIcon: {ItemIcon != null}, PriceText: {PriceText != null}");
+        
         if (item != null && !string.IsNullOrEmpty(item.ItemType))
         {
-            // Show item
+            // Show item (simplified approach matching InventorySlot)
             UpdateItemDisplay(item);
             UpdatePriceDisplay(sellPrice);
             UpdateVisualState(true);
+            
+            // Show the slot contents
+            if (ItemIcon != null) ItemIcon.gameObject.SetActive(true);
+            if (PriceText != null) PriceText.gameObject.SetActive(true);
         }
         else
         {
             ClearSlot();
+        }
+    }
+    
+    private void EnsureComponentsAreFound()
+    {
+        if (SlotBackground == null)
+        {
+            SlotBackground = GetComponent<Image>();
+            // Ensure raycast target is enabled for pointer events
+            if (SlotBackground != null)
+                SlotBackground.raycastTarget = true;
+        }
+            
+        if (ItemIcon == null)
+        {
+            Transform iconTransform = transform.Find("ItemIcon");
+            if (iconTransform != null)
+                ItemIcon = iconTransform.GetComponent<Image>();
+        }
+        
+        if (PriceText == null)
+        {
+            Transform priceTransform = transform.Find("PriceText");
+            if (priceTransform != null)
+                PriceText = priceTransform.GetComponent<Text>();
         }
     }
     
@@ -102,30 +167,48 @@ public class VendorSlot : MonoBehaviour, IPointerClickHandler
     
     private void UpdateItemDisplay(InventoryItem item)
     {
-        if (ItemIcon == null || item == null) return;
-        
-        // Try to get item icon from IconManager
-        if (_iconManager != null)
+        if (ItemIcon == null || item == null) 
         {
-            Sprite itemSprite = _iconManager.GetItemIcon(item.ItemType);
-            if (itemSprite != null)
-            {
-                ItemIcon.sprite = itemSprite;
-                ItemIcon.color = Color.white;
-                return;
-            }
+            Debug.LogError($"[VendorSlot] Cannot update item display - ItemIcon null: {ItemIcon == null}, item null: {item == null}");
+            return;
         }
         
-        // Fallback: Show placeholder colored icon
-        ItemIcon.sprite = null;
-        ItemIcon.color = GetItemTypeColor(item.ItemType);
+        // Get icon from IconManager if available (matching InventorySlot approach)
+        Sprite itemSprite = null;
+        if (_iconManager != null)
+        {
+            itemSprite = _iconManager.GetItemIcon(item.IconName);
+        }
+        
+        if (itemSprite != null)
+        {
+            // Use actual icon sprite
+            ItemIcon.sprite = itemSprite;
+            ItemIcon.color = Color.white;
+            Debug.Log($"[VendorSlot] Set item sprite from IconManager for {item.ItemName}");
+        }
+        else
+        {
+            // Use placeholder with rarity color (matching InventorySlot logic)
+            ItemIcon.sprite = null;
+            ItemIcon.color = GetRarityColor(item.Rarity);
+            Debug.Log($"[VendorSlot] Set placeholder color for {item.ItemName} - Color: {ItemIcon.color}");
+        }
+        
+        ItemIcon.enabled = true;
     }
     
     private void UpdatePriceDisplay(int price)
     {
         if (PriceText != null)
         {
-            PriceText.text = price > 0 ? $"{price}g" : "";
+            string priceText = price > 0 ? $"{price}g" : "";
+            PriceText.text = priceText;
+            Debug.Log($"[VendorSlot] Updated price display to: '{priceText}'");
+        }
+        else
+        {
+            Debug.LogError("[VendorSlot] PriceText is null - cannot update price display");
         }
     }
     
@@ -136,19 +219,49 @@ public class VendorSlot : MonoBehaviour, IPointerClickHandler
         SlotBackground.color = hasItem ? OccupiedSlotColor : EmptySlotColor;
     }
     
-    private Color GetItemTypeColor(string itemType)
+    /// <summary>
+    /// Get color based on item rarity for placeholder icons (matching InventorySlot)
+    /// </summary>
+    private Color GetRarityColor(string rarity)
     {
-        // Fallback colors for different item types
-        switch (itemType?.ToLower())
+        string expandedRarity = ExpandRarityCode(rarity);
+        
+        switch (expandedRarity?.ToLower())
         {
-            case "sword": return Color.red;
-            case "shield": return Color.blue;
-            case "helmet": return Color.gray;
-            case "chestplate": return Color.yellow;
-            case "boots": return new Color(0.6f, 0.3f, 0.1f, 1f); // Brown color
-            case "ring": return Color.magenta;
-            case "potion": return Color.green;
-            default: return Color.white;
+            case "common":
+                return Color.white;
+            case "uncommon":
+                return Color.green;
+            case "rare":
+                return Color.blue;
+            case "epic":
+                return Color.magenta;
+            case "legendary":
+                return Color.yellow;
+            default:
+                return Color.gray;
+        }
+    }
+    
+    /// <summary>
+    /// Expand single-character rarity codes to full text (matching InventorySlot)
+    /// </summary>
+    public static string ExpandRarityCode(string rarityCode)
+    {
+        switch (rarityCode?.ToUpper())
+        {
+            case "C":
+                return "Common";
+            case "U":
+                return "Uncommon";
+            case "R":
+                return "Rare";
+            case "E":
+                return "Epic";
+            case "L":
+                return "Legendary";
+            default:
+                return rarityCode ?? "Unknown";
         }
     }
     
@@ -179,21 +292,42 @@ public class VendorSlot : MonoBehaviour, IPointerClickHandler
         }
     }
     
-    // Visual feedback for hover (optional)
-    private void OnMouseEnter()
+    /// <summary>
+    /// Handle mouse enter hover event
+    /// </summary>
+    public void OnPointerEnter(PointerEventData eventData)
     {
+        Debug.Log($"[VendorSlot] OnPointerEnter - Slot {SlotIndex}, HasItem: {CurrentItem != null}, ItemName: {CurrentItem?.ItemName}");
+        
+        // Visual feedback for hover
         if (SlotBackground != null && CurrentItem != null)
         {
             SlotBackground.color = HighlightColor;
         }
+        
+        // Only trigger hover if slot has an item
+        if (CurrentItem != null)
+        {
+            Debug.Log($"[VendorSlot] Triggering OnSlotHoverEnter for {CurrentItem.ItemName}");
+            OnSlotHoverEnter?.Invoke(SlotIndex, CurrentItem);
+        }
     }
     
-    private void OnMouseExit()
+    /// <summary>
+    /// Handle mouse exit hover event
+    /// </summary>
+    public void OnPointerExit(PointerEventData eventData)
     {
+        Debug.Log($"[VendorSlot] OnPointerExit - Slot {SlotIndex}");
+        
+        // Reset visual feedback
         if (SlotBackground != null)
         {
             UpdateVisualState(CurrentItem != null);
         }
+        
+        // Always trigger hover exit to hide details panel
+        OnSlotHoverExit?.Invoke(SlotIndex, CurrentItem);
     }
     
     // Public method to get item details for tooltips

@@ -18,6 +18,7 @@ public class InventorySlot : MonoBehaviour, IPointerClickHandler, IPointerEnterH
     [Header("Visual Settings")]
     public Color EmptySlotColor = new Color(0.3f, 0.3f, 0.3f, 0.8f);
     public Color OccupiedSlotColor = new Color(0.4f, 0.4f, 0.4f, 0.9f);
+    public Color EquippableSlotColor = new Color(0.4f, 0.5f, 0.4f, 0.9f); // Slightly green tint for equippable items
     public Color HighlightColor = new Color(0.6f, 0.6f, 0.8f, 1f);
     
     // Current item data
@@ -43,7 +44,7 @@ public class InventorySlot : MonoBehaviour, IPointerClickHandler, IPointerEnterH
             QuantityText = transform.Find("QuantityText")?.GetComponent<Text>();
             
         // Start with empty slot appearance
-        SetSlotAppearance(false);
+        SetSlotAppearance(false, false);
     }
     
     /// <summary>
@@ -87,7 +88,7 @@ public class InventorySlot : MonoBehaviour, IPointerClickHandler, IPointerEnterH
                 }
             }
             
-            SetSlotAppearance(true);
+            SetSlotAppearance(true, IsEquippableItem(item));
             Debug.Log($"[InventorySlot] Set item in slot {SlotIndex}: {item.ItemName} (x{item.Quantity})");
         }
         else
@@ -111,17 +112,24 @@ public class InventorySlot : MonoBehaviour, IPointerClickHandler, IPointerEnterH
         if (QuantityText != null)
             QuantityText.gameObject.SetActive(false);
         
-        SetSlotAppearance(false);
+        SetSlotAppearance(false, false);
     }
     
     /// <summary>
     /// Update slot visual appearance
     /// </summary>
-    private void SetSlotAppearance(bool occupied)
+    private void SetSlotAppearance(bool occupied, bool isEquippable = false)
     {
         if (SlotBackground != null)
         {
-            SlotBackground.color = occupied ? OccupiedSlotColor : EmptySlotColor;
+            if (occupied)
+            {
+                SlotBackground.color = isEquippable ? EquippableSlotColor : OccupiedSlotColor;
+            }
+            else
+            {
+                SlotBackground.color = EmptySlotColor;
+            }
         }
     }
     
@@ -262,5 +270,28 @@ public class InventorySlot : MonoBehaviour, IPointerClickHandler, IPointerEnterH
     {
         // Always trigger hover exit to hide details panel
         OnSlotHoverExit?.Invoke(SlotIndex, _currentItem);
+    }
+    
+    /// <summary>
+    /// Check if an item can be equipped (client-side validation for UI feedback)
+    /// </summary>
+    private bool IsEquippableItem(InventoryItem item)
+    {
+        if (item == null || string.IsNullOrEmpty(item.ItemCategory))
+            return false;
+        
+        string category = item.ItemCategory.ToLower();
+        
+        // Check if item category matches any equipment slot
+        return category switch
+        {
+            "helmet" or "armor" => true,
+            "chest" => true,
+            "legs" => true,
+            "weapon" or "sword" or "axe" or "bow" or "staff" => true,
+            "shield" or "offhand" => true,
+            "ring" or "amulet" or "accessory" => true,
+            _ => false
+        };
     }
 }

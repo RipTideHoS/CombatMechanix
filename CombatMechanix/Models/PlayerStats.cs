@@ -32,6 +32,9 @@ namespace CombatMechanix.Models
         public int Defense { get; set; } = 10;
         public int Speed { get; set; } = 10;
         
+        // Currency
+        public int Gold { get; set; } = 100;
+        
         // Session Information
         public Vector3Data? LastPosition { get; set; }
         public DateTime LastLogin { get; set; } = DateTime.UtcNow;

@@ -143,10 +143,10 @@ namespace CombatMechanix.Services
                 var wrapper = JsonSerializer.Deserialize<MessageWrapper>(jsonMessage);
                 if (wrapper?.Type == null) return;
 
-                // Log ALL message types - this is temporary debugging
-                if (wrapper.Type != "PlayerMovement")
+                // Log non-movement message types
+                if (wrapper.Type != "PlayerMovement" && wrapper.Type != "Heartbeat")
                 {
-                    _logger.LogInformation($"[DEBUG ALL MESSAGES] Processing message type: {wrapper.Type} from {connection.ConnectionId}");
+                    _logger.LogInformation($"Processing message type: {wrapper.Type} from {connection.ConnectionId}");
                 }
                 
                 // Special logging for equipment-related messages
@@ -154,6 +154,13 @@ namespace CombatMechanix.Services
                 {
                     _logger.LogInformation($"[DEBUG EQUIPMENT] Processing message type: {wrapper.Type} from {connection.ConnectionId}");
                     _logger.LogInformation($"[DEBUG RAW MESSAGE] Raw message ({jsonMessage.Length} chars): {jsonMessage}");
+                }
+                
+                // Special logging for combat messages
+                if (wrapper.Type == "CombatAction")
+                {
+                    _logger.LogInformation($"[DEBUG COMBAT] CombatAction message received from {connection.ConnectionId}");
+                    _logger.LogInformation($"[DEBUG COMBAT] Raw combat data: {JsonSerializer.Serialize(wrapper.Data)}");
                 }
 
                 switch (wrapper.Type)
@@ -709,6 +716,7 @@ namespace CombatMechanix.Services
                     Strength = playerStats.Strength,
                     Defense = playerStats.Defense,
                     Speed = playerStats.Speed,
+                    Gold = playerStats.Gold,
                     IsOnline = true,
                     LastUpdate = DateTime.UtcNow
                 };
@@ -1024,6 +1032,7 @@ namespace CombatMechanix.Services
                         Strength = result.PlayerStats.Strength,
                         Defense = result.PlayerStats.Defense,
                         Speed = result.PlayerStats.Speed,
+                        Gold = result.PlayerStats.Gold,
                         IsOnline = true,
                         LastUpdate = DateTime.UtcNow
                     };
@@ -1094,7 +1103,8 @@ namespace CombatMechanix.Services
                             Strength = result.PlayerStats.Strength,
                             Defense = result.PlayerStats.Defense,
                             Speed = result.PlayerStats.Speed,
-                            ExperienceToNextLevel = result.PlayerStats.ExperienceToNextLevel
+                            ExperienceToNextLevel = result.PlayerStats.ExperienceToNextLevel,
+                            Gold = result.PlayerStats.Gold
                         }
                     });
 
@@ -1128,6 +1138,7 @@ namespace CombatMechanix.Services
                         Strength = result.PlayerStats.Strength,
                         Defense = result.PlayerStats.Defense,
                         Speed = result.PlayerStats.Speed,
+                        Gold = result.PlayerStats.Gold,
                         Experience = result.PlayerStats.Experience,
                         IsOnline = true,
                         LastUpdate = DateTime.UtcNow
@@ -1196,6 +1207,7 @@ namespace CombatMechanix.Services
                         Strength = result.PlayerStats.Strength,
                         Defense = result.PlayerStats.Defense,
                         Speed = result.PlayerStats.Speed,
+                        Gold = result.PlayerStats.Gold,
                         IsOnline = true,
                         LastUpdate = DateTime.UtcNow
                     };
@@ -1501,6 +1513,7 @@ namespace CombatMechanix.Services
                                     Strength = playerStats.Strength,
                                     Defense = playerStats.Defense,
                                     Speed = playerStats.Speed,
+                                    Gold = playerStats.Gold,
                                     Experience = playerStats.Experience,
                                     IsOnline = true,
                                     LastUpdate = DateTime.UtcNow
@@ -2055,15 +2068,141 @@ namespace CombatMechanix.Services
                     return;
                 }
 
-                // TODO: Implement full sell functionality when shop system is ready
+                // Parse the sell request
+                var sellRequestJson = data?.ToString();
+                if (string.IsNullOrEmpty(sellRequestJson))
+                {
+                    _logger.LogWarning($"Empty sell request data from {connection.PlayerId}");
+                    await SendToConnection(connection.ConnectionId, "ItemSellResponse", new NetworkMessages.ItemSellResponseMessage
+                    {
+                        PlayerId = connection.PlayerId,
+                        Success = false,
+                        Message = "Invalid request data"
+                    });
+                    return;
+                }
+
+                var sellRequest = JsonSerializer.Deserialize<NetworkMessages.ItemSellRequestMessage>(sellRequestJson);
+                if (sellRequest == null)
+                {
+                    _logger.LogWarning($"Failed to parse sell request from {connection.PlayerId}");
+                    await SendToConnection(connection.ConnectionId, "ItemSellResponse", new NetworkMessages.ItemSellResponseMessage
+                    {
+                        PlayerId = connection.PlayerId,
+                        Success = false,
+                        Message = "Invalid request format"
+                    });
+                    return;
+                }
+
+                _logger.LogInformation($"Processing sell request for player {connection.PlayerId} - Item: {sellRequest.ItemType}, Slot: {sellRequest.SlotIndex}, Quantity: {sellRequest.Quantity}");
+
+                // Get player's inventory to find the item
+                using var scope = _serviceProvider.CreateScope();
+                var inventoryRepository = scope.ServiceProvider.GetRequiredService<IPlayerInventoryRepository>();
+                
+                var itemInSlot = await inventoryRepository.GetItemInSlotAsync(connection.PlayerId, sellRequest.SlotIndex);
+                if (itemInSlot == null)
+                {
+                    _logger.LogWarning($"No item found in slot {sellRequest.SlotIndex} for player {connection.PlayerId}");
+                    await SendToConnection(connection.ConnectionId, "ItemSellResponse", new NetworkMessages.ItemSellResponseMessage
+                    {
+                        PlayerId = connection.PlayerId,
+                        Success = false,
+                        Message = "No item in that slot",
+                        ItemType = sellRequest.ItemType
+                    });
+                    return;
+                }
+
+                // Verify the item type matches
+                if (itemInSlot.ItemType != sellRequest.ItemType)
+                {
+                    _logger.LogWarning($"Item type mismatch for player {connection.PlayerId} - Expected: {sellRequest.ItemType}, Found: {itemInSlot.ItemType}");
+                    await SendToConnection(connection.ConnectionId, "ItemSellResponse", new NetworkMessages.ItemSellResponseMessage
+                    {
+                        PlayerId = connection.PlayerId,
+                        Success = false,
+                        Message = "Item type mismatch",
+                        ItemType = sellRequest.ItemType
+                    });
+                    return;
+                }
+
+                // Calculate sell price (half of item value, minimum 1 gold)
+                int sellPrice = Math.Max(itemInSlot.Value / 2, 1);
+                int quantityToSell = Math.Min(sellRequest.Quantity, itemInSlot.Quantity);
+                int totalGoldEarned = sellPrice * quantityToSell;
+
+                _logger.LogInformation($"Selling {quantityToSell}x {itemInSlot.ItemName} for {sellPrice}g each (total: {totalGoldEarned}g) for player {connection.PlayerId}");
+
+                // Handle quantity reduction or item removal
+                int remainingQuantity = itemInSlot.Quantity - quantityToSell;
+                bool success = false;
+
+                if (remainingQuantity <= 0)
+                {
+                    // Remove item completely
+                    success = await inventoryRepository.RemoveItemFromInventoryAsync(connection.PlayerId, sellRequest.SlotIndex);
+                    remainingQuantity = 0;
+                }
+                else
+                {
+                    // Update quantity
+                    success = await inventoryRepository.UpdateItemQuantityAsync(connection.PlayerId, itemInSlot.ItemType, remainingQuantity);
+                }
+
+                if (!success)
+                {
+                    _logger.LogError($"Failed to update inventory after sell for player {connection.PlayerId}");
+                    await SendToConnection(connection.ConnectionId, "ItemSellResponse", new NetworkMessages.ItemSellResponseMessage
+                    {
+                        PlayerId = connection.PlayerId,
+                        Success = false,
+                        Message = "Failed to update inventory",
+                        ItemType = sellRequest.ItemType
+                    });
+                    return;
+                }
+
+                // Add gold to player (thread-safe cache + database update)
+                using var playerStatsScope = _serviceProvider.CreateScope();
+                var playerStatsRepository = playerStatsScope.ServiceProvider.GetRequiredService<IPlayerStatsRepository>();
+                
+                // Update PlayerState cache first
+                if (_players.TryGetValue(connection.ConnectionId, out var player))
+                {
+                    player.Gold += totalGoldEarned;
+                    _logger.LogDebug("Updated cached gold for player {PlayerId}: {Gold}", connection.PlayerId, player.Gold);
+                }
+                
+                // Update database atomically
+                await playerStatsRepository.AddGoldAsync(connection.PlayerId, totalGoldEarned);
+                _logger.LogDebug("Added {GoldAmount} gold to database for player {PlayerId}", totalGoldEarned, connection.PlayerId);
+
+                // Send successful response with current gold
+                int currentGold = _players.TryGetValue(connection.ConnectionId, out var playerForGold) ? playerForGold.Gold : 0;
                 await SendToConnection(connection.ConnectionId, "ItemSellResponse", new NetworkMessages.ItemSellResponseMessage
                 {
                     PlayerId = connection.PlayerId,
-                    Success = false,
-                    Message = "Shop system not yet implemented"
+                    Success = true,
+                    Message = $"Sold {quantityToSell}x {itemInSlot.ItemName} for {totalGoldEarned} gold",
+                    ItemType = sellRequest.ItemType,
+                    GoldEarned = totalGoldEarned,
+                    CurrentGold = currentGold,
+                    RemainingQuantity = remainingQuantity
                 });
 
-                _logger.LogInformation($"Sell request from player {connection.PlayerId} - shop system not yet implemented");
+                // Send updated inventory to refresh client display
+                var updatedInventory = await inventoryRepository.GetPlayerInventoryAsync(connection.PlayerId);
+                await SendToConnection(connection.ConnectionId, "InventoryUpdate", new NetworkMessages.InventoryUpdateMessage
+                {
+                    PlayerId = connection.PlayerId,
+                    UpdatedItems = updatedInventory,
+                    UpdateType = "Refresh"
+                });
+
+                _logger.LogInformation($"Successfully processed sell request for player {connection.PlayerId} - Earned {totalGoldEarned} gold");
             }
             catch (Exception ex)
             {

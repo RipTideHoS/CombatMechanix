@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(dotnet run:*)",
+      "Bash(rm:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(dotnet build)",
+      "Bash(taskkill:*)",
+      "Bash(curl:*)",
+      "Bash(start http://localhost:5207/status)",
+      "Bash(dotnet build:*)",
+      "Bash(grep:*)",
+      "Bash(sqlcmd:*)",
+      "Bash(ren:*)",
+      "Bash(mv:*)",
+      "Bash(for file in *.png.meta)",
+      "Bash(do sed -i 's/spriteMode: 0/spriteMode: 1/g; s/textureType: 0/textureType: 8/g; s/alphaIsTransparency: 0/alphaIsTransparency: 1/g' \"$file\")",
+      "Bash(done)",
+      "Bash(sed:*)",
+      "Bash(git commit:*)",
+      "Bash(timeout:*)",
+      "Bash(pkill:*)",
+      "Bash(wmic:*)",
+      "Bash(cd:*)",
+      "Bash(tasklist:*)",
+      "Bash(\"C:\\Program Files\\Unity\\Hub\\Editor\\2022.3.38f1\\Editor\\Unity.exe\" -projectPath \"C:\\Users\\Vilma\\OneDrive\\Documents\\Claude Projects\\CM\\Client\" -executeMethod UnityEditor.EditorApplication.OpenScene Assets/Scenes/GameScene.unity)",
+      "Bash(powershell:*)"
+    ],
+    "deny": [],
+    "ask": [],
+    "defaultMode": "acceptEdits"
+  }
+}

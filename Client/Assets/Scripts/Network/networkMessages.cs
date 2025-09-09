@@ -102,6 +102,7 @@ public class NetworkMessages
         public int Defense { get; set; }
         public int Speed { get; set; }
         public long ExperienceToNextLevel { get; set; }
+        public int Gold { get; set; } = 100;
     }
 
     public class ExperienceGainMessage
@@ -220,6 +221,7 @@ public class NetworkMessages
         public string Message { get; set; } = string.Empty;
         public string ItemType { get; set; } = string.Empty;
         public int GoldEarned { get; set; }
+        public int CurrentGold { get; set; } // Player's total gold after the sale
         public int RemainingQuantity { get; set; }
     }
 
@@ -235,6 +237,10 @@ public class NetworkMessages
         public List<EquippedItem> Items { get; set; } = new();
         public bool Success { get; set; } = true;
         public string ErrorMessage { get; set; } = string.Empty;
+        
+        // Calculated total stats from equipped items
+        public int TotalAttackPower { get; set; } = 0;
+        public int TotalDefensePower { get; set; } = 0;
     }
 
     public class ItemEquipRequestMessage
@@ -273,6 +279,10 @@ public class NetworkMessages
         public string PlayerId { get; set; } = string.Empty;
         public List<EquippedItem> UpdatedItems { get; set; } = new();
         public string UpdateType { get; set; } = string.Empty; // "Equip", "Unequip", "Replace"
+        
+        // Include calculated total stats for immediate UI update
+        public int TotalAttackPower { get; set; } = 0;
+        public int TotalDefensePower { get; set; } = 0;
     }
 
     public class LoginResponseMessage

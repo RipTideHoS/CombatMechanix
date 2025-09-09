@@ -25,6 +25,10 @@ namespace CombatMechanix.Data
         // Health management methods
         Task<PlayerStats?> GetPlayerStatsAsync(string playerId);
         Task UpdatePlayerHealthAsync(string playerId, int newHealth);
+        
+        // Gold management methods
+        Task UpdatePlayerGoldAsync(string playerId, int newGold);
+        Task AddGoldAsync(string playerId, int goldAmount);
     }
 
     public class SqlPlayerStatsRepository : IPlayerStatsRepository
@@ -102,7 +106,7 @@ namespace CombatMechanix.Data
                     SELECT PlayerId, PlayerName, LoginName, PasswordHash, PasswordSalt, SessionToken, SessionExpiry,
                            FailedLoginAttempts, LastLoginAttempt, Level, Experience, 
                            ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth, 
-                           Defense, AttackDamage, MovementSpeed, PositionX, PositionY, PositionZ,
+                           Defense, AttackDamage, MovementSpeed, ISNULL(Gold, 100) as Gold, PositionX, PositionY, PositionZ,
                            LastLogin, CreatedAt, LastSave
                     FROM Players 
                     WHERE PlayerId = @PlayerId";
@@ -172,7 +176,7 @@ namespace CombatMechanix.Data
                     UPDATE Players 
                     SET PlayerName = @PlayerName, Level = @Level, Experience = @Experience, NextLevelExp = @NextLevelExp,
                         Health = @Health, MaxHealth = @MaxHealth, Defense = @Defense, 
-                        AttackDamage = @AttackDamage, MovementSpeed = @MovementSpeed,
+                        AttackDamage = @AttackDamage, MovementSpeed = @MovementSpeed, Gold = @Gold,
                         PositionX = @PositionX, PositionY = @PositionY, PositionZ = @PositionZ, 
                         LastLogin = @LastLogin, LastSave = @LastSave
                     WHERE PlayerId = @PlayerId";
@@ -229,7 +233,7 @@ namespace CombatMechanix.Data
                 const string sql = @"
                     SELECT TOP (@Count) PlayerId, PlayerName, LoginName, PasswordHash, PasswordSalt, SessionToken, SessionExpiry,
                            FailedLoginAttempts, LastLoginAttempt, Level, Experience, ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth, 
-                           Defense, AttackDamage, MovementSpeed, PositionX, PositionY, PositionZ,
+                           Defense, AttackDamage, MovementSpeed, ISNULL(Gold, 100) as Gold, PositionX, PositionY, PositionZ,
                            LastLogin, CreatedAt, LastSave
                     FROM Players 
                     ORDER BY Level DESC, Experience DESC";
@@ -304,6 +308,7 @@ namespace CombatMechanix.Data
             command.Parameters.Add("@Defense", SqlDbType.Float).Value = (float)playerStats.Defense; // Convert int to float
             command.Parameters.Add("@AttackDamage", SqlDbType.Float).Value = (float)playerStats.Strength; // Map Strength to AttackDamage
             command.Parameters.Add("@MovementSpeed", SqlDbType.Float).Value = (float)playerStats.Speed; // Map Speed to MovementSpeed
+            command.Parameters.Add("@Gold", SqlDbType.Int).Value = playerStats.Gold;
             command.Parameters.Add("@FailedLoginAttempts", SqlDbType.Int).Value = playerStats.FailedLoginAttempts;
             
             // Handle position mapping
@@ -343,6 +348,7 @@ namespace CombatMechanix.Data
                 Strength = Convert.ToInt32(reader["AttackDamage"]), // Map AttackDamage to Strength
                 Defense = Convert.ToInt32(reader["Defense"]), // Convert float to int
                 Speed = Convert.ToInt32(reader["MovementSpeed"]), // Map MovementSpeed to Speed
+                Gold = reader["Gold"] != DBNull.Value ? Convert.ToInt32(reader["Gold"]) : 100, // Default to 100 if null
                 LastPosition = lastPosition,
                 LastLogin = Convert.ToDateTime(reader["LastLogin"]),
                 CreatedAt = Convert.ToDateTime(reader["CreatedAt"]),
@@ -360,7 +366,7 @@ namespace CombatMechanix.Data
                 const string sql = @"
                     SELECT PlayerId, PlayerName, LoginName, PasswordHash, PasswordSalt, SessionToken, SessionExpiry,
                            FailedLoginAttempts, LastLoginAttempt, Level, Experience, ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth, 
-                           Defense, AttackDamage, MovementSpeed, PositionX, PositionY, PositionZ,
+                           Defense, AttackDamage, MovementSpeed, ISNULL(Gold, 100) as Gold, PositionX, PositionY, PositionZ,
                            LastLogin, CreatedAt, LastSave
                     FROM Players 
                     WHERE LoginName = @LoginName";
@@ -393,7 +399,7 @@ namespace CombatMechanix.Data
                 const string sql = @"
                     SELECT PlayerId, PlayerName, LoginName, PasswordHash, PasswordSalt, SessionToken, SessionExpiry,
                            FailedLoginAttempts, LastLoginAttempt, Level, Experience, ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth, 
-                           Defense, AttackDamage, MovementSpeed, PositionX, PositionY, PositionZ,
+                           Defense, AttackDamage, MovementSpeed, ISNULL(Gold, 100) as Gold, PositionX, PositionY, PositionZ,
                            LastLogin, CreatedAt, LastSave
                     FROM Players 
                     WHERE SessionToken = @SessionToken";
@@ -579,6 +585,78 @@ namespace CombatMechanix.Data
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating player health for {PlayerId}", playerId);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Update player gold to a specific value (thread-safe single column update)
+        /// </summary>
+        public async Task UpdatePlayerGoldAsync(string playerId, int newGold)
+        {
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                const string sql = @"
+                    UPDATE Players 
+                    SET Gold = @Gold,
+                        LastSave = @LastSave
+                    WHERE PlayerId = @PlayerId";
+
+                using var command = new SqlCommand(sql, connection);
+                command.Parameters.Add("@PlayerId", SqlDbType.NVarChar, 50).Value = playerId;
+                command.Parameters.Add("@Gold", SqlDbType.Int).Value = newGold;
+                command.Parameters.Add("@LastSave", SqlDbType.DateTime2).Value = DateTime.UtcNow;
+
+                var rowsAffected = await command.ExecuteNonQueryAsync();
+                if (rowsAffected == 0)
+                {
+                    throw new InvalidOperationException($"Player {playerId} not found for gold update");
+                }
+
+                _logger.LogDebug("Updated gold for player {PlayerId} to {Gold}", playerId, newGold);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating player gold for {PlayerId}", playerId);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Add gold to player's current amount (atomic database operation)
+        /// </summary>
+        public async Task AddGoldAsync(string playerId, int goldAmount)
+        {
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                const string sql = @"
+                    UPDATE Players 
+                    SET Gold = Gold + @GoldAmount,
+                        LastSave = @LastSave
+                    WHERE PlayerId = @PlayerId";
+
+                using var command = new SqlCommand(sql, connection);
+                command.Parameters.Add("@PlayerId", SqlDbType.NVarChar, 50).Value = playerId;
+                command.Parameters.Add("@GoldAmount", SqlDbType.Int).Value = goldAmount;
+                command.Parameters.Add("@LastSave", SqlDbType.DateTime2).Value = DateTime.UtcNow;
+
+                var rowsAffected = await command.ExecuteNonQueryAsync();
+                if (rowsAffected == 0)
+                {
+                    throw new InvalidOperationException($"Player {playerId} not found for gold addition");
+                }
+
+                _logger.LogDebug("Added {GoldAmount} gold to player {PlayerId}", goldAmount, playerId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding gold to player {PlayerId}", playerId);
                 throw;
             }
         }

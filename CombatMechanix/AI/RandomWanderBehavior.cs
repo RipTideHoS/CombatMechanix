@@ -309,14 +309,23 @@ namespace CombatMechanix.AI
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
             };
             
-            // Thread-safe health update using lock with debug logging
+            // Thread-safe health update with defense calculation (server-authoritative)
             int originalHealth, newHealth;
+            float finalDamage;
             lock (target)
             {
                 originalHealth = target.Health;
-                newHealth = Math.Max(0, originalHealth - (int)damage);
+                
+                // Calculate damage reduction based on player's total defense (equipment + base defense)
+                float damageReduction = target.TotalDefensePower * 0.3f; // 30% reduction per defense point
+                float maxReduction = damage * 0.8f; // Maximum 80% damage reduction
+                damageReduction = Math.Min(damageReduction, maxReduction);
+                
+                finalDamage = Math.Max(damage * 0.1f, damage - damageReduction); // Minimum 10% damage gets through
+                newHealth = Math.Max(0, originalHealth - (int)finalDamage);
                 target.Health = newHealth;
-                Console.WriteLine($"[DEBUG] Enemy {enemy.EnemyId} attacking player {target.PlayerId}: Health {originalHealth} -> {newHealth} (damage: {damage})");
+                
+                Console.WriteLine($"[DEBUG] Enemy {enemy.EnemyId} attacking player {target.PlayerId}: Raw damage={damage}, Defense={target.TotalDefensePower} (Base DEF {target.Defense} + Equipment {target.EquipmentDefensePower}), Reduction={damageReduction}, Final damage={finalDamage}, Health {originalHealth} -> {newHealth}");
             }
             
             // Persist health change to database immediately (server-authoritative)
@@ -329,7 +338,7 @@ namespace CombatMechanix.AI
             var healthChangeMessage = new Models.NetworkMessages.HealthChangeMessage
             {
                 PlayerId = target.PlayerId,
-                HealthChange = -(int)damage, // Negative for damage
+                HealthChange = -(int)finalDamage, // Negative for actual damage taken (after defense)
                 NewHealth = newHealth,
                 Source = $"Enemy attack from {enemy.EnemyName}"
             };

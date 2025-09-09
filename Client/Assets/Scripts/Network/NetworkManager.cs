@@ -62,6 +62,7 @@ public class NetworkManager : MonoBehaviour
     // Inventory-related events
     public static event Action<NetworkMessages.InventoryResponseMessage> OnInventoryResponse;
     public static event Action<NetworkMessages.InventoryUpdateMessage> OnInventoryUpdate;
+    public static event Action<NetworkMessages.ItemSellResponseMessage> OnItemSellResponse;
     
     // Equipment-related events
     public static event Action<NetworkMessages.EquipmentResponseMessage> OnEquipmentResponse;
@@ -282,7 +283,7 @@ public class NetworkManager : MonoBehaviour
                             // Process PlayerStats from LoginResponse if present
                             if (loginResponse.PlayerStats != null)
                             {
-                                Debug.Log($"[CLIENT] Processing PlayerStats from LoginResponse - Health: {loginResponse.PlayerStats.Health}, PlayerId: {loginResponse.PlayerStats.PlayerId}");
+                                Debug.Log($"[CLIENT] Processing PlayerStats from LoginResponse - Health: {loginResponse.PlayerStats.Health}, Gold: {loginResponse.PlayerStats.Gold}, PlayerId: {loginResponse.PlayerStats.PlayerId}");
                                 OnPlayerStatsUpdate?.Invoke(loginResponse.PlayerStats);
                             }
                             
@@ -416,6 +417,11 @@ public class NetworkManager : MonoBehaviour
                 case "InventoryUpdate":
                     var inventoryUpdateMsg = JsonConvert.DeserializeObject<NetworkMessages.InventoryUpdateMessage>(wrapper.Data.ToString());
                     QueueMainThreadAction(() => OnInventoryUpdate?.Invoke(inventoryUpdateMsg));
+                    break;
+                    
+                case "ItemSellResponse":
+                    var itemSellResponseMsg = JsonConvert.DeserializeObject<NetworkMessages.ItemSellResponseMessage>(wrapper.Data.ToString());
+                    QueueMainThreadAction(() => OnItemSellResponse?.Invoke(itemSellResponseMsg));
                     break;
                     
                 case "EquipmentResponse":
@@ -739,7 +745,15 @@ public class NetworkManager : MonoBehaviour
 
     public async Task SendMessage(string messageType, object messageData)
     {
-        if (!IsConnected) return;
+        // DEBUG: Enhanced logging for troubleshooting (skip movement messages)
+        if (messageType != "PlayerMovement")
+            Debug.Log($"[NetworkManager] SendMessage called - Type: {messageType}, IsConnected: {IsConnected}, WebSocket State: {_webSocket?.State}");
+        
+        if (!IsConnected) 
+        {
+            Debug.LogWarning($"[NetworkManager] Cannot send {messageType} - not connected");
+            return;
+        }
 
         try
         {
@@ -747,13 +761,17 @@ public class NetworkManager : MonoBehaviour
             var json = JsonConvert.SerializeObject(wrapper);
             var bytes = Encoding.UTF8.GetBytes(json);
             
-            
+            if (messageType != "PlayerMovement")
+                Debug.Log($"[NetworkManager] Sending message - Type: {messageType}, Size: {bytes.Length} bytes");
             await _webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cancellationTokenSource.Token);
+            if (messageType != "PlayerMovement")
+                Debug.Log($"[NetworkManager] Message sent successfully - Type: {messageType}");
             
         }
         catch (Exception ex)
         {
-            Debug.LogError($"Failed to send message: {ex.Message}");
+            Debug.LogError($"[NetworkManager] Failed to send message {messageType}: {ex.Message}");
+            Debug.LogError($"[NetworkManager] Exception details: {ex}");
         }
     }
 

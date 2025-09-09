@@ -183,6 +183,7 @@ namespace CombatMechanix.Data
                         it.ItemCategory,
                         it.AttackPower,
                         it.DefensePower,
+                        it.AttackSpeed,
                         it.IconPath as IconName,
                         COALESCE(it.BaseValue, 10) as Value,
                         pe.DateEquipped,
