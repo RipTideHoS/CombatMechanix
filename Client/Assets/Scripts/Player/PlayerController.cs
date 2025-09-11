@@ -317,15 +317,17 @@ public class PlayerController : MonoBehaviour
     {
         if (_mainCamera == null) return;
 
-        // Raycast to find target
+        // Raycast to find target or determine attack direction
         Ray ray = _mainCamera.ScreenPointToRay(Input.mousePosition);
         RaycastHit hit;
-
+        
+        Vector3 attackPosition;
+        string targetId = null;
+        string targetType = "Ground";
+        
         if (Physics.Raycast(ray, out hit))
         {
-            Vector3 attackPosition = hit.point;
-            string targetId = null;
-            string targetType = "Ground";
+            attackPosition = hit.point;
 
             // Check for enemy targets first
             var targetEnemy = hit.collider.GetComponent<EnemyBase>();
@@ -344,22 +346,46 @@ public class PlayerController : MonoBehaviour
                     targetType = "Player";
                 }
             }
+        }
+        else
+        {
+            // If no hit, use camera direction for attack intent
+            Vector3 attackDirection = ray.direction.normalized;
+            attackPosition = transform.position + attackDirection * 50f; // Server will adjust based on weapon range
+        }
 
-            // Send attack to server
-            var networkManager = GameManager.Instance?.NetworkManager ?? FindObjectOfType<NetworkManager>();
+        // Send attack intent to server - server determines attack type based on equipped weapon
+        var networkManager = GameManager.Instance?.NetworkManager ?? FindObjectOfType<NetworkManager>();
+        
+        if (networkManager != null)
+        {
+            _ = networkManager.SendAttack(targetId, "Attack", attackPosition);
+        }
+
+        // Play local attack animation/effect - server will send back the actual effect type
+        Debug.Log($"[PlayerController] Attempting to play attack effect from {transform.position} to {attackPosition}");
+        Debug.Log($"[PlayerController] GameManager.Instance: {(GameManager.Instance != null ? "Found" : "NULL")}");
+        
+        var combatSystem = GameManager.Instance?.CombatSystem;
+        Debug.Log($"[PlayerController] CombatSystem: {(combatSystem != null ? "Found" : "NULL")}");
+        
+        if (combatSystem != null)
+        {
+            Debug.Log($"[PlayerController] Calling PlayAttackEffect on CombatSystem");
+            combatSystem.PlayAttackEffect(transform.position, attackPosition);
+        }
+        else
+        {
+            Debug.LogWarning("[PlayerController] CombatSystem is null - trying fallback approach");
+            // Fallback: find CombatSystem directly
+            var fallbackCombatSystem = FindObjectOfType<CombatSystem>();
+            Debug.Log($"[PlayerController] Fallback CombatSystem: {(fallbackCombatSystem != null ? "Found" : "NULL")}");
             
-            if (networkManager != null)
+            if (fallbackCombatSystem != null)
             {
-                _ = networkManager.SendAttack(targetId, "BasicAttack", attackPosition);
+                Debug.Log("[PlayerController] Using fallback CombatSystem");
+                fallbackCombatSystem.PlayAttackEffect(transform.position, attackPosition);
             }
-
-            // Play local attack animation/effect
-            var combatSystem = GameManager.Instance.CombatSystem;
-            if (combatSystem != null)
-            {
-                combatSystem.PlayAttackEffect(transform.position, attackPosition);
-            }
-
         }
     }
 

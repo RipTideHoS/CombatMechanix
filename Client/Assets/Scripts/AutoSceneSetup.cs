@@ -196,7 +196,13 @@ public class AutoSceneSetup : MonoBehaviour
         if (gameManagerObj.GetComponent<CombatSystem>() == null)
         {
             Debug.Log("*** AUTO SCENE SETUP *** Adding missing CombatSystem component");
-            gameManagerObj.AddComponent<CombatSystem>();
+            var combatSystem = gameManagerObj.AddComponent<CombatSystem>();
+            ConfigureCombatSystem(combatSystem);
+        }
+        else
+        {
+            var combatSystem = gameManagerObj.GetComponent<CombatSystem>();
+            ConfigureCombatSystem(combatSystem);
         }
         
         if (gameManagerObj.GetComponent<ChatSystem>() == null)
@@ -252,6 +258,28 @@ public class AutoSceneSetup : MonoBehaviour
         }
         
         Debug.Log("*** AUTO SCENE SETUP *** Required components check completed");
+    }
+
+    private void ConfigureCombatSystem(CombatSystem combatSystem)
+    {
+        if (combatSystem == null) return;
+        
+        Debug.Log("*** AUTO SCENE SETUP *** Configuring CombatSystem for projectile support");
+        
+        // Set projectile spawn point to player position (will be overridden during gameplay)
+        var playerObj = GameObject.Find("LocalPlayer");
+        if (playerObj != null)
+        {
+            combatSystem.ProjectileSpawnPoint = playerObj.transform;
+            Debug.Log("*** AUTO SCENE SETUP *** ProjectileSpawnPoint set to LocalPlayer");
+        }
+        else
+        {
+            Debug.LogWarning("*** AUTO SCENE SETUP *** LocalPlayer not found for ProjectileSpawnPoint");
+        }
+        
+        // Note: ProjectilePrefab is left null - CombatSystem will create projectiles dynamically
+        Debug.Log("*** AUTO SCENE SETUP *** CombatSystem configured successfully (using dynamic projectile creation)");
     }
 
     private void CreateGameStartup()

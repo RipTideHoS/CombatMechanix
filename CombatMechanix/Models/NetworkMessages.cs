@@ -484,6 +484,12 @@ namespace CombatMechanix.Models
         public int AttackPower { get; set; } = 0;
         public int DefensePower { get; set; } = 0;
         public int Value { get; set; } = 0; // Gold value
+        
+        // Ranged weapon properties
+        public string WeaponType { get; set; } = "Melee"; // "Melee" or "Ranged"
+        public float WeaponRange { get; set; } = 0f; // Maximum effective range in Unity units
+        public float ProjectileSpeed { get; set; } = 0f; // Projectile speed in Unity units per second
+        public float Accuracy { get; set; } = 1.0f; // Base accuracy (0.0-1.0, where 1.0 = perfect)
     }
 
     public class EquippedItem
@@ -502,6 +508,12 @@ namespace CombatMechanix.Models
         public int DefensePower { get; set; } = 0;
         public decimal AttackSpeed { get; set; } = 1.0m; // Attacks per second
         public int Value { get; set; } = 0; // Gold value
+        
+        // Ranged weapon properties
+        public string WeaponType { get; set; } = "Melee"; // "Melee" or "Ranged"
+        public float WeaponRange { get; set; } = 0f; // Maximum effective range in Unity units
+        public float ProjectileSpeed { get; set; } = 0f; // Projectile speed in Unity units per second
+        public float Accuracy { get; set; } = 1.0f; // Base accuracy (0.0-1.0, where 1.0 = perfect)
         
         // Equipment tracking
         public DateTime DateEquipped { get; set; } = DateTime.UtcNow;

@@ -9,6 +9,10 @@ public class CombatSystem : MonoBehaviour
     public AudioClip AttackSound;
     public AudioClip HitSound;
 
+    [Header("Projectile Settings")]
+    public GameObject ProjectilePrefab;
+    public Transform ProjectileSpawnPoint;
+    
     [Header("Screen Effects")]
     public float ScreenShakeIntensity = 0.1f;
     public float ScreenShakeDuration = 0.2f;
@@ -39,6 +43,161 @@ public class CombatSystem : MonoBehaviour
     {
         Debug.Log($"Attack effect: {attackerPos} -> {targetPos}");
         
+        float attackDistance = Vector3.Distance(attackerPos, targetPos);
+        
+        // Simple heuristic: if attack distance is beyond typical melee range, assume ranged weapon
+        // This will be improved when we have better access to equipment data
+        if (attackDistance > 3.0f)
+        {
+            // Likely ranged attack - fire projectile with default values
+            FireProjectileWithDefaults(attackerPos, targetPos);
+        }
+        else
+        {
+            // Likely melee attack
+            PlayMeleeAttackEffect(attackerPos, targetPos);
+        }
+    }
+    
+    private void FireProjectileWithDefaults(Vector3 attackerPos, Vector3 targetPos)
+    {
+        // Determine spawn position with better positioning
+        Vector3 spawnPos;
+        if (ProjectileSpawnPoint != null)
+        {
+            spawnPos = ProjectileSpawnPoint.position + Vector3.up * 0.5f; // Spawn slightly above player
+        }
+        else
+        {
+            spawnPos = attackerPos + Vector3.up * 0.5f; // Spawn slightly above attack position
+        }
+        
+        Debug.Log($"[CombatSystem] Firing projectile from {spawnPos} to {targetPos}");
+        Debug.Log($"[CombatSystem] Attack distance: {Vector3.Distance(attackerPos, targetPos):F2}");
+        
+        // Create projectile dynamically (following loot system pattern)
+        GameObject projectileObj;
+        
+        if (ProjectilePrefab != null)
+        {
+            // Use prefab if available
+            projectileObj = Instantiate(ProjectilePrefab, spawnPos, Quaternion.identity);
+            Debug.Log("[CombatSystem] Firing projectile from prefab");
+        }
+        else
+        {
+            // Fallback: create projectile dynamically like loot system does
+            projectileObj = CreateProjectileDynamically(spawnPos);
+            Debug.Log("[CombatSystem] Firing projectile created dynamically");
+        }
+        
+        Debug.Log($"[CombatSystem] Projectile object created: {projectileObj.name} at position {projectileObj.transform.position}");
+        Debug.Log($"[CombatSystem] Projectile active: {projectileObj.activeInHierarchy}, scale: {projectileObj.transform.localScale}");
+        
+        var projectile = projectileObj.GetComponent<Projectile>();
+        
+        if (projectile != null)
+        {
+            // Use default values for now - these should match wooden bow stats
+            projectile.Initialize(
+                targetPos,
+                20f,  // Default projectile speed
+                25f,  // Default range (matches wooden bow)
+                0.7f  // Default accuracy (matches wooden bow)
+            );
+            
+            Debug.Log($"[CombatSystem] Projectile initialized: Speed=20, Range=25, Accuracy=0.7");
+        }
+        else
+        {
+            Debug.LogError("[CombatSystem] Projectile object does not have Projectile component!");
+            Destroy(projectileObj);
+            PlayMeleeAttackEffect(attackerPos, targetPos);
+        }
+    }
+    
+    private GameObject CreateProjectileDynamically(Vector3 spawnPos)
+    {
+        Debug.Log($"[CombatSystem] Creating projectile dynamically at position: {spawnPos}");
+        
+        // Create projectile similar to how loot system creates objects
+        GameObject projectile = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        projectile.name = "Projectile_Dynamic";
+        projectile.transform.position = spawnPos;
+        
+        Debug.Log($"[CombatSystem] Base sphere created at: {projectile.transform.position}");
+        
+        // Scale it down to be arrow-like but keep it visible
+        projectile.transform.localScale = new Vector3(0.3f, 0.3f, 0.3f); // Made larger for visibility
+        
+        Debug.Log($"[CombatSystem] Projectile scaled to: {projectile.transform.localScale}");
+        
+        // Set color to make it very visible - similar to enemy setup
+        var renderer = projectile.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            // Create a new material to ensure visibility
+            Material projectileMaterial = new Material(Shader.Find("Standard"));
+            projectileMaterial.color = Color.red; // Bright red for high visibility
+            projectileMaterial.SetFloat("_Metallic", 0.0f);
+            projectileMaterial.SetFloat("_Glossiness", 0.5f);
+            renderer.material = projectileMaterial;
+            Debug.Log("[CombatSystem] Set bright red material for visibility");
+        }
+        else
+        {
+            Debug.LogError("[CombatSystem] No renderer found on projectile!");
+        }
+        
+        // Add Projectile component
+        var projectileComponent = projectile.AddComponent<Projectile>();
+        Debug.Log($"[CombatSystem] Projectile component added: {projectileComponent != null}");
+        
+        // Add a TrailRenderer for visual effect
+        var trailRenderer = projectile.AddComponent<TrailRenderer>();
+        trailRenderer.time = 1.0f; // Longer trail for visibility
+        trailRenderer.startWidth = 0.2f; // Wider trail
+        trailRenderer.endWidth = 0.05f;
+        trailRenderer.material = CreateTrailMaterial();
+        Debug.Log("[CombatSystem] TrailRenderer added");
+        
+        // Add Rigidbody but make it kinematic (we'll control movement manually)
+        var rigidbody = projectile.AddComponent<Rigidbody>();
+        rigidbody.isKinematic = true;
+        rigidbody.useGravity = false;
+        Debug.Log("[CombatSystem] Rigidbody added (kinematic)");
+        
+        // Remove the default collider and add a trigger collider
+        var originalCollider = projectile.GetComponent<SphereCollider>();
+        if (originalCollider != null)
+        {
+            DestroyImmediate(originalCollider);
+        }
+        var collider = projectile.AddComponent<SphereCollider>();
+        collider.isTrigger = true;
+        collider.radius = 0.15f; // Slightly larger for better collision
+        Debug.Log("[CombatSystem] Trigger collider added");
+        
+        // Add AudioSource for sound effects
+        var audioSource = projectile.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
+        audioSource.spatialBlend = 1.0f; // 3D sound
+        Debug.Log("[CombatSystem] AudioSource added");
+        
+        Debug.Log($"[CombatSystem] Projectile creation completed - Final position: {projectile.transform.position}, Active: {projectile.activeInHierarchy}");
+        return projectile;
+    }
+    
+    private Material CreateTrailMaterial()
+    {
+        // Create a simple trail material
+        Material trailMaterial = new Material(Shader.Find("Sprites/Default"));
+        trailMaterial.color = new Color(1f, 0.8f, 0.2f, 0.8f); // Orange-yellow trail
+        return trailMaterial;
+    }
+    
+    private void PlayMeleeAttackEffect(Vector3 attackerPos, Vector3 targetPos)
+    {
         if (AttackEffect != null)
         {
             var effect = Instantiate(AttackEffect, attackerPos, Quaternion.LookRotation(targetPos - attackerPos));
@@ -50,6 +209,7 @@ public class CombatSystem : MonoBehaviour
             _audioSource.PlayOneShot(AttackSound);
         }
     }
+    
 
     public void PlayDamageEffect(float damage)
     {

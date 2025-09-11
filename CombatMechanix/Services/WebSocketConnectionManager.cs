@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Linq;
+using System.Numerics;
 using CombatMechanix.Models;
 using CombatMechanix.Services;
 using CombatMechanix.Data;
@@ -304,7 +305,28 @@ namespace CombatMechanix.Services
 
             _logger.LogInformation($"Combat action: {combatData.AttackType} from {combatData.AttackerId} to {combatData.TargetId}");
 
-            // Validate attack
+            // Determine actual attack type based on equipped weapon
+            var equippedWeapon = await GetPlayerEquippedWeapon(connection.PlayerId);
+            if (equippedWeapon != null)
+            {
+                // Update attack type based on weapon
+                combatData.AttackType = equippedWeapon.WeaponType == "Ranged" ? "RangedAttack" : "MeleeAttack";
+                
+                // Validate weapon range for both melee and ranged weapons
+                if (!ValidateWeaponRange(connection, combatData, equippedWeapon))
+                {
+                    _logger.LogWarning($"{equippedWeapon.WeaponType} attack from {connection.PlayerId} failed range validation");
+                    return;
+                }
+            }
+            else
+            {
+                // No weapon equipped - default to melee with basic unarmed range
+                combatData.AttackType = "MeleeAttack";
+                // TODO: Validate unarmed range (very short, like 1.2 units)
+            }
+
+            // Validate attack timing and other conditions
             if (!ValidateAttack(connection, combatData))
             {
                 _logger.LogWarning($"Invalid attack from {connection.PlayerId} to {combatData.TargetId}");
@@ -322,7 +344,8 @@ namespace CombatMechanix.Services
             }
             else
             {
-                // Ground attack or area effect - just broadcast for now
+                // Ground attack or ranged attack without target - broadcast for visual effects
+                combatData.AttackerId = connection.PlayerId;
                 await BroadcastToAll("CombatAction", combatData);
             }
         }
@@ -348,24 +371,22 @@ namespace CombatMechanix.Services
             _logger.LogInformation($"DEBUG: Combat - ConnectionId: {connection.ConnectionId}, PlayerId: {connection.PlayerId}");
             _logger.LogInformation($"Player {connection.PlayerId} attacking enemy {combatData.TargetId} for {damage} damage");
 
-            // Apply damage to enemy via EnemyManager
-            bool success = await _enemyManager.DamageEnemy(combatData.TargetId, damage, connection.PlayerId);
-            
-            if (success)
+            // Check if this is a ranged attack that needs projectile travel time
+            var equippedWeapon = await GetPlayerEquippedWeapon(connection.PlayerId);
+            if (equippedWeapon != null && equippedWeapon.WeaponType == "Ranged")
             {
-                // Update combat data with calculated damage
-                combatData.Damage = damage;
-                combatData.AttackerId = connection.PlayerId;
+                // Calculate projectile travel time
+                float travelTime = CalculateProjectileTravelTime(connection, combatData, equippedWeapon);
+                _logger.LogInformation($"Ranged attack - delaying damage by {travelTime:F2} seconds for projectile travel");
                 
-                // Broadcast attack effects to all clients
-                await BroadcastToAll("CombatAction", combatData);
-                
-                // Handle potential rewards (experience, loot)
-                await HandleCombatRewards(connection.PlayerId, combatData.TargetId, damage);
+                // Delay damage application for projectile travel time
+                _ = DelayedDamageApplication(travelTime, combatData, damage, connection);
             }
             else
             {
-                _logger.LogWarning($"Failed to damage enemy {combatData.TargetId}");
+                // Immediate damage for melee attacks
+                bool success = await _enemyManager.DamageEnemy(combatData.TargetId, damage, connection.PlayerId);
+                await HandleDamageResult(success, combatData, connection);
             }
         }
 
@@ -393,6 +414,8 @@ namespace CombatMechanix.Services
                 float typeMultiplier = attackType switch
                 {
                     "BasicAttack" => 1.0f,
+                    "MeleeAttack" => 1.0f,
+                    "RangedAttack" => 0.9f, // Ranged attacks do slightly less damage for balance
                     "PowerAttack" => 1.5f,
                     "CriticalStrike" => 2.0f,
                     _ => 1.0f
@@ -491,6 +514,73 @@ namespace CombatMechanix.Services
             }
             
             return true;
+        }
+
+        private async Task DelayedDamageApplication(float travelTime, NetworkMessages.CombatActionMessage combatData, float damage, WebSocketConnection connection)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(travelTime));
+            bool success = await _enemyManager.DamageEnemy(combatData.TargetId, damage, connection.PlayerId);
+            await HandleDamageResult(success, combatData, connection);
+        }
+
+        private float CalculateProjectileTravelTime(WebSocketConnection connection, NetworkMessages.CombatActionMessage combatData, EquippedItem weapon)
+        {
+            try
+            {
+                // Get player position (use stored player state or approximate from connection)
+                float playerX = 0, playerY = 0, playerZ = 0; // Default fallback
+                if (_players.TryGetValue(connection.ConnectionId, out var playerState) && playerState != null)
+                {
+                    playerX = playerState.Position.X;
+                    playerY = playerState.Position.Y;
+                    playerZ = playerState.Position.Z;
+                }
+
+                // Calculate distance to target
+                float targetX = combatData.Position.X;
+                float targetY = combatData.Position.Y;
+                float targetZ = combatData.Position.Z;
+                
+                float deltaX = targetX - playerX;
+                float deltaY = targetY - playerY;
+                float deltaZ = targetZ - playerZ;
+                float distance = (float)Math.Sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+
+                // Calculate travel time based on projectile speed
+                float projectileSpeed = weapon.ProjectileSpeed > 0 ? weapon.ProjectileSpeed : 20f; // Default speed
+                float travelTime = distance / projectileSpeed;
+
+                // Cap maximum travel time to prevent issues
+                float maxTravelTime = weapon.WeaponRange / projectileSpeed;
+                travelTime = Math.Min(travelTime, maxTravelTime);
+
+                _logger.LogInformation($"Projectile travel: Distance={distance:F2}, Speed={projectileSpeed}, Time={travelTime:F2}s");
+                return travelTime;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error calculating projectile travel time, using default");
+                return 1.0f; // Default 1 second if calculation fails
+            }
+        }
+
+        private async Task HandleDamageResult(bool success, NetworkMessages.CombatActionMessage combatData, WebSocketConnection connection)
+        {
+            if (success)
+            {
+                // Update combat data with calculated damage
+                combatData.AttackerId = connection.PlayerId;
+                
+                // Broadcast attack effects to all clients
+                await BroadcastToAll("CombatAction", combatData);
+                
+                // Handle potential rewards (experience, loot)
+                await HandleCombatRewards(connection.PlayerId, combatData.TargetId, combatData.Damage);
+            }
+            else
+            {
+                _logger.LogWarning($"Failed to damage enemy {combatData.TargetId}");
+            }
         }
 
         private async Task HandleCombatRewards(string playerId, string enemyId, float damageDealt)
@@ -2581,6 +2671,55 @@ namespace CombatMechanix.Services
             });
 
             return items;
+        }
+        
+        /// <summary>
+        /// Get the equipped weapon for a player
+        /// </summary>
+        private async Task<EquippedItem?> GetPlayerEquippedWeapon(string playerId)
+        {
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
+                
+                var equippedItems = await equipmentManager.GetPlayerEquipmentAsync(playerId);
+                var weapon = equippedItems.FirstOrDefault(item => 
+                    item.SlotType.Equals("Weapon", StringComparison.OrdinalIgnoreCase));
+                
+                return weapon;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting equipped weapon for player {PlayerId}", playerId);
+                return null;
+            }
+        }
+        
+        /// <summary>
+        /// Validate weapon attack based on weapon range (both melee and ranged)
+        /// </summary>
+        private bool ValidateWeaponRange(WebSocketConnection connection, NetworkMessages.CombatActionMessage combatData, EquippedItem weapon)
+        {
+            if (!_players.TryGetValue(connection.ConnectionId, out var player))
+            {
+                return false;
+            }
+            
+            // Calculate distance from player to attack position
+            var playerPos = new Vector3(player.Position.X, player.Position.Y, player.Position.Z);
+            var attackPos = new Vector3(combatData.Position.X, combatData.Position.Y, combatData.Position.Z);
+            var distance = Vector3.Distance(playerPos, attackPos);
+            
+            // Check if attack is within weapon range
+            if (distance > weapon.WeaponRange)
+            {
+                _logger.LogWarning($"{weapon.WeaponType} attack from {connection.PlayerId} failed: distance {distance:F2} > range {weapon.WeaponRange}");
+                return false;
+            }
+            
+            _logger.LogInformation($"{weapon.WeaponType} attack validated: {weapon.ItemName} distance {distance:F2}/{weapon.WeaponRange} range");
+            return true;
         }
         
         /// <summary>

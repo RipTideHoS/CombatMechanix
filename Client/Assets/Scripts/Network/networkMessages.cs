@@ -437,6 +437,12 @@ public class InventoryItem
     public int AttackPower { get; set; } = 0;
     public int DefensePower { get; set; } = 0;
     public int Value { get; set; } = 0; // Gold value
+    
+    // Weapon properties for ranged combat
+    public string WeaponType { get; set; } = "Melee"; // "Melee", "Ranged"
+    public float WeaponRange { get; set; } = 0f; // Maximum effective range
+    public float ProjectileSpeed { get; set; } = 0f; // Projectile travel speed
+    public float Accuracy { get; set; } = 1.0f; // Base accuracy (0.0-1.0)
 }
 
 [System.Serializable]
@@ -455,6 +461,12 @@ public class EquippedItem
     public int AttackPower { get; set; } = 0;
     public int DefensePower { get; set; } = 0;
     public int Value { get; set; } = 0; // Gold value
+    
+    // Weapon properties for ranged combat
+    public string WeaponType { get; set; } = "Melee"; // "Melee", "Ranged"
+    public float WeaponRange { get; set; } = 0f; // Maximum effective range
+    public float ProjectileSpeed { get; set; } = 0f; // Projectile travel speed
+    public float Accuracy { get; set; } = 1.0f; // Base accuracy (0.0-1.0)
     
     // Equipment tracking
     public System.DateTime DateEquipped { get; set; } = System.DateTime.UtcNow;

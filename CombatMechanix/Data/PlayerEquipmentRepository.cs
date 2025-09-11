@@ -50,6 +50,10 @@ namespace CombatMechanix.Data
                         COALESCE(it.AttackSpeed, 1.0) as AttackSpeed,
                         it.IconPath as IconName,
                         COALESCE(it.BaseValue, 10) as Value,
+                        COALESCE(it.WeaponType, 'Melee') as WeaponType,
+                        COALESCE(it.WeaponRange, 0) as WeaponRange,
+                        COALESCE(it.ProjectileSpeed, 0) as ProjectileSpeed,
+                        COALESCE(it.Accuracy, 1.0) as Accuracy,
                         pe.DateEquipped,
                         pe.DateModified
                     FROM PlayerEquipment pe
@@ -183,9 +187,13 @@ namespace CombatMechanix.Data
                         it.ItemCategory,
                         it.AttackPower,
                         it.DefensePower,
-                        it.AttackSpeed,
+                        COALESCE(it.AttackSpeed, 1.0) as AttackSpeed,
                         it.IconPath as IconName,
                         COALESCE(it.BaseValue, 10) as Value,
+                        COALESCE(it.WeaponType, 'Melee') as WeaponType,
+                        COALESCE(it.WeaponRange, 0) as WeaponRange,
+                        COALESCE(it.ProjectileSpeed, 0) as ProjectileSpeed,
+                        COALESCE(it.Accuracy, 1.0) as Accuracy,
                         pe.DateEquipped,
                         pe.DateModified
                     FROM PlayerEquipment pe
@@ -288,6 +296,10 @@ namespace CombatMechanix.Data
                 AttackSpeed = reader["AttackSpeed"] != DBNull.Value ? Convert.ToDecimal(reader["AttackSpeed"]) : 1.0m,
                 IconName = reader["IconName"].ToString() ?? string.Empty,
                 Value = reader["Value"] != DBNull.Value ? Convert.ToInt32(reader["Value"]) : 10,
+                WeaponType = reader["WeaponType"].ToString() ?? "Melee",
+                WeaponRange = reader["WeaponRange"] != DBNull.Value ? Convert.ToSingle(reader["WeaponRange"]) : 0f,
+                ProjectileSpeed = reader["ProjectileSpeed"] != DBNull.Value ? Convert.ToSingle(reader["ProjectileSpeed"]) : 0f,
+                Accuracy = reader["Accuracy"] != DBNull.Value ? Convert.ToSingle(reader["Accuracy"]) : 1.0f,
                 DateEquipped = Convert.ToDateTime(reader["DateEquipped"]),
                 DateModified = Convert.ToDateTime(reader["DateModified"])
             };
