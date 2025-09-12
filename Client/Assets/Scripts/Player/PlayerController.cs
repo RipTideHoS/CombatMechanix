@@ -41,6 +41,10 @@ public class PlayerController : MonoBehaviour
     public Vector3 CurrentVelocity { get; private set; }
     public float CurrentRotation { get; private set; }
     public bool IsLocalPlayer { get; private set; } = true;
+    
+    // Equipment caching
+    private EquippedItem _cachedWeapon = null;
+    private CharacterUI _characterUI = null;
 
     private void Awake()
     {
@@ -78,6 +82,8 @@ public class PlayerController : MonoBehaviour
         _lastSentPosition = transform.position;
         _lastSendTime = Time.time;
         
+        // Setup equipment system
+        InitializeEquipmentSystem();
     }
 
     private void Update()
@@ -362,30 +368,48 @@ public class PlayerController : MonoBehaviour
             _ = networkManager.SendAttack(targetId, "Attack", attackPosition);
         }
 
-        // Play local attack animation/effect - server will send back the actual effect type
+        // Play local attack animation/effect based on equipped weapon
         Debug.Log($"[PlayerController] Attempting to play attack effect from {transform.position} to {attackPosition}");
-        Debug.Log($"[PlayerController] GameManager.Instance: {(GameManager.Instance != null ? "Found" : "NULL")}");
         
-        var combatSystem = GameManager.Instance?.CombatSystem;
-        Debug.Log($"[PlayerController] CombatSystem: {(combatSystem != null ? "Found" : "NULL")}");
-        
-        if (combatSystem != null)
+        var combatSystem = GameManager.Instance?.CombatSystem ?? FindObjectOfType<CombatSystem>();
+        if (combatSystem == null)
         {
-            Debug.Log($"[PlayerController] Calling PlayAttackEffect on CombatSystem");
-            combatSystem.PlayAttackEffect(transform.position, attackPosition);
+            Debug.LogError("[PlayerController] CombatSystem not found - cannot play attack effects");
+            return;
+        }
+        
+        // Get equipped weapon data (uses caching for performance)
+        EquippedItem equippedWeapon = GetEquippedWeapon();
+        
+        if (equippedWeapon != null)
+        {
+            // Use equipped weapon properties for proper animation
+            Debug.Log($"[PlayerController] ✅ Playing attack with weapon: {equippedWeapon.ItemName}");
+            Debug.Log($"[PlayerController] 🎯 Weapon Type: '{equippedWeapon.WeaponType}', Range: {equippedWeapon.WeaponRange}");
+            Debug.Log($"[PlayerController] 🔬 DETAILED WEAPON DATA:");
+            Debug.Log($"[PlayerController] 🔬   WeaponType (raw): '{equippedWeapon.WeaponType}' (Length: {equippedWeapon.WeaponType?.Length ?? 0})");
+            Debug.Log($"[PlayerController] 🔬   ItemName: '{equippedWeapon.ItemName}'");
+            Debug.Log($"[PlayerController] 🔬   ItemType: '{equippedWeapon.ItemType}'");
+            Debug.Log($"[PlayerController] 🔬   ItemCategory: '{equippedWeapon.ItemCategory}'");
+            Debug.Log($"[PlayerController] 🔬   Expected Animation: {(equippedWeapon.WeaponType == "Ranged" ? "PROJECTILE 🏹" : "SWIPE ⚔️")}");
+            
+            combatSystem.PlayAttackEffectWithWeapon(
+                transform.position, 
+                attackPosition, 
+                equippedWeapon.WeaponType, 
+                equippedWeapon.WeaponRange
+            );
         }
         else
         {
-            Debug.LogWarning("[PlayerController] CombatSystem is null - trying fallback approach");
-            // Fallback: find CombatSystem directly
-            var fallbackCombatSystem = FindObjectOfType<CombatSystem>();
-            Debug.Log($"[PlayerController] Fallback CombatSystem: {(fallbackCombatSystem != null ? "Found" : "NULL")}");
-            
-            if (fallbackCombatSystem != null)
-            {
-                Debug.Log("[PlayerController] Using fallback CombatSystem");
-                fallbackCombatSystem.PlayAttackEffect(transform.position, attackPosition);
-            }
+            // Player is unarmed - use basic unarmed combat
+            Debug.Log("[PlayerController] 👊 Player is unarmed - using basic melee attack");
+            combatSystem.PlayAttackEffectWithWeapon(
+                transform.position, 
+                attackPosition, 
+                "Melee", 
+                1.5f // Basic unarmed range
+            );
         }
     }
 
@@ -471,6 +495,153 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+    private void InitializeEquipmentSystem()
+    {
+        Debug.Log("[PlayerController] Initializing equipment system...");
+        
+        // Subscribe to network equipment update events
+        NetworkManager.OnEquipmentResponse += HandleEquipmentResponseForCaching;
+        NetworkManager.OnEquipmentUpdate += HandleEquipmentUpdateForCaching;
+        
+        // Subscribe to CharacterUI weapon change events
+        CharacterUI.OnWeaponEquipped += HandleWeaponEquipped;
+        CharacterUI.OnWeaponUnequipped += HandleWeaponUnequipped;
+        
+        // Find and cache CharacterUI reference
+        StartCoroutine(FindCharacterUIWithRetry());
+        
+        Debug.Log("[PlayerController] Equipment system initialized - subscribed to all equipment events");
+    }
+    
+    private System.Collections.IEnumerator FindCharacterUIWithRetry()
+    {
+        int attempts = 0;
+        while (_characterUI == null && attempts < 10) // Try for 10 frames
+        {
+            _characterUI = FindCharacterUIInstance();
+            if (_characterUI != null)
+            {
+                Debug.Log("[PlayerController] ✅ CharacterUI found and cached successfully");
+                // Request initial equipment data
+                RefreshWeaponCache();
+                break;
+            }
+            
+            attempts++;
+            yield return null; // Wait one frame
+        }
+        
+        if (_characterUI == null)
+        {
+            Debug.LogWarning("[PlayerController] ⚠️ CharacterUI not found after retries - will use fallback methods");
+        }
+    }
+    
+    private CharacterUI FindCharacterUIInstance()
+    {
+        // Try multiple approaches to find CharacterUI
+        CharacterUI characterUI = null;
+        
+        // Approach 1: Through GameManager's UIManager
+        if (GameManager.Instance?.UIManager != null)
+        {
+            characterUI = GameManager.Instance.UIManager.GetComponent<CharacterUI>();
+        }
+        
+        // Approach 2: Direct scene search
+        if (characterUI == null)
+        {
+            characterUI = FindObjectOfType<CharacterUI>();
+        }
+        
+        // Approach 3: Search in all UI components
+        if (characterUI == null)
+        {
+            var allCharacterUIs = FindObjectsOfType<CharacterUI>();
+            if (allCharacterUIs.Length > 0)
+            {
+                characterUI = allCharacterUIs[0];
+            }
+        }
+        
+        return characterUI;
+    }
+    
+    private void HandleEquipmentResponseForCaching(NetworkMessages.EquipmentResponseMessage response)
+    {
+        if (response.Success && response.Items.Count > 0)
+        {
+            Debug.Log($"[PlayerController] 📦 Received equipment response - updating weapon cache from {response.Items.Count} items");
+            UpdateWeaponCacheFromEquipmentList(response.Items);
+        }
+    }
+    
+    private void HandleEquipmentUpdateForCaching(NetworkMessages.EquipmentUpdateMessage update)
+    {
+        Debug.Log($"[PlayerController] 🔄 Equipment update received: {update.UpdateType}");
+        UpdateWeaponCacheFromEquipmentList(update.UpdatedItems);
+    }
+    
+    private void UpdateWeaponCacheFromEquipmentList(System.Collections.Generic.List<EquippedItem> equipmentItems)
+    {
+        // Find weapon in the equipment list
+        var weapon = equipmentItems.FirstOrDefault(item => item.SlotType == "Weapon");
+        
+        if (weapon != null)
+        {
+            _cachedWeapon = weapon;
+            Debug.Log($"[PlayerController] ✅ Weapon cached: {weapon.ItemName} (Type: '{weapon.WeaponType}', Range: {weapon.WeaponRange})");
+        }
+        else
+        {
+            _cachedWeapon = null;
+            Debug.Log("[PlayerController] 🔧 No weapon equipped - cached weapon cleared");
+        }
+    }
+    
+    private void RefreshWeaponCache()
+    {
+        if (_characterUI != null)
+        {
+            var weapon = _characterUI.GetEquippedItemInSlot("Weapon");
+            if (weapon != null)
+            {
+                _cachedWeapon = weapon;
+                Debug.Log($"[PlayerController] 🔄 Weapon cache refreshed: {weapon.ItemName} (Type: '{weapon.WeaponType}', Range: {weapon.WeaponRange})");
+            }
+            else
+            {
+                _cachedWeapon = null;
+                Debug.Log("[PlayerController] 🔄 Weapon cache refreshed - no weapon equipped");
+            }
+        }
+    }
+    
+    private void HandleWeaponEquipped(EquippedItem weapon)
+    {
+        _cachedWeapon = weapon;
+        Debug.Log($"[PlayerController] 🗡️ Weapon equipped event received: {weapon.ItemName} (Type: '{weapon.WeaponType}', Range: {weapon.WeaponRange})");
+        Debug.Log($"[PlayerController] ✅ Combat animations updated - {(weapon.WeaponType == "Ranged" ? "Projectile" : "Melee swipe")} effects will be used");
+    }
+    
+    private void HandleWeaponUnequipped()
+    {
+        _cachedWeapon = null;
+        Debug.Log("[PlayerController] 🤚 Weapon unequipped event received - player is now unarmed");
+        Debug.Log("[PlayerController] ✅ Combat animations updated - basic melee effects will be used");
+    }
+    
+    private void OnDestroy()
+    {
+        // Unsubscribe from network events
+        NetworkManager.OnEquipmentResponse -= HandleEquipmentResponseForCaching;
+        NetworkManager.OnEquipmentUpdate -= HandleEquipmentUpdateForCaching;
+        
+        // Unsubscribe from CharacterUI events
+        CharacterUI.OnWeaponEquipped -= HandleWeaponEquipped;
+        CharacterUI.OnWeaponUnequipped -= HandleWeaponUnequipped;
+    }
+
 
     // ===============================================
     // PUBLIC METHODS FOR EXTERNAL CONTROL
@@ -522,5 +693,90 @@ public class PlayerController : MonoBehaviour
     public Vector3 GetVelocity()
     {
         return CurrentVelocity;
+    }
+    
+    /// <summary>
+    /// Get the currently equipped weapon - uses cached data first, then falls back to CharacterUI
+    /// </summary>
+    private EquippedItem GetEquippedWeapon()
+    {
+        try
+        {
+            // Priority 1: Use cached weapon data (fastest and most reliable)
+            if (_cachedWeapon != null)
+            {
+                Debug.Log($"[PlayerController] ✅ Using cached weapon: {_cachedWeapon.ItemName} (Type: '{_cachedWeapon.WeaponType}', Range: {_cachedWeapon.WeaponRange})");
+                return _cachedWeapon;
+            }
+            
+            Debug.Log("[PlayerController] No cached weapon data - attempting to get from CharacterUI...");
+            
+            // Priority 2: Use cached CharacterUI reference
+            CharacterUI characterUI = _characterUI;
+            
+            // Priority 3: Find CharacterUI if not cached
+            if (characterUI == null)
+            {
+                characterUI = FindCharacterUIInstance();
+                if (characterUI != null)
+                {
+                    _characterUI = characterUI; // Cache for future use
+                    Debug.Log("[PlayerController] Found and cached CharacterUI reference");
+                }
+            }
+            
+            if (characterUI != null)
+            {
+                EquippedItem weapon = characterUI.GetEquippedItemInSlot("Weapon");
+                
+                if (weapon != null)
+                {
+                    // Cache the weapon for future use
+                    _cachedWeapon = weapon;
+                    Debug.Log($"[PlayerController] ✅ Found and cached weapon: {weapon.ItemName} (Type: '{weapon.WeaponType}', Range: {weapon.WeaponRange})");
+                    return weapon;
+                }
+                else
+                {
+                    // Clear cached weapon if no weapon is equipped
+                    _cachedWeapon = null;
+                    Debug.Log("[PlayerController] ❌ No weapon equipped in Weapon slot - cleared cache");
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[PlayerController] CharacterUI not found - equipment data unavailable");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[PlayerController] Error getting equipped weapon: {ex.Message}");
+        }
+        
+        return null;
+    }
+    
+    /// <summary>
+    /// Public method to test weapon detection - useful for debugging
+    /// </summary>
+    public void TestWeaponDetection()
+    {
+        Debug.Log("=== WEAPON DETECTION TEST ===");
+        Debug.Log($"Cached weapon: {(_cachedWeapon?.ItemName ?? "None")}");
+        Debug.Log($"CharacterUI reference: {(_characterUI != null ? "Found" : "NULL")}");
+        
+        var weapon = GetEquippedWeapon();
+        if (weapon != null)
+        {
+            Debug.Log($"✅ Weapon detected: {weapon.ItemName}");
+            Debug.Log($"   Type: '{weapon.WeaponType}' | Range: {weapon.WeaponRange}");
+            Debug.Log($"   Expected animation: {(weapon.WeaponType == "Ranged" ? "Projectile" : "Melee Swipe")}");
+        }
+        else
+        {
+            Debug.Log("❌ No weapon detected - player appears unarmed");
+            Debug.Log("   Expected animation: Basic Melee Swipe");
+        }
+        Debug.Log("=== END TEST ===");
     }
 }

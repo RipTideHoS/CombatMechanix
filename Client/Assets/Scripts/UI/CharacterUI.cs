@@ -43,13 +43,21 @@ public class CharacterUI : MonoBehaviour
     public System.Action<EquippedItem> OnItemClicked;
     public System.Action<EquippedItem> OnItemRightClicked;
     
+    // Equipment change events for PlayerController
+    public static System.Action<EquippedItem> OnWeaponEquipped;
+    public static System.Action OnWeaponUnequipped;
+    
     private void Awake()
     {
+        Debug.Log("[CharacterUI] 🔧 CharacterUI Awake() called - Setting up equipment events");
+        
         // Subscribe to equipment network events
         NetworkManager.OnEquipmentResponse += HandleEquipmentResponse;
         NetworkManager.OnEquipmentUpdate += HandleEquipmentUpdate;
         
-        Debug.Log("[CharacterUI] Subscribed to equipment network events");
+        Debug.Log("[CharacterUI] ✅ Subscribed to equipment network events");
+        Debug.Log($"[CharacterUI] 🔍 CharacterUI GameObject: {gameObject.name}");
+        Debug.Log($"[CharacterUI] 🔍 CharacterUI Active: {gameObject.activeInHierarchy}");
     }
     
     private void OnDestroy()
@@ -355,7 +363,14 @@ public class CharacterUI : MonoBehaviour
     
     private void HandleEquipmentResponse(NetworkMessages.EquipmentResponseMessage response)
     {
-        Debug.Log($"[CharacterUI] Received equipment response with {response.Items.Count} items");
+        Debug.Log($"[CharacterUI] 📦 Received equipment response with {response.Items.Count} items");
+        Debug.Log($"[CharacterUI] 📦 Response Success: {response.Success}");
+        
+        // Debug: List all received items
+        foreach (var item in response.Items)
+        {
+            Debug.Log($"[CharacterUI] 📦 Item: {item.ItemName} | Slot: {item.SlotType} | Type: '{item.WeaponType}' | Range: {item.WeaponRange}");
+        }
         
         if (response.Success)
         {
@@ -448,6 +463,9 @@ public class CharacterUI : MonoBehaviour
         }
         
         Debug.Log($"[CharacterUI] Updated equipment display with {_equipmentData.Count} items");
+        
+        // Fire weapon change events for PlayerController
+        NotifyWeaponChange();
     }
     
     private void UpdateStatsDisplay()
@@ -599,5 +617,24 @@ public class CharacterUI : MonoBehaviour
     public bool IsSlotOccupied(string slotType)
     {
         return _equipmentData.Any(i => i.SlotType == slotType);
+    }
+    
+    /// <summary>
+    /// Notify PlayerController about weapon changes
+    /// </summary>
+    private void NotifyWeaponChange()
+    {
+        var currentWeapon = GetEquippedItemInSlot("Weapon");
+        
+        if (currentWeapon != null)
+        {
+            Debug.Log($"[CharacterUI] 🔔 Notifying weapon equipped: {currentWeapon.ItemName} (Type: '{currentWeapon.WeaponType}')");
+            OnWeaponEquipped?.Invoke(currentWeapon);
+        }
+        else
+        {
+            Debug.Log("[CharacterUI] 🔔 Notifying weapon unequipped");
+            OnWeaponUnequipped?.Invoke();
+        }
     }
 }

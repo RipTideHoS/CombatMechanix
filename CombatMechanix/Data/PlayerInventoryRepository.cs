@@ -20,12 +20,17 @@ namespace CombatMechanix.Data
     {
         private readonly string _connectionString;
         private readonly ILogger<PlayerInventoryRepository> _logger;
+        private readonly int _maxInventorySlots;
 
         public PlayerInventoryRepository(IConfiguration configuration, ILogger<PlayerInventoryRepository> logger)
         {
             _connectionString = configuration.GetConnectionString("DefaultConnection")
                 ?? throw new ArgumentNullException(nameof(configuration), "DefaultConnection string is required");
             _logger = logger;
+            
+            // Read max inventory slots from configuration, default to 20
+            _maxInventorySlots = configuration.GetValue<int>("GameSettings:MaxInventorySlots", 20);
+            _logger.LogInformation("PlayerInventoryRepository initialized with max slots: {MaxSlots}", _maxInventorySlots);
         }
 
         /// <summary>
@@ -228,9 +233,9 @@ namespace CombatMechanix.Data
                 using var connection = new SqlConnection(_connectionString);
                 await connection.OpenAsync();
 
-                const string sql = @"
+                var sql = $@"
                     WITH SlotNumbers AS (
-                        SELECT TOP 20 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS SlotIndex
+                        SELECT TOP {_maxInventorySlots} ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS SlotIndex
                         FROM sys.objects
                     )
                     SELECT TOP 1 s.SlotIndex

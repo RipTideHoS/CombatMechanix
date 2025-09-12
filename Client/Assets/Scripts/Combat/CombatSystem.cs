@@ -41,21 +41,104 @@ public class CombatSystem : MonoBehaviour
 
     public void PlayAttackEffect(Vector3 attackerPos, Vector3 targetPos)
     {
+        Debug.Log($"[CombatSystem] PlayAttackEffect called - this should only be used as fallback");
         Debug.Log($"Attack effect: {attackerPos} -> {targetPos}");
         
-        float attackDistance = Vector3.Distance(attackerPos, targetPos);
+        // This method should only be used as a fallback when weapon data is not available
+        // Default to melee attack with standard range since most weapons are melee
+        Debug.LogWarning("[CombatSystem] Using fallback attack effect - weapon type unknown, defaulting to melee");
+        PlayMeleeAttackEffect(attackerPos, targetPos, 2.0f); // Default melee range
+    }
+    
+    /// <summary>
+    /// Play attack effect with weapon data (enhanced version)
+    /// </summary>
+    public void PlayAttackEffectWithWeapon(Vector3 attackerPos, Vector3 targetPos, string weaponType, float weaponRange)
+    {
+        Debug.Log($"[CombatSystem] 🎯 PlayAttackEffectWithWeapon called: {attackerPos} -> {targetPos}");
+        Debug.Log($"[CombatSystem] 🔍 Weapon Type: '{weaponType}' | Range: {weaponRange}");
         
-        // Simple heuristic: if attack distance is beyond typical melee range, assume ranged weapon
-        // This will be improved when we have better access to equipment data
-        if (attackDistance > 3.0f)
+        float attackDistance = Vector3.Distance(attackerPos, targetPos);
+        Debug.Log($"[CombatSystem] 📏 Attack Distance: {attackDistance:F2} units");
+        
+        if (weaponType == "Ranged")
         {
-            // Likely ranged attack - fire projectile with default values
-            FireProjectileWithDefaults(attackerPos, targetPos);
+            Debug.Log($"[CombatSystem] 🏹 RANGED WEAPON DETECTED - Should fire projectile!");
+            Debug.Log($"[CombatSystem] ➡️ Calling FireProjectileWithWeaponData()");
+            FireProjectileWithWeaponData(attackerPos, targetPos, weaponRange);
         }
         else
         {
-            // Likely melee attack
-            PlayMeleeAttackEffect(attackerPos, targetPos);
+            Debug.Log($"[CombatSystem] ⚔️ MELEE WEAPON DETECTED - Should show swipe!");
+            Debug.Log($"[CombatSystem] 📏 Melee Range: {weaponRange}, Distance: {attackDistance:F2}");
+            
+            if (attackDistance <= weaponRange + 0.5f) // Small tolerance for player movement/lag
+            {
+                Debug.Log($"[CombatSystem] ✅ Target within melee range - playing swipe effect");
+                PlayMeleeAttackEffect(attackerPos, targetPos, weaponRange);
+            }
+            else
+            {
+                Debug.LogWarning($"[CombatSystem] ⚠️ Target too far for melee weapon! Distance: {attackDistance:F2}, Max Range: {weaponRange}");
+                // Still play the effect but limit it to weapon range
+                Vector3 direction = (targetPos - attackerPos).normalized;
+                Vector3 limitedTarget = attackerPos + direction * weaponRange;
+                Debug.Log($"[CombatSystem] 🎯 Playing limited swipe to max range: {limitedTarget}");
+                PlayMeleeAttackEffect(attackerPos, limitedTarget, weaponRange);
+            }
+        }
+    }
+    
+    private void FireProjectileWithWeaponData(Vector3 attackerPos, Vector3 targetPos, float weaponRange)
+    {
+        // Enhanced projectile firing with actual weapon data
+        Vector3 spawnPos;
+        if (ProjectileSpawnPoint != null)
+        {
+            spawnPos = ProjectileSpawnPoint.position + Vector3.up * 0.5f;
+        }
+        else
+        {
+            spawnPos = attackerPos + Vector3.up * 0.5f;
+        }
+        
+        Debug.Log($"[CombatSystem] Firing projectile with weapon data: Range={weaponRange}, From={spawnPos} To={targetPos}");
+        
+        GameObject projectileObj;
+        
+        if (ProjectilePrefab != null)
+        {
+            projectileObj = Instantiate(ProjectilePrefab, spawnPos, Quaternion.identity);
+            Debug.Log("[CombatSystem] Firing projectile from prefab");
+        }
+        else
+        {
+            projectileObj = CreateProjectileDynamically(spawnPos);
+            Debug.Log("[CombatSystem] Firing projectile created dynamically");
+        }
+        
+        var projectile = projectileObj.GetComponent<Projectile>();
+        
+        if (projectile != null)
+        {
+            // Use weapon data for projectile initialization
+            float projectileSpeed = 20f; // Default speed if not provided
+            float accuracy = 0.7f; // Default accuracy if not provided
+            
+            projectile.Initialize(
+                targetPos,
+                projectileSpeed,
+                weaponRange,
+                accuracy
+            );
+            
+            Debug.Log($"[CombatSystem] Projectile initialized with weapon data: Speed={projectileSpeed}, Range={weaponRange}, Accuracy={accuracy}");
+        }
+        else
+        {
+            Debug.LogError("[CombatSystem] Projectile object does not have Projectile component!");
+            Destroy(projectileObj);
+            PlayMeleeAttackEffect(attackerPos, targetPos, 2.0f); // Fallback to melee
         }
     }
     
@@ -112,7 +195,7 @@ public class CombatSystem : MonoBehaviour
         {
             Debug.LogError("[CombatSystem] Projectile object does not have Projectile component!");
             Destroy(projectileObj);
-            PlayMeleeAttackEffect(attackerPos, targetPos);
+            PlayMeleeAttackEffect(attackerPos, targetPos, 2.0f); // Default melee range for fallback
         }
     }
     
@@ -196,8 +279,12 @@ public class CombatSystem : MonoBehaviour
         return trailMaterial;
     }
     
-    private void PlayMeleeAttackEffect(Vector3 attackerPos, Vector3 targetPos)
+    private void PlayMeleeAttackEffect(Vector3 attackerPos, Vector3 targetPos, float weaponRange)
     {
+        // Create the visual swipe effect
+        CreateMeleeSwipeEffect(attackerPos, targetPos, weaponRange);
+        
+        // Play the original particle effect if available
         if (AttackEffect != null)
         {
             var effect = Instantiate(AttackEffect, attackerPos, Quaternion.LookRotation(targetPos - attackerPos));
@@ -208,6 +295,51 @@ public class CombatSystem : MonoBehaviour
         {
             _audioSource.PlayOneShot(AttackSound);
         }
+    }
+    
+    private void CreateMeleeSwipeEffect(Vector3 attackerPos, Vector3 targetPos, float weaponRange)
+    {
+        Debug.Log($"[CombatSystem] Creating melee swipe effect: Range={weaponRange}, From={attackerPos} To={targetPos}");
+        
+        // Create a temporary GameObject for the swipe effect
+        GameObject swipeEffectObj = new GameObject("MeleeSwipeEffect");
+        swipeEffectObj.transform.position = attackerPos;
+        
+        // Add the MeleeSwipeEffect component
+        var swipeEffect = swipeEffectObj.AddComponent<MeleeSwipeEffect>();
+        
+        // Configure swipe parameters based on weapon type/range
+        float swipeWidth = CalculateSwipeWidth(weaponRange);
+        float swipeDuration = CalculateSwipeDuration(weaponRange);
+        float swipeThickness = CalculateSwipeThickness(weaponRange);
+        
+        swipeEffect.SetSwipeParameters(swipeWidth, swipeDuration, swipeThickness);
+        
+        Debug.Log($"[CombatSystem] Swipe parameters: Width={swipeWidth}°, Duration={swipeDuration}s, Thickness={swipeThickness}");
+        
+        // Play the swipe effect
+        swipeEffect.PlaySwipeEffect(attackerPos, targetPos, weaponRange);
+    }
+    
+    private float CalculateSwipeWidth(float weaponRange)
+    {
+        // Larger weapons have wider swipes
+        // Range 1.5-2.5 units -> 45-75 degrees
+        return Mathf.Lerp(45f, 75f, (weaponRange - 1.5f) / 1.0f);
+    }
+    
+    private float CalculateSwipeDuration(float weaponRange)
+    {
+        // Larger weapons have slightly longer swipe animations
+        // Range 1.5-2.5 units -> 0.25-0.4 seconds
+        return Mathf.Lerp(0.25f, 0.4f, (weaponRange - 1.5f) / 1.0f);
+    }
+    
+    private float CalculateSwipeThickness(float weaponRange)
+    {
+        // Larger weapons have thicker swipe effects
+        // Range 1.5-2.5 units -> 0.15-0.3 thickness
+        return Mathf.Lerp(0.15f, 0.3f, (weaponRange - 1.5f) / 1.0f);
     }
     
 

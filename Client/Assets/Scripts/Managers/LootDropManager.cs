@@ -163,61 +163,47 @@ public class LootDropManager : MonoBehaviour
 
         if (response.Success && response.Item != null)
         {
-            // Server confirmed the pickup - we must remove the loot visual regardless
-            // Try to add the item to the player's inventory
-            var inventoryManager = FindObjectOfType<InventoryManager>();
+            // Server confirmed the pickup and automatically updated the inventory
+            // The server handles inventory management, so if pickup succeeded, the item is already in inventory
+            Debug.Log($"[LootDropManager] ✅ Server confirmed pickup: {response.Item.ItemName}");
             
-            if (inventoryManager != null)
+            // Show pickup success floating text
+            if (_lootTextManager != null && _playerTransform != null)
             {
-                bool addedToInventory = inventoryManager.AddItem(response.Item);
-                
-                if (addedToInventory)
-                {
-                    // Successfully added to inventory
-                    Debug.Log($"Successfully picked up and added to inventory: {response.Item.ItemName}");
-                    
-                    // Show pickup floating text
-                    if (_lootTextManager != null && _playerTransform != null)
-                    {
-                        _lootTextManager.ShowItemPickupText(response.Item, _playerTransform.position);
-                    }
-                }
-                else
-                {
-                    // Inventory was full - item is lost since server already removed it
-                    Debug.LogWarning($"Inventory full! Lost item: {response.Item.ItemName}");
-                    
-                    // Show inventory full message to player
-                    if (GameManager.Instance?.UIManager != null)
-                    {
-                        GameManager.Instance.UIManager.ShowMessage($"Inventory full! Lost {response.Item.ItemName}");
-                    }
-                    
-                    // Show inventory full floating text
-                    if (_lootTextManager != null && _playerTransform != null)
-                    {
-                        _lootTextManager.ShowItemLostText(response.Item, _playerTransform.position);
-                    }
-                }
+                _lootTextManager.ShowItemPickupText(response.Item, _playerTransform.position);
             }
-            else
-            {
-                Debug.LogError("[LootDropManager] InventoryManager not found - cannot add item to inventory");
-            }
+            
+            // The inventory UI will be updated automatically via NetworkManager.OnInventoryUpdate events
+            Debug.Log($"[LootDropManager] Inventory will be updated via network events");
             
             // Always remove the loot visual since server confirmed pickup
             RemoveLootDrop(response.LootId);
         }
         else
         {
-            // Show error message to player
-            Debug.LogWarning($"Failed to pick up loot: {response.Message}");
+            // Pickup failed (usually because inventory is full)
+            Debug.LogWarning($"[LootDropManager] ❌ Failed to pick up loot: {response.Message}");
             
-            // Show error floating text
+            // Show appropriate error message
+            if (GameManager.Instance?.UIManager != null)
+            {
+                GameManager.Instance.UIManager.ShowMessage(response.Message ?? "Failed to pick up item");
+            }
+            
+            // Show error floating text (usually "Inventory Full!")
             if (_lootTextManager != null && _playerTransform != null)
             {
-                _lootTextManager.ShowInventoryFullText(_playerTransform.position);
+                if (response.Message?.Contains("full") == true)
+                {
+                    _lootTextManager.ShowInventoryFullText(_playerTransform.position);
+                }
+                else
+                {
+                    _lootTextManager.ShowTooFarAwayText(_playerTransform.position); // Generic error
+                }
             }
+            
+            // Don't remove loot visual - player can try again or move closer to inventory
         }
     }
 
