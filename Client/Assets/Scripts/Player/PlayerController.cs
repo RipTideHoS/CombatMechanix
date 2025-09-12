@@ -368,49 +368,8 @@ public class PlayerController : MonoBehaviour
             _ = networkManager.SendAttack(targetId, "Attack", attackPosition);
         }
 
-        // Play local attack animation/effect based on equipped weapon
-        Debug.Log($"[PlayerController] Attempting to play attack effect from {transform.position} to {attackPosition}");
-        
-        var combatSystem = GameManager.Instance?.CombatSystem ?? FindObjectOfType<CombatSystem>();
-        if (combatSystem == null)
-        {
-            Debug.LogError("[PlayerController] CombatSystem not found - cannot play attack effects");
-            return;
-        }
-        
-        // Get equipped weapon data (uses caching for performance)
-        EquippedItem equippedWeapon = GetEquippedWeapon();
-        
-        if (equippedWeapon != null)
-        {
-            // Use equipped weapon properties for proper animation
-            Debug.Log($"[PlayerController] ✅ Playing attack with weapon: {equippedWeapon.ItemName}");
-            Debug.Log($"[PlayerController] 🎯 Weapon Type: '{equippedWeapon.WeaponType}', Range: {equippedWeapon.WeaponRange}");
-            Debug.Log($"[PlayerController] 🔬 DETAILED WEAPON DATA:");
-            Debug.Log($"[PlayerController] 🔬   WeaponType (raw): '{equippedWeapon.WeaponType}' (Length: {equippedWeapon.WeaponType?.Length ?? 0})");
-            Debug.Log($"[PlayerController] 🔬   ItemName: '{equippedWeapon.ItemName}'");
-            Debug.Log($"[PlayerController] 🔬   ItemType: '{equippedWeapon.ItemType}'");
-            Debug.Log($"[PlayerController] 🔬   ItemCategory: '{equippedWeapon.ItemCategory}'");
-            Debug.Log($"[PlayerController] 🔬   Expected Animation: {(equippedWeapon.WeaponType == "Ranged" ? "PROJECTILE 🏹" : "SWIPE ⚔️")}");
-            
-            combatSystem.PlayAttackEffectWithWeapon(
-                transform.position, 
-                attackPosition, 
-                equippedWeapon.WeaponType, 
-                equippedWeapon.WeaponRange
-            );
-        }
-        else
-        {
-            // Player is unarmed - use basic unarmed combat
-            Debug.Log("[PlayerController] 👊 Player is unarmed - using basic melee attack");
-            combatSystem.PlayAttackEffectWithWeapon(
-                transform.position, 
-                attackPosition, 
-                "Melee", 
-                1.5f // Basic unarmed range
-            );
-        }
+        // Attack animation will be played only when server confirms the attack via CombatAction message
+        Debug.Log($"[PlayerController] Attack request sent to server from {transform.position} to {attackPosition}");
     }
 
     private void HandleGatherInput()
@@ -698,7 +657,7 @@ public class PlayerController : MonoBehaviour
     /// <summary>
     /// Get the currently equipped weapon - uses cached data first, then falls back to CharacterUI
     /// </summary>
-    private EquippedItem GetEquippedWeapon()
+    public EquippedItem GetEquippedWeapon()
     {
         try
         {

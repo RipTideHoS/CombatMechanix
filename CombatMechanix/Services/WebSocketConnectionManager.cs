@@ -371,6 +371,11 @@ namespace CombatMechanix.Services
             _logger.LogInformation($"DEBUG: Combat - ConnectionId: {connection.ConnectionId}, PlayerId: {connection.PlayerId}");
             _logger.LogInformation($"Player {connection.PlayerId} attacking enemy {combatData.TargetId} for {damage} damage");
 
+            // Broadcast CombatAction for visual effects (this attack has already passed timing validation)
+            combatData.AttackerId = connection.PlayerId;
+            combatData.Damage = damage;
+            await BroadcastToAll("CombatAction", combatData);
+
             // Check if this is a ranged attack that needs projectile travel time
             var equippedWeapon = await GetPlayerEquippedWeapon(connection.PlayerId);
             if (equippedWeapon != null && equippedWeapon.WeaponType == "Ranged")
@@ -379,14 +384,23 @@ namespace CombatMechanix.Services
                 float travelTime = CalculateProjectileTravelTime(connection, combatData, equippedWeapon);
                 _logger.LogInformation($"Ranged attack - delaying damage by {travelTime:F2} seconds for projectile travel");
                 
-                // Delay damage application for projectile travel time
+                // Delay damage application for projectile travel time (but animation already played)
                 _ = DelayedDamageApplication(travelTime, combatData, damage, connection);
             }
             else
             {
-                // Immediate damage for melee attacks
+                // Immediate damage for melee attacks (animation already played)
                 bool success = await _enemyManager.DamageEnemy(combatData.TargetId, damage, connection.PlayerId);
-                await HandleDamageResult(success, combatData, connection);
+                // Note: No need to call HandleDamageResult for animation since we already broadcasted
+                if (!success)
+                {
+                    _logger.LogWarning($"Failed to damage enemy {combatData.TargetId}");
+                }
+                else
+                {
+                    // Handle rewards but don't re-broadcast animation
+                    await HandleCombatRewards(connection.PlayerId, combatData.TargetId, damage);
+                }
             }
         }
 
@@ -471,10 +485,12 @@ namespace CombatMechanix.Services
             // Attack timing validation based on weapon speed
             if (_players.TryGetValue(connection.ConnectionId, out var playerState))
             {
+                _logger.LogInformation($"🕒 Timing validation for player {connection.PlayerId} - checking attack cooldown");
                 using var scope = _serviceProvider.CreateScope();
                 var attackTimingService = scope.ServiceProvider.GetRequiredService<IAttackTimingService>();
                 
                 var timingResult = attackTimingService.ValidateAttackTiming(playerState);
+                _logger.LogInformation($"🕒 Timing result: IsValid={timingResult.IsValid}, TimeUntilNext={timingResult.TimeUntilNextAttack.TotalMilliseconds:F0}ms");
                 if (!timingResult.IsValid)
                 {
                     _logger.LogDebug("Attack timing validation failed for player {PlayerId}: {Message} (Remaining: {RemainingMs}ms)", 
@@ -510,7 +526,7 @@ namespace CombatMechanix.Services
             }
             else
             {
-                _logger.LogWarning("Could not find player state for timing validation: {PlayerId}", connection.PlayerId);
+                _logger.LogWarning("⚠️ Could not find player state for timing validation: {PlayerId} - ALLOWING ATTACK BY DEFAULT", connection.PlayerId);
             }
             
             return true;
@@ -520,7 +536,16 @@ namespace CombatMechanix.Services
         {
             await Task.Delay(TimeSpan.FromSeconds(travelTime));
             bool success = await _enemyManager.DamageEnemy(combatData.TargetId, damage, connection.PlayerId);
-            await HandleDamageResult(success, combatData, connection);
+            // Note: Animation already played immediately when attack was validated
+            if (!success)
+            {
+                _logger.LogWarning($"Failed to damage enemy {combatData.TargetId} after projectile travel");
+            }
+            else
+            {
+                // Handle rewards but don't re-broadcast animation
+                await HandleCombatRewards(connection.PlayerId, combatData.TargetId, damage);
+            }
         }
 
         private float CalculateProjectileTravelTime(WebSocketConnection connection, NetworkMessages.CombatActionMessage combatData, EquippedItem weapon)

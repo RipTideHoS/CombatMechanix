@@ -224,6 +224,7 @@ public class NetworkManager : MonoBehaviour
                     
                 case "CombatAction":
                     var combatMsg = JsonConvert.DeserializeObject<NetworkMessages.CombatActionMessage>(wrapper.Data.ToString());
+                    Debug.Log($"[NetworkManager] CombatAction message received - AttackerId: {combatMsg?.AttackerId}, TargetId: {combatMsg?.TargetId}");
                     QueueMainThreadAction(() => OnCombatAction?.Invoke(combatMsg));
                     break;
                     

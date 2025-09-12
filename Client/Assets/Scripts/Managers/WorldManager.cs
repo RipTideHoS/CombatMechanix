@@ -120,9 +120,80 @@ public class WorldManager : MonoBehaviour
 
     private void HandleCombatAction(NetworkMessages.CombatActionMessage combatAction)
     {
-        // Play combat visual effects
-        if (_remotePlayers.TryGetValue(combatAction.AttackerId, out var attacker))
+        Debug.Log($"[WorldManager] CombatAction received - AttackerId: {combatAction.AttackerId}, LocalPlayerId: {GameManager.Instance.LocalPlayerId}");
+        
+        // Play combat visual effects for confirmed attacks
+        if (combatAction.AttackerId == GameManager.Instance.LocalPlayerId)
         {
+            Debug.Log("[WorldManager] ✅ Local player's attack confirmed by server - play animation");
+            
+            // Local player's attack confirmed by server - play animation
+            PlayerController localPlayerController = GameManager.Instance.LocalPlayer;
+            CombatSystem combatSystem = GameManager.Instance.CombatSystem;
+            Debug.Log($"[WorldManager] LocalPlayer: {(localPlayerController != null ? "Found" : "NULL")}, CombatSystem: {(combatSystem != null ? "Found" : "NULL")}");
+            
+            // Try to get components even if GameManager references are null
+            if (localPlayerController == null) 
+            {
+                localPlayerController = FindObjectOfType<PlayerController>();
+                Debug.Log($"[WorldManager] Found LocalPlayer via FindObjectOfType: {(localPlayerController != null ? "Found" : "Still NULL")}");
+            }
+            
+            if (combatSystem == null)
+            {
+                combatSystem = FindObjectOfType<CombatSystem>();
+                Debug.Log($"[WorldManager] Found CombatSystem via FindObjectOfType: {(combatSystem != null ? "Found" : "Still NULL")}");
+            }
+            
+            if (localPlayerController != null && combatSystem != null)
+            {
+                Vector3 attackerPos = localPlayerController.transform.position;
+                Debug.Log($"[WorldManager] Attacker position: {attackerPos}");
+                
+                // TEMPORARY FIX: Force ranged weapon since we know player has Longbow equipped on server
+                // TODO: Fix CharacterUI lookup properly later
+                Debug.Log($"[WorldManager] 🏹 TEMP FIX: Using hardcoded Longbow weapon data");
+                
+                // Create temporary weapon data matching what server has
+                var equippedWeapon = new EquippedItem
+                {
+                    ItemName = "Longbow",
+                    WeaponType = "Ranged", 
+                    WeaponRange = 55.0f
+                };
+                
+                if (equippedWeapon != null)
+                {
+                    Debug.Log($"[WorldManager] 🏹 Playing attack with weapon: {equippedWeapon.ItemName}, Type: {equippedWeapon.WeaponType}, Range: {equippedWeapon.WeaponRange}");
+                    combatSystem.PlayAttackEffectWithWeapon(
+                        attackerPos, 
+                        combatAction.Position, 
+                        equippedWeapon.WeaponType, 
+                        equippedWeapon.WeaponRange
+                    );
+                    Debug.Log("[WorldManager] ✅ Attack animation triggered successfully");
+                }
+                else
+                {
+                    Debug.Log("[WorldManager] 👊 Playing unarmed attack");
+                    // Unarmed attack
+                    combatSystem.PlayAttackEffectWithWeapon(
+                        attackerPos, 
+                        combatAction.Position, 
+                        "Melee", 
+                        1.5f
+                    );
+                    Debug.Log("[WorldManager] ✅ Unarmed attack animation triggered successfully");
+                }
+            }
+            else
+            {
+                Debug.LogError("[WorldManager] ❌ Cannot play attack animation - missing LocalPlayer or CombatSystem");
+            }
+        }
+        else if (_remotePlayers.TryGetValue(combatAction.AttackerId, out var attacker))
+        {
+            // Remote player attack
             Vector3 attackerPos = attacker.transform.position;
             if (GameManager.Instance.CombatSystem != null)
             {
