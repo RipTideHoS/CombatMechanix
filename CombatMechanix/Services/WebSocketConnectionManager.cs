@@ -1903,6 +1903,12 @@ namespace CombatMechanix.Services
                     
                     // Send equipment update to refresh client equipment
                     await RefreshPlayerEquipment(connection.PlayerId);
+                    
+                    // Send weapon timing info if this was a weapon equip
+                    if (equipRequest.SlotType.Equals("Weapon", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await SendWeaponTimingInfo(connection.ConnectionId, connection.PlayerId);
+                    }
                 }
                 else
                 {
@@ -1977,6 +1983,12 @@ namespace CombatMechanix.Services
                     
                     // Send equipment update to refresh client equipment
                     await RefreshPlayerEquipment(connection.PlayerId);
+                    
+                    // Send weapon timing info if this was a weapon unequip (will send default timing)
+                    if (unequipRequest.SlotType.Equals("Weapon", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await SendWeaponTimingInfo(connection.ConnectionId, connection.PlayerId);
+                    }
                 }
                 else
                 {
@@ -2745,6 +2757,51 @@ namespace CombatMechanix.Services
             
             _logger.LogInformation($"{weapon.WeaponType} attack validated: {weapon.ItemName} distance {distance:F2}/{weapon.WeaponRange} range");
             return true;
+        }
+
+        /// <summary>
+        /// Send weapon timing information to client for client-side cooldown validation
+        /// </summary>
+        private async Task SendWeaponTimingInfo(string connectionId, string playerId)
+        {
+            try
+            {
+                var weapon = await GetPlayerEquippedWeapon(playerId);
+                
+                // Calculate timing info
+                decimal attackSpeed = 1.0m; // Default attack speed (1 attack per second)
+                int cooldownMs = 1000; // Default cooldown
+                string weaponType = "Melee";
+                string weaponName = "Unarmed";
+                bool hasWeaponEquipped = false;
+                
+                if (weapon != null)
+                {
+                    attackSpeed = weapon.AttackSpeed > 0 ? weapon.AttackSpeed : 1.0m;
+                    cooldownMs = (int)((1.0m / attackSpeed) * 1000); // Convert attacks/sec to ms
+                    weaponType = weapon.WeaponType;
+                    weaponName = weapon.ItemName;
+                    hasWeaponEquipped = true;
+                }
+                
+                var timingMessage = new WeaponTimingMessage
+                {
+                    PlayerId = playerId,
+                    AttackSpeed = attackSpeed,
+                    CooldownMs = cooldownMs,
+                    ServerTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    WeaponType = weaponType,
+                    WeaponName = weaponName,
+                    HasWeaponEquipped = hasWeaponEquipped
+                };
+                
+                await SendToConnection(connectionId, "WeaponTiming", timingMessage);
+                _logger.LogInformation($"Sent weapon timing info to {playerId}: {weaponName} ({attackSpeed} attacks/sec, {cooldownMs}ms cooldown)");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending weapon timing info to player {PlayerId}", playerId);
+            }
         }
         
         /// <summary>

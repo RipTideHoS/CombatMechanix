@@ -68,6 +68,9 @@ public class NetworkManager : MonoBehaviour
     public static event Action<NetworkMessages.EquipmentResponseMessage> OnEquipmentResponse;
     public static event Action<NetworkMessages.EquipmentUpdateMessage> OnEquipmentUpdate;
     
+    // Weapon timing event for client-side cooldown validation
+    public static event Action<WeaponTimingMessage> OnWeaponTiming;
+    
     // Loot-related events
     public static event Action<NetworkMessages.LootDropMessage> OnLootDrop;
     public static event Action<NetworkMessages.LootPickupResponseMessage> OnLootPickupResponse;
@@ -433,6 +436,12 @@ public class NetworkManager : MonoBehaviour
                 case "EquipmentUpdate":
                     var equipmentUpdateMsg = JsonConvert.DeserializeObject<NetworkMessages.EquipmentUpdateMessage>(wrapper.Data.ToString());
                     QueueMainThreadAction(() => OnEquipmentUpdate?.Invoke(equipmentUpdateMsg));
+                    break;
+                    
+                case "WeaponTiming":
+                    var weaponTimingMsg = JsonConvert.DeserializeObject<WeaponTimingMessage>(wrapper.Data.ToString());
+                    Debug.Log($"[NetworkManager] WeaponTiming message received: {weaponTimingMsg?.WeaponName} ({weaponTimingMsg?.CooldownMs}ms cooldown)");
+                    QueueMainThreadAction(() => OnWeaponTiming?.Invoke(weaponTimingMsg));
                     break;
                     
                 case "LootDrop":

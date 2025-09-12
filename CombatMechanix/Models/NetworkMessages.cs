@@ -519,5 +519,16 @@ namespace CombatMechanix.Models
         public DateTime DateEquipped { get; set; } = DateTime.UtcNow;
         public DateTime DateModified { get; set; } = DateTime.UtcNow;
     }
+}
 
+// Weapon timing information for client-side cooldown validation
+public class WeaponTimingMessage
+{
+    public string PlayerId { get; set; } = string.Empty;
+    public decimal AttackSpeed { get; set; } = 1.0m; // Attacks per second (e.g. 0.5 for bow)
+    public int CooldownMs { get; set; } = 1000; // Milliseconds between attacks
+    public long ServerTime { get; set; } = 0; // Server timestamp for sync
+    public string WeaponType { get; set; } = "Melee"; // "Melee", "Ranged", etc.
+    public string WeaponName { get; set; } = ""; // For debugging/display
+    public bool HasWeaponEquipped { get; set; } = false; // If no weapon, use default timing
 }

@@ -150,21 +150,12 @@ public class WorldManager : MonoBehaviour
                 Vector3 attackerPos = localPlayerController.transform.position;
                 Debug.Log($"[WorldManager] Attacker position: {attackerPos}");
                 
-                // TEMPORARY FIX: Force ranged weapon since we know player has Longbow equipped on server
-                // TODO: Fix CharacterUI lookup properly later
-                Debug.Log($"[WorldManager] 🏹 TEMP FIX: Using hardcoded Longbow weapon data");
-                
-                // Create temporary weapon data matching what server has
-                var equippedWeapon = new EquippedItem
-                {
-                    ItemName = "Longbow",
-                    WeaponType = "Ranged", 
-                    WeaponRange = 55.0f
-                };
+                // Get the actual equipped weapon from PlayerController
+                var equippedWeapon = localPlayerController.GetEquippedWeapon();
                 
                 if (equippedWeapon != null)
                 {
-                    Debug.Log($"[WorldManager] 🏹 Playing attack with weapon: {equippedWeapon.ItemName}, Type: {equippedWeapon.WeaponType}, Range: {equippedWeapon.WeaponRange}");
+                    Debug.Log($"[WorldManager] 🗡️ Playing attack with weapon: {equippedWeapon.ItemName}, Type: {equippedWeapon.WeaponType}, Range: {equippedWeapon.WeaponRange}");
                     combatSystem.PlayAttackEffectWithWeapon(
                         attackerPos, 
                         combatAction.Position, 

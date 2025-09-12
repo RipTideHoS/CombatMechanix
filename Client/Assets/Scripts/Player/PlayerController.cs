@@ -45,6 +45,9 @@ public class PlayerController : MonoBehaviour
     // Equipment caching
     private EquippedItem _cachedWeapon = null;
     private CharacterUI _characterUI = null;
+    
+    // Combat components
+    private WeaponCooldownManager _weaponCooldownManager;
 
     private void Awake()
     {
@@ -84,6 +87,9 @@ public class PlayerController : MonoBehaviour
         
         // Setup equipment system
         InitializeEquipmentSystem();
+        
+        // Initialize combat systems
+        InitializeCombatSystems();
     }
 
     private void Update()
@@ -323,6 +329,17 @@ public class PlayerController : MonoBehaviour
     {
         if (_mainCamera == null) return;
 
+        // Check weapon cooldown first - block attack if still on cooldown
+        if (_weaponCooldownManager != null && !_weaponCooldownManager.CanAttack())
+        {
+            float remaining = _weaponCooldownManager.GetRemainingCooldownSeconds();
+            Debug.Log($"[PlayerController] ❌ Attack blocked - weapon on cooldown ({remaining:F1}s remaining)");
+            
+            // Optional: Show feedback to player (you could trigger UI feedback here)
+            // GameManager.Instance.UIManager?.ShowCooldownFeedback(remaining);
+            return;
+        }
+
         // Raycast to find target or determine attack direction
         Ray ray = _mainCamera.ScreenPointToRay(Input.mousePosition);
         RaycastHit hit;
@@ -366,10 +383,16 @@ public class PlayerController : MonoBehaviour
         if (networkManager != null)
         {
             _ = networkManager.SendAttack(targetId, "Attack", attackPosition);
+            
+            // Record the attack for cooldown tracking
+            if (_weaponCooldownManager != null)
+            {
+                _weaponCooldownManager.RecordAttack();
+            }
         }
 
         // Attack animation will be played only when server confirms the attack via CombatAction message
-        Debug.Log($"[PlayerController] Attack request sent to server from {transform.position} to {attackPosition}");
+        Debug.Log($"[PlayerController] ✅ Attack request sent to server from {transform.position} to {attackPosition}");
     }
 
     private void HandleGatherInput()
@@ -470,6 +493,36 @@ public class PlayerController : MonoBehaviour
         StartCoroutine(FindCharacterUIWithRetry());
         
         Debug.Log("[PlayerController] Equipment system initialized - subscribed to all equipment events");
+    }
+    
+    private void InitializeCombatSystems()
+    {
+        Debug.Log("[PlayerController] Initializing combat systems...");
+        
+        // Get or create WeaponCooldownManager
+        _weaponCooldownManager = GetComponent<WeaponCooldownManager>();
+        if (_weaponCooldownManager == null)
+        {
+            _weaponCooldownManager = gameObject.AddComponent<WeaponCooldownManager>();
+        }
+        
+        // Subscribe to weapon timing updates from server
+        NetworkManager.OnWeaponTiming += HandleWeaponTimingUpdate;
+        
+        Debug.Log("[PlayerController] Combat systems initialized");
+    }
+    
+    private void HandleWeaponTimingUpdate(WeaponTimingMessage timingMessage)
+    {
+        if (timingMessage == null || _weaponCooldownManager == null) return;
+        
+        // Only update if this timing message is for our local player
+        string localPlayerId = GameManager.Instance?.LocalPlayerId;
+        if (!string.IsNullOrEmpty(localPlayerId) && timingMessage.PlayerId == localPlayerId)
+        {
+            Debug.Log($"[PlayerController] Updating weapon timing: {timingMessage.WeaponName} ({timingMessage.CooldownMs}ms cooldown)");
+            _weaponCooldownManager.UpdateWeaponTiming(timingMessage);
+        }
     }
     
     private System.Collections.IEnumerator FindCharacterUIWithRetry()
@@ -595,6 +648,7 @@ public class PlayerController : MonoBehaviour
         // Unsubscribe from network events
         NetworkManager.OnEquipmentResponse -= HandleEquipmentResponseForCaching;
         NetworkManager.OnEquipmentUpdate -= HandleEquipmentUpdateForCaching;
+        NetworkManager.OnWeaponTiming -= HandleWeaponTimingUpdate;
         
         // Unsubscribe from CharacterUI events
         CharacterUI.OnWeaponEquipped -= HandleWeaponEquipped;
