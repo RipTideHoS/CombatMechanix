@@ -1,16 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(tasklist:*)",
-      "Bash(powershell:*)",
-      "Bash(taskkill:*)",
+      "Bash(Stop-Process -Force)",
       "Bash(dotnet run:*)",
-      "WebFetch(domain:localhost)",
       "Bash(curl:*)",
+      "Bash(findstr:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet clean:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(sqlcmd:*)"
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": [],
