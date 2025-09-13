@@ -320,6 +320,145 @@ public class NetworkMessages
         public string Message { get; set; } = string.Empty; // Success message or error reason
         public InventoryItem Item { get; set; } = new(); // The item that was picked up (null if failed)
     }
+
+    // Phase 1: New projectile collision system messages
+    
+    /// <summary>
+    /// Server authorizes projectile launch (no damage predetermined)
+    /// </summary>
+    public class ProjectileLaunchMessage
+    {
+        /// <summary>
+        /// Unique projectile identifier for tracking
+        /// </summary>
+        public string ProjectileId { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// Player who fired the projectile
+        /// </summary>
+        public string ShooterId { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// Initial intended target (may miss and hit something else)
+        /// </summary>
+        public string IntendedTargetId { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// Launch position
+        /// </summary>
+        public Vector3Data LaunchPosition { get; set; } = new();
+        
+        /// <summary>
+        /// Target position (where player aimed)
+        /// </summary>
+        public Vector3Data TargetPosition { get; set; } = new();
+        
+        /// <summary>
+        /// Weapon stats for projectile physics
+        /// </summary>
+        public ProjectileWeaponData WeaponData { get; set; } = new();
+        
+        /// <summary>
+        /// Server timestamp of launch authorization
+        /// </summary>
+        public long Timestamp { get; set; }
+    }
+    
+    /// <summary>
+    /// Client reports projectile collision
+    /// </summary>
+    public class ProjectileHitMessage
+    {
+        /// <summary>
+        /// Projectile that hit something
+        /// </summary>
+        public string ProjectileId { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// What was hit (enemy ID, player ID, or "terrain"/"obstacle")
+        /// </summary>
+        public string TargetId { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// Type of target hit
+        /// </summary>
+        public string TargetType { get; set; } = string.Empty; // "Enemy", "Player", "Terrain", "Obstacle"
+        
+        /// <summary>
+        /// Exact collision position
+        /// </summary>
+        public Vector3Data HitPosition { get; set; } = new();
+        
+        /// <summary>
+        /// Client timestamp when collision occurred
+        /// </summary>
+        public long ClientTimestamp { get; set; }
+        
+        /// <summary>
+        /// Additional context about the collision
+        /// </summary>
+        public string CollisionContext { get; set; } = string.Empty;
+    }
+    
+    /// <summary>
+    /// Server confirms damage after validating projectile hit
+    /// </summary>
+    public class DamageConfirmationMessage
+    {
+        /// <summary>
+        /// Projectile that caused the damage
+        /// </summary>
+        public string ProjectileId { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// Attacker who fired the projectile
+        /// </summary>
+        public string AttackerId { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// Target that took damage
+        /// </summary>
+        public string TargetId { get; set; } = string.Empty;
+        
+        /// <summary>
+        /// Actual damage dealt (after defense calculations)
+        /// </summary>
+        public float ActualDamage { get; set; }
+        
+        /// <summary>
+        /// Position where damage was dealt
+        /// </summary>
+        public Vector3Data DamagePosition { get; set; } = new();
+        
+        /// <summary>
+        /// Type of damage/attack
+        /// </summary>
+        public string DamageType { get; set; } = "Projectile";
+        
+        /// <summary>
+        /// Server timestamp of damage confirmation
+        /// </summary>
+        public long Timestamp { get; set; }
+        
+        /// <summary>
+        /// Whether this was a critical hit, headshot, etc.
+        /// </summary>
+        public bool IsCritical { get; set; } = false;
+    }
+    
+    /// <summary>
+    /// Weapon data for projectile physics calculations
+    /// </summary>
+    [System.Serializable]
+    public class ProjectileWeaponData
+    {
+        public float ProjectileSpeed { get; set; } = 20f;
+        public float WeaponRange { get; set; } = 25f;
+        public float Accuracy { get; set; } = 1.0f;
+        public int BaseDamage { get; set; } = 10;
+        public string WeaponType { get; set; } = "Ranged";
+        public string WeaponName { get; set; } = string.Empty;
+    }
 }
 
 public class PlayerState

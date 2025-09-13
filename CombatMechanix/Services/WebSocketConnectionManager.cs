@@ -18,11 +18,18 @@ namespace CombatMechanix.Services
         private readonly IServiceProvider _serviceProvider;
         private EnemyManager? _enemyManager;
         private LootManager? _lootManager;
+        
+        // Phase 1: Projectile state tracking for collision-based damage system
+        private readonly ConcurrentDictionary<string, ProjectileState> _activeProjectiles = new();
+        private readonly Timer _projectileCleanupTimer;
 
         public WebSocketConnectionManager(ILogger<WebSocketConnectionManager> logger, IServiceProvider serviceProvider)
         {
             _logger = logger;
             _serviceProvider = serviceProvider;
+            
+            // Initialize projectile cleanup timer (cleanup every 30 seconds)
+            _projectileCleanupTimer = new Timer(CleanupExpiredProjectiles, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
         }
 
         /// <summary>
@@ -171,6 +178,9 @@ namespace CombatMechanix.Services
                         break;
                     case "CombatAction":
                         await HandleCombatAction(connection, wrapper.Data);
+                        break;
+                    case "ProjectileHit":
+                        await HandleProjectileHit(connection, wrapper.Data);
                         break;
                     case "ChatMessage":
                         await HandleChatMessage(connection, wrapper.Data);
@@ -333,22 +343,233 @@ namespace CombatMechanix.Services
                 return;
             }
 
-            // Route to appropriate handler based on target type
-            if (!string.IsNullOrEmpty(combatData.TargetId) && combatData.TargetId.StartsWith("enemy_"))
+            // Phase 1: New projectile-based system for ranged weapons
+            if (equippedWeapon != null && equippedWeapon.WeaponType == "Ranged")
             {
-                await HandleEnemyAttack(connection, combatData);
-            }
-            else if (!string.IsNullOrEmpty(combatData.TargetId))
-            {
-                await HandlePlayerAttack(connection, combatData);
+                // Ranged weapons use new collision-based system
+                await HandleRangedAttack(connection, combatData, equippedWeapon);
             }
             else
             {
-                // Ground attack or ranged attack without target - broadcast for visual effects
-                combatData.AttackerId = connection.PlayerId;
-                await BroadcastToAll("CombatAction", combatData);
+                // Melee weapons keep existing instant-hit system
+                if (!string.IsNullOrEmpty(combatData.TargetId) && combatData.TargetId.StartsWith("enemy_"))
+                {
+                    await HandleEnemyAttack(connection, combatData);
+                }
+                else if (!string.IsNullOrEmpty(combatData.TargetId))
+                {
+                    await HandlePlayerAttack(connection, combatData);
+                }
+                else
+                {
+                    // Ground attack - broadcast for visual effects
+                    combatData.AttackerId = connection.PlayerId;
+                    await BroadcastToAll("CombatAction", combatData);
+                }
             }
         }
+
+        #region Phase 1: New Projectile-Based Combat System
+
+        /// <summary>
+        /// Handle ranged attacks using new projectile collision system
+        /// </summary>
+        private async Task HandleRangedAttack(WebSocketConnection connection, NetworkMessages.CombatActionMessage combatData, EquippedItem weapon)
+        {
+            if (string.IsNullOrEmpty(connection.PlayerId))
+            {
+                _logger.LogWarning($"Ranged attack attempted by unauthenticated connection: {connection.ConnectionId}");
+                return;
+            }
+
+            // Generate unique projectile ID
+            var projectileId = GenerateProjectileId(connection.PlayerId);
+            
+            // Get player position from stored state
+            Vector3Data launchPosition = new Vector3Data(0, 0, 0); // Default fallback
+            if (_players.TryGetValue(connection.ConnectionId, out var playerState) && playerState != null)
+            {
+                launchPosition = playerState.Position;
+            }
+
+            // Create projectile state for tracking
+            var projectileState = new ProjectileState
+            {
+                ProjectileId = projectileId,
+                ShooterId = connection.PlayerId,
+                IntendedTargetId = combatData.TargetId,
+                LaunchPosition = launchPosition,
+                TargetPosition = combatData.Position,
+                WeaponData = new NetworkMessages.ProjectileWeaponData
+                {
+                    ProjectileSpeed = weapon.ProjectileSpeed > 0 ? weapon.ProjectileSpeed : 20f,
+                    WeaponRange = weapon.WeaponRange > 0 ? weapon.WeaponRange : 25f,
+                    Accuracy = weapon.Accuracy > 0 ? weapon.Accuracy : 0.7f,
+                    BaseDamage = weapon.AttackPower > 0 ? weapon.AttackPower : 10,
+                    WeaponType = weapon.WeaponType,
+                    WeaponName = weapon.ItemName
+                },
+                LaunchTime = DateTime.UtcNow,
+                MaxTravelDistance = weapon.WeaponRange > 0 ? weapon.WeaponRange : 25f,
+                ExpirationTime = DateTime.UtcNow.AddSeconds(10) // 10 second max lifetime
+            };
+
+            // Store projectile state for validation
+            _activeProjectiles.TryAdd(projectileId, projectileState);
+
+            // Send ProjectileLaunch to all clients (no damage predetermined)
+            var launchMessage = new NetworkMessages.ProjectileLaunchMessage
+            {
+                ProjectileId = projectileId,
+                ShooterId = connection.PlayerId,
+                IntendedTargetId = combatData.TargetId,
+                LaunchPosition = launchPosition,
+                TargetPosition = combatData.Position,
+                WeaponData = projectileState.WeaponData,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            };
+
+            await BroadcastToAll("ProjectileLaunch", launchMessage);
+
+            _logger.LogInformation($"Projectile launched: {projectileId} by {connection.PlayerId} targeting {combatData.TargetId}");
+        }
+
+        /// <summary>
+        /// Handle projectile collision reports from clients
+        /// </summary>
+        private async Task HandleProjectileHit(WebSocketConnection connection, object? data)
+        {
+            if (data == null) return;
+
+            var hitData = JsonSerializer.Deserialize<NetworkMessages.ProjectileHitMessage>(data.ToString()!);
+            if (hitData == null) return;
+
+            _logger.LogInformation($"Projectile hit report: {hitData.ProjectileId} hit {hitData.TargetType} {hitData.TargetId} at {hitData.HitPosition.X},{hitData.HitPosition.Y},{hitData.HitPosition.Z}");
+
+            // Validate projectile exists and hasn't already hit
+            if (!_activeProjectiles.TryGetValue(hitData.ProjectileId, out var projectileState))
+            {
+                _logger.LogWarning($"Projectile hit report for unknown projectile: {hitData.ProjectileId}");
+                return;
+            }
+
+            if (projectileState.HasHit)
+            {
+                _logger.LogWarning($"Duplicate hit report for projectile: {hitData.ProjectileId}");
+                return;
+            }
+
+            // Validate the hit reporter is the shooter (anti-cheat)
+            if (projectileState.ShooterId != connection.PlayerId)
+            {
+                _logger.LogWarning($"Hit report from wrong player: {connection.PlayerId} vs {projectileState.ShooterId} for projectile {hitData.ProjectileId}");
+                return;
+            }
+
+            // Validate hit timing (projectile can't hit too quickly)
+            var timeSinceLaunch = DateTime.UtcNow - projectileState.LaunchTime;
+            if (timeSinceLaunch < TimeSpan.FromMilliseconds(50)) // Minimum 50ms travel time
+            {
+                _logger.LogWarning($"Projectile hit too quickly: {hitData.ProjectileId} hit after {timeSinceLaunch.TotalMilliseconds}ms");
+                return;
+            }
+
+            // Validate hit distance is reasonable
+            var hitDistance = CalculateDistance(projectileState.LaunchPosition, hitData.HitPosition);
+            if (hitDistance > projectileState.MaxTravelDistance * 1.2f) // 20% tolerance
+            {
+                _logger.LogWarning($"Projectile hit beyond max range: {hitData.ProjectileId} traveled {hitDistance} units, max {projectileState.MaxTravelDistance}");
+                return;
+            }
+
+            // Mark projectile as hit to prevent duplicates
+            projectileState.HasHit = true;
+
+            // Calculate and apply damage based on target type
+            if (hitData.TargetType == "Enemy" && !string.IsNullOrEmpty(hitData.TargetId))
+            {
+                await ProcessEnemyProjectileHit(projectileState, hitData);
+            }
+            else if (hitData.TargetType == "Player" && !string.IsNullOrEmpty(hitData.TargetId))
+            {
+                await ProcessPlayerProjectileHit(projectileState, hitData);
+            }
+            else
+            {
+                // Terrain/obstacle hit - no damage but remove projectile
+                _logger.LogInformation($"Projectile {hitData.ProjectileId} hit {hitData.TargetType} at {hitData.HitPosition.X},{hitData.HitPosition.Y},{hitData.HitPosition.Z}");
+            }
+
+            // Clean up projectile
+            _activeProjectiles.TryRemove(hitData.ProjectileId, out _);
+        }
+
+        /// <summary>
+        /// Process projectile hit on enemy
+        /// </summary>
+        private async Task ProcessEnemyProjectileHit(ProjectileState projectile, NetworkMessages.ProjectileHitMessage hitData)
+        {
+            if (_enemyManager == null)
+            {
+                _logger.LogError("EnemyManager not available for projectile damage processing");
+                return;
+            }
+
+            // Calculate damage based on shooter's stats and weapon
+            float damage = CalculatePlayerDamage(projectile.ShooterId, "RangedAttack");
+            
+            // Apply damage to enemy
+            bool success = await _enemyManager.DamageEnemy(hitData.TargetId!, damage, projectile.ShooterId);
+            
+            if (success)
+            {
+                // Send damage confirmation to all clients
+                var confirmationMessage = new NetworkMessages.DamageConfirmationMessage
+                {
+                    ProjectileId = projectile.ProjectileId,
+                    AttackerId = projectile.ShooterId,
+                    TargetId = hitData.TargetId!,
+                    ActualDamage = damage,
+                    DamagePosition = hitData.HitPosition,
+                    DamageType = "Projectile",
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    IsCritical = false // TODO: Implement critical hit calculation
+                };
+
+                await BroadcastToAll("DamageConfirmation", confirmationMessage);
+                
+                // Handle combat rewards
+                await HandleCombatRewards(projectile.ShooterId, hitData.TargetId!, damage);
+                
+                _logger.LogInformation($"Projectile damage confirmed: {projectile.ProjectileId} dealt {damage} damage to {hitData.TargetId}");
+            }
+            else
+            {
+                _logger.LogWarning($"Failed to apply projectile damage: {projectile.ProjectileId} to {hitData.TargetId}");
+            }
+        }
+
+        /// <summary>
+        /// Process projectile hit on player (PvP)
+        /// </summary>
+        private async Task ProcessPlayerProjectileHit(ProjectileState projectile, NetworkMessages.ProjectileHitMessage hitData)
+        {
+            // TODO: Implement PvP projectile damage when PvP system is ready
+            _logger.LogInformation($"PvP projectile hit: {projectile.ProjectileId} hit player {hitData.TargetId} (PvP not implemented)");
+        }
+
+        /// <summary>
+        /// Calculate distance between two points
+        /// </summary>
+        private float CalculateDistance(Vector3Data point1, Vector3Data point2)
+        {
+            float dx = point2.X - point1.X;
+            float dy = point2.Y - point1.Y;
+            float dz = point2.Z - point1.Z;
+            return (float)Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        #endregion
 
         private async Task HandleEnemyAttack(WebSocketConnection connection, NetworkMessages.CombatActionMessage combatData)
         {
@@ -2811,6 +3032,68 @@ namespace CombatMechanix.Services
         {
             return _connections.Values.Where(c => c.WebSocket.State == WebSocketState.Open);
         }
+
+        #region Phase 1: Projectile State Tracking
+
+        /// <summary>
+        /// Cleanup expired projectiles that haven't hit anything
+        /// </summary>
+        private void CleanupExpiredProjectiles(object? state)
+        {
+            try
+            {
+                var expiredProjectiles = _activeProjectiles
+                    .Where(p => DateTime.UtcNow - p.Value.LaunchTime > TimeSpan.FromSeconds(10))
+                    .Select(p => p.Key)
+                    .ToList();
+
+                foreach (var projectileId in expiredProjectiles)
+                {
+                    if (_activeProjectiles.TryRemove(projectileId, out var projectile))
+                    {
+                        _logger.LogDebug($"Cleaned up expired projectile: {projectileId} from {projectile.ShooterId}");
+                    }
+                }
+
+                if (expiredProjectiles.Count > 0)
+                {
+                    _logger.LogInformation($"Cleaned up {expiredProjectiles.Count} expired projectiles");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during projectile cleanup");
+            }
+        }
+
+        /// <summary>
+        /// Generate unique projectile ID
+        /// </summary>
+        private string GenerateProjectileId(string shooterId)
+        {
+            return $"proj_{shooterId}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{Guid.NewGuid().ToString("N")[..8]}";
+        }
+
+        #endregion
+    }
+
+    /// <summary>
+    /// Tracks active projectile state for collision-based damage validation
+    /// </summary>
+    public class ProjectileState
+    {
+        public string ProjectileId { get; set; } = string.Empty;
+        public string ShooterId { get; set; } = string.Empty;
+        public string? IntendedTargetId { get; set; }
+        public Vector3Data LaunchPosition { get; set; } = new();
+        public Vector3Data TargetPosition { get; set; } = new();
+        public NetworkMessages.ProjectileWeaponData WeaponData { get; set; } = new();
+        public DateTime LaunchTime { get; set; } = DateTime.UtcNow;
+        public bool HasHit { get; set; } = false;
+        
+        // Validation data
+        public float MaxTravelDistance { get; set; }
+        public DateTime ExpirationTime { get; set; }
     }
 
     public class WebSocketConnection

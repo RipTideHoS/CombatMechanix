@@ -74,6 +74,10 @@ public class NetworkManager : MonoBehaviour
     // Loot-related events
     public static event Action<NetworkMessages.LootDropMessage> OnLootDrop;
     public static event Action<NetworkMessages.LootPickupResponseMessage> OnLootPickupResponse;
+    
+    // Phase 1: New projectile collision system events
+    public static event Action<NetworkMessages.ProjectileLaunchMessage> OnProjectileLaunch;
+    public static event Action<NetworkMessages.DamageConfirmationMessage> OnDamageConfirmation;
 
     private ClientWebSocket _webSocket;
     private CancellationTokenSource _cancellationTokenSource;
@@ -459,6 +463,29 @@ public class NetworkManager : MonoBehaviour
                         QueueMainThreadAction(() => OnLootPickupResponse?.Invoke(lootPickupMsg));
                     }
                     break;
+                    
+                // Phase 1: New projectile collision system message handlers
+                case "ProjectileLaunch":
+                    var projectileLaunchMsg = JsonConvert.DeserializeObject<NetworkMessages.ProjectileLaunchMessage>(wrapper.Data.ToString());
+                    if (projectileLaunchMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] ProjectileLaunch received: {projectileLaunchMsg.ProjectileId} by {projectileLaunchMsg.ShooterId}");
+                        QueueMainThreadAction(() => OnProjectileLaunch?.Invoke(projectileLaunchMsg));
+                    }
+                    break;
+                    
+                case "DamageConfirmation":
+                    var damageConfirmationMsg = JsonConvert.DeserializeObject<NetworkMessages.DamageConfirmationMessage>(wrapper.Data.ToString());
+                    if (damageConfirmationMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] DamageConfirmation received: {damageConfirmationMsg.ProjectileId} dealt {damageConfirmationMsg.ActualDamage} damage to {damageConfirmationMsg.TargetId}");
+                        QueueMainThreadAction(() => OnDamageConfirmation?.Invoke(damageConfirmationMsg));
+                    }
+                    break;
+                    
+                default:
+                    Debug.LogWarning($"Unknown message type: {wrapper.Type}");
+                    break;
             }
         }
         catch (Exception ex)
@@ -516,6 +543,34 @@ public class NetworkManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Failed to send attack: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Send projectile hit report to server for collision-based damage validation
+    /// </summary>
+    public async Task SendProjectileHit(string projectileId, string targetId, string targetType, Vector3 hitPosition, string collisionContext = "")
+    {
+        if (!IsConnected) return;
+        
+        try
+        {
+            var hitMessage = new NetworkMessages.ProjectileHitMessage
+            {
+                ProjectileId = projectileId,
+                TargetId = targetId,
+                TargetType = targetType,
+                HitPosition = new Vector3Data(hitPosition),
+                ClientTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                CollisionContext = collisionContext
+            };
+            
+            await SendMessage("ProjectileHit", hitMessage);
+            Debug.Log($"[NetworkManager] Sent ProjectileHit: {projectileId} hit {targetType} {targetId}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send projectile hit: {ex.Message}");
         }
     }
 
