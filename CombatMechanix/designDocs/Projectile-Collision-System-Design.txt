@@ -1,0 +1,167 @@
+===================================================================================
+PROJECTILE COLLISION SYSTEM DESIGN - REVISION 2
+===================================================================================
+Date: 2025-09-13
+Status: Phase 1 Partially Complete, Planning Phases 2-5
+
+OVERVIEW
+--------
+Fix projectile animations where damage appears before projectiles actually arrive at targets.
+Rework system to be fully collision-based with support for multi-projectile weapons and
+dynamic target acquisition.
+
+REQUIREMENTS
+------------
+1. Projectile collision determines hit/miss, not server predetermination
+2. Server validates but projectile collision is authoritative
+3. Support multi-projectile weapons (shotguns, spray weapons)
+4. Handle enemies moving into projectile paths (untargeted hits)
+5. Handle enemies moving behind cover before projectile arrives
+
+CURRENT IMPLEMENTATION STATUS (Phase 1 - PARTIALLY COMPLETE)
+------------------------------------------------------------
+
+✅ ALREADY IMPLEMENTED:
+- Server launches projectile visuals with ProjectileLaunchMessage
+- Client-side projectile collision detection in Projectile.cs:82-114
+- Client reports collisions via SendProjectileHit() to server
+- Server validates and applies damage in HandleProjectileHit()
+- Visual damage effects via DamageConfirmationMessage
+
+❌ CURRENT PROBLEMS:
+1. TIMING ISSUE: Damage effects appear before projectiles hit due to server-side
+   instant damage calculation in WebSocketConnectionManager.cs:783-814
+2. LIMITED MULTI-PROJECTILE: System designed around single targeted projectile
+3. NO UNTARGETED DETECTION: Won't hit enemies that move into projectile path
+4. MISSING COLLISION VALIDATION: Server doesn't verify collision accuracy
+
+IMPLEMENTATION PLAN
+===================
+
+PHASE 2: FIX TIMING AND MULTI-HIT SUPPORT
+------------------------------------------
+Goal: Ensure damage only occurs when projectiles actually hit
+
+2A: SERVER-SIDE TIMING FIX
+- Problem: WebSocketConnectionManager.cs:783-814 instantly applies damage
+- Solution: Remove instant damage, only apply when client reports collision
+- Files: CombatMechanix/Services/WebSocketConnectionManager.cs
+- Details:
+  * Remove damage calculation from HandleRangedAttack()
+  * Only apply damage in HandleProjectileHit() when collision reported
+  * This makes damage timing depend on actual projectile travel
+
+2B: ENHANCED COLLISION DETECTION
+- Problem: Limited to single target validation
+- Solution: Detect any valid targets in collision area, not just intended target
+- Files: Client/Assets/Scripts/Combat/Projectile.cs
+- Details:
+  * Expand collision detection to find all enemies in collision sphere
+  * Remove dependency on intended target for hit validation
+  * Support hitting enemies that move into projectile path
+
+PHASE 3: MULTI-PROJECTILE WEAPONS
+---------------------------------
+Goal: Support weapons that fire multiple projectiles (shotguns, spray weapons)
+
+3A: MULTI-LAUNCH SYSTEM
+- Extend ProjectileLaunchMessage to support multiple projectile IDs
+- Update CombatSystem.SpawnProjectile() to handle projectile arrays
+- Files: NetworkMessages.cs, CombatSystem.cs
+- Details:
+  * Add ProjectileId[] array to ProjectileLaunchMessage
+  * Each projectile gets unique ID for individual tracking
+  * Server creates multiple ProjectileState entries
+
+3B: SPREAD PATTERN LOGIC
+- Add weapon-specific spread patterns (cone, scatter, linear)
+- Each projectile gets individual collision tracking
+- Files: Projectile.cs, WeaponCooldownManager.cs
+- Details:
+  * Define spread patterns in weapon data (cone angle, projectile count)
+  * Calculate individual launch directions with spread
+  * Each projectile reports collisions independently
+
+PHASE 4: ADVANCED COLLISION VALIDATION
+--------------------------------------
+Goal: Prevent cheating and improve accuracy
+
+4A: SERVER-SIDE COLLISION VERIFICATION
+- Server validates reported collisions are physically possible
+- Check projectile path, timing, and target positions
+- Files: WebSocketConnectionManager.cs
+- Details:
+  * Validate collision timing based on projectile speed/distance
+  * Check if target was at reported position during collision time
+  * Reject impossible collision reports (anti-cheat)
+
+4B: OBSTRUCTION DETECTION
+- Both client and server check for walls/obstacles blocking projectiles
+- Validate line-of-sight at collision time
+- Files: Projectile.cs, server validation logic
+- Details:
+  * Raycast from launch to collision point checking for obstructions
+  * Server validates no obstacles blocked the projectile path
+  * Support for destructible cover (future enhancement)
+
+PHASE 5: MOVING TARGET INTERCEPTION
+-----------------------------------
+Goal: Handle targets moving into/out of projectile paths
+
+5A: DYNAMIC TARGET ACQUISITION
+- Projectiles can hit enemies that weren't originally targeted
+- Remove dependency on IntendedTargetId for damage validation
+- Files: Projectile.cs, WebSocketConnectionManager.cs
+- Details:
+  * Projectile collision detection finds all valid targets in area
+  * Server accepts collision reports for any valid target
+  * Support for "friendly fire" scenarios (if PvP enabled)
+
+5B: MOVEMENT PREDICTION (OPTIONAL)
+- Predict target movement for better hit detection
+- Improve accuracy for fast-moving enemies
+- Files: AI/movement prediction systems
+- Details:
+  * Optional client-side prediction for smoother gameplay
+  * Server still authoritative on final collision validation
+  * Enhance AI to dodge projectiles (future gameplay feature)
+
+RECOMMENDED STARTING POINT: Phase 2A
+====================================
+
+IMMEDIATE ISSUE:
+Damage appears before projectile collision due to instant server-side damage
+in WebSocketConnectionManager.cs:783-814.
+
+QUICK FIX:
+1. Remove instant damage from HandleRangedAttack()
+2. Only apply damage when HandleProjectileHit() receives collision report
+3. This will make damage timing depend on actual projectile travel/collision
+
+CRITICAL FILES:
+- CombatMechanix/Services/WebSocketConnectionManager.cs (server damage timing)
+- Client/Assets/Scripts/Combat/Projectile.cs (collision detection)
+
+IMPLEMENTATION NOTES
+====================
+
+KEY ARCHITECTURE DECISIONS:
+1. Client-side collision detection with server validation
+2. Projectile ID tracking for multi-projectile support
+3. Event-driven damage application (collision -> damage, not launch -> damage)
+4. Separation of visual projectiles from damage calculation
+
+PERFORMANCE CONSIDERATIONS:
+1. Limit max projectiles per weapon to prevent spam
+2. Use object pooling for projectile GameObjects (already implemented)
+3. Clean up old ProjectileState entries (timer already implemented)
+4. Batch collision reports for multi-projectile weapons
+
+TESTING STRATEGY:
+1. Phase 2A: Verify damage only occurs after collision
+2. Phase 3: Test shotgun-style weapons with multiple projectiles
+3. Phase 4: Test anti-cheat validation with impossible collision reports
+4. Phase 5: Test moving enemies and cover mechanics
+
+This plan builds on the existing Phase 1 foundation and addresses all core requirements
+while maintaining the existing architecture patterns.

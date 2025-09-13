@@ -400,4 +400,76 @@ public class CombatSystem : MonoBehaviour
         }
         _isShaking = false;
     }
+
+    #region Phase 1: New Projectile Collision System
+
+    /// <summary>
+    /// Spawn visual projectile for collision-based damage system
+    /// </summary>
+    public void SpawnProjectile(string projectileId, Vector3Data launchPosition, Vector3Data targetPosition, NetworkMessages.ProjectileWeaponData weaponData)
+    {
+        Debug.Log($"[CombatSystem] SpawnProjectile: {projectileId} from {launchPosition.X},{launchPosition.Y},{launchPosition.Z} to {targetPosition.X},{targetPosition.Y},{targetPosition.Z}");
+        
+        Vector3 launchPos = launchPosition.ToVector3();
+        Vector3 targetPos = targetPosition.ToVector3();
+        
+        // Create projectile dynamically (reuse existing method)
+        GameObject projectileObj = CreateProjectileDynamically(launchPos);
+        if (projectileObj == null)
+        {
+            Debug.LogError("[CombatSystem] Failed to create projectile!");
+            return;
+        }
+        
+        // Add or get Projectile component
+        Projectile projectileComponent = projectileObj.GetComponent<Projectile>();
+        if (projectileComponent == null)
+        {
+            projectileComponent = projectileObj.AddComponent<Projectile>();
+        }
+        
+        // Configure projectile with server data
+        projectileComponent.Initialize(
+            projectileId,
+            launchPos,
+            targetPos,
+            weaponData.ProjectileSpeed,
+            weaponData.WeaponRange
+        );
+        
+        Debug.Log($"[CombatSystem] ✅ Projectile {projectileId} spawned and initialized");
+    }
+
+    /// <summary>
+    /// Play damage effects when server confirms damage
+    /// </summary>
+    public void PlayDamageEffect(Vector3Data damagePosition, float damage, bool isCritical)
+    {
+        Vector3 effectPos = damagePosition.ToVector3();
+        
+        Debug.Log($"[CombatSystem] Playing damage effect at {effectPos} - Damage: {damage}, Critical: {isCritical}");
+        
+        // Create simple damage effect (can be enhanced later)
+        GameObject effect = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        effect.name = "DamageEffect";
+        effect.transform.position = effectPos;
+        effect.transform.localScale = Vector3.one * 0.2f;
+        
+        // Color based on critical hit
+        var renderer = effect.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            Material effectMaterial = new Material(Shader.Find("Standard"));
+            effectMaterial.color = isCritical ? Color.yellow : Color.white;
+            renderer.material = effectMaterial;
+        }
+        
+        // Camera shake for damage
+        // StartCoroutine(CameraShake(0.1f, isCritical ? 0.3f : 0.1f)); // TODO: Implement CameraShake
+        
+        // Destroy effect after short duration
+        Destroy(effect, 0.5f);
+    }
+
+    #endregion
 }

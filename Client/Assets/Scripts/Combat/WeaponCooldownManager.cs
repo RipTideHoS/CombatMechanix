@@ -63,13 +63,15 @@ public class WeaponCooldownManager : MonoBehaviour
         long currentTime = GetSyncedTime();
         long timeSinceLastAttack = currentTime - _lastAttackTime;
         
-        bool canAttack = timeSinceLastAttack >= _currentWeaponTiming.CooldownMs;
+        // TEMPORARY: Reduce cooldown for Phase 1 testing
+        int testCooldown = Mathf.Min(_currentWeaponTiming.CooldownMs, 500); // Max 500ms cooldown for testing
+        bool canAttack = timeSinceLastAttack >= testCooldown;
         
         if (showDebugInfo && !canAttack)
         {
-            long remainingMs = _currentWeaponTiming.CooldownMs - timeSinceLastAttack;
+            long remainingMs = testCooldown - timeSinceLastAttack;
             Debug.Log($"[WeaponCooldownManager] Attack blocked: {remainingMs}ms remaining " +
-                     $"(last: {_lastAttackTime}, now: {currentTime}, diff: {timeSinceLastAttack}ms)");
+                     $"(last: {_lastAttackTime}, now: {currentTime}, diff: {timeSinceLastAttack}ms, testCooldown: {testCooldown}ms)");
         }
         
         return canAttack;

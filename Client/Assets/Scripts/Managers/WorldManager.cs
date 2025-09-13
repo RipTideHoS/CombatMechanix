@@ -26,6 +26,10 @@ public class WorldManager : MonoBehaviour
         NetworkManager.OnWorldUpdate += HandleWorldUpdate;
         NetworkManager.OnPlayerJoined += HandlePlayerJoined;
         NetworkManager.OnCombatAction += HandleCombatAction;
+        
+        // Phase 1: Subscribe to new projectile collision system events
+        NetworkManager.OnProjectileLaunch += HandleProjectileLaunch;
+        NetworkManager.OnDamageConfirmation += HandleDamageConfirmation;
 
         // Pre-populate object pools
         InitializeObjectPools();
@@ -325,6 +329,70 @@ public class WorldManager : MonoBehaviour
         }
     }
 
+    #region Phase 1: New Projectile Collision System Handlers
+
+    /// <summary>
+    /// Handle projectile launch messages from server to spawn visual projectiles
+    /// </summary>
+    private void HandleProjectileLaunch(NetworkMessages.ProjectileLaunchMessage launchMessage)
+    {
+        Debug.Log($"[WorldManager] ProjectileLaunch received: {launchMessage.ProjectileId} by {launchMessage.ShooterId}");
+        
+        // Only spawn visual projectiles for ranged attacks
+        if (launchMessage.WeaponData.WeaponType == "Ranged")
+        {
+            CombatSystem combatSystem = GameManager.Instance.CombatSystem;
+            if (combatSystem == null)
+            {
+                combatSystem = FindObjectOfType<CombatSystem>();
+            }
+            
+            if (combatSystem != null)
+            {
+                Debug.Log($"[WorldManager] 🏹 Spawning projectile: {launchMessage.ProjectileId}");
+                
+                // Spawn visual projectile through CombatSystem
+                combatSystem.SpawnProjectile(
+                    launchMessage.ProjectileId,
+                    launchMessage.LaunchPosition,
+                    launchMessage.TargetPosition,
+                    launchMessage.WeaponData
+                );
+            }
+            else
+            {
+                Debug.LogError("[WorldManager] CombatSystem not found - cannot spawn projectile!");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Handle damage confirmation messages for visual effects
+    /// </summary>
+    private void HandleDamageConfirmation(NetworkMessages.DamageConfirmationMessage damageMessage)
+    {
+        Debug.Log($"[WorldManager] DamageConfirmation: {damageMessage.ProjectileId} dealt {damageMessage.ActualDamage} to {damageMessage.TargetId}");
+        
+        // Play damage visual effects
+        CombatSystem combatSystem = GameManager.Instance.CombatSystem;
+        if (combatSystem == null)
+        {
+            combatSystem = FindObjectOfType<CombatSystem>();
+        }
+        
+        if (combatSystem != null)
+        {
+            // Play impact effect at damage position
+            combatSystem.PlayDamageEffect(
+                damageMessage.DamagePosition,
+                damageMessage.ActualDamage,
+                damageMessage.IsCritical
+            );
+        }
+    }
+
+    #endregion
+
     private void OnDestroy()
     {
         // Unsubscribe from events
@@ -332,5 +400,9 @@ public class WorldManager : MonoBehaviour
         NetworkManager.OnWorldUpdate -= HandleWorldUpdate;
         NetworkManager.OnPlayerJoined -= HandlePlayerJoined;
         NetworkManager.OnCombatAction -= HandleCombatAction;
+        
+        // Phase 1: Unsubscribe from projectile events
+        NetworkManager.OnProjectileLaunch -= HandleProjectileLaunch;
+        NetworkManager.OnDamageConfirmation -= HandleDamageConfirmation;
     }
 }

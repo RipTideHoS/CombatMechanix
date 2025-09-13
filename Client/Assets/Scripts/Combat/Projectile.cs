@@ -21,6 +21,10 @@ public class Projectile : MonoBehaviour
     private bool _hasHit = false;
     private AudioSource _audioSource;
     
+    // Phase 1: New collision-based damage system
+    private string _projectileId = string.Empty;
+    private bool _isCollisionBased = false;
+    
     // Event for when projectile hits target or max range
     public delegate void ProjectileHitHandler(Vector3 hitPosition, bool hitTarget);
     public event ProjectileHitHandler OnProjectileHit;
@@ -115,9 +119,33 @@ public class Projectile : MonoBehaviour
         Speed = speed;
         Range = range;
         Accuracy = accuracy;
+        _isCollisionBased = false;
         
         // Calculate direction to target
         _direction = (targetPosition - transform.position).normalized;
+    }
+    
+    /// <summary>
+    /// Initialize projectile for Phase 1 collision-based damage system
+    /// </summary>
+    public void Initialize(string projectileId, Vector3 launchPosition, Vector3 targetPosition, float speed, float range)
+    {
+        _projectileId = projectileId;
+        _targetPosition = targetPosition;
+        Speed = speed;
+        Range = range;
+        _isCollisionBased = true;
+        
+        Debug.Log($"[Projectile] Initialized collision-based projectile: {projectileId}");
+        
+        // Calculate direction to target
+        _direction = (targetPosition - launchPosition).normalized;
+        
+        // Set position (may be different from current transform position)
+        transform.position = launchPosition;
+        _startPosition = launchPosition;
+        
+        Debug.Log($"[Projectile] Direction: {_direction}, Speed: {speed}, Range: {range}");
     }
     
     private void HitTarget(Vector3 hitPosition, bool hitValidTarget)
@@ -144,6 +172,12 @@ public class Projectile : MonoBehaviour
             _audioSource.PlayOneShot(HitSound);
         }
         
+        // Phase 1: Send collision report to server for collision-based projectiles
+        if (_isCollisionBased && !string.IsNullOrEmpty(_projectileId))
+        {
+            SendCollisionReportToServer(hitPosition, hitValidTarget);
+        }
+        
         // Notify listeners
         OnProjectileHit?.Invoke(hitPosition, hitValidTarget);
         
@@ -153,6 +187,79 @@ public class Projectile : MonoBehaviour
         Destroy(gameObject, 1f);
     }
     
+    #region Phase 1: Collision-Based Damage System
+
+    /// <summary>
+    /// Send collision report to server for damage validation
+    /// </summary>
+    private async void SendCollisionReportToServer(Vector3 hitPosition, bool hitValidTarget)
+    {
+        try
+        {
+            // Determine what was hit and build collision report
+            string targetId = "";
+            string targetType = "Terrain";
+            string collisionContext = "";
+
+            if (hitValidTarget)
+            {
+                // Try to identify the specific target that was hit
+                Collider[] colliders = Physics.OverlapSphere(hitPosition, 0.1f);
+                foreach (var collider in colliders)
+                {
+                    var enemy = collider.GetComponent<EnemyBase>();
+                    if (enemy != null)
+                    {
+                        targetId = enemy.EnemyId;
+                        targetType = "Enemy";
+                        collisionContext = $"Enemy:{enemy.EnemyName}";
+                        break;
+                    }
+
+                    var player = collider.GetComponent<RemotePlayer>();
+                    if (player != null)
+                    {
+                        targetId = player.PlayerId;
+                        targetType = "Player";
+                        collisionContext = $"Player:{player.PlayerName}";
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                collisionContext = "TerrainHit";
+            }
+
+            Debug.Log($"[Projectile] Sending collision report: {_projectileId} hit {targetType} {targetId} at {hitPosition}");
+
+            // Send collision report to server
+            var networkManager = GameManager.Instance?.NetworkManager ?? FindObjectOfType<NetworkManager>();
+            if (networkManager != null)
+            {
+                await networkManager.SendProjectileHit(
+                    _projectileId,
+                    targetId,
+                    targetType,
+                    hitPosition,
+                    collisionContext
+                );
+            }
+            else
+            {
+                Debug.LogError("[Projectile] NetworkManager not found - cannot send collision report");
+            }
+
+            Debug.Log($"[Projectile] ✅ Collision report sent successfully");
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[Projectile] Failed to send collision report: {ex.Message}");
+        }
+    }
+
+    #endregion
+
     private void OnDestroy()
     {
         Debug.Log("Projectile destroyed");

@@ -317,10 +317,12 @@ namespace CombatMechanix.Services
 
             // Determine actual attack type based on equipped weapon
             var equippedWeapon = await GetPlayerEquippedWeapon(connection.PlayerId);
+            _logger.LogInformation($"[DEBUG WEAPON] Player {connection.PlayerId} equipped weapon: {(equippedWeapon != null ? $"{equippedWeapon.ItemName} (Type: {equippedWeapon.WeaponType})" : "None")}");
             if (equippedWeapon != null)
             {
                 // Update attack type based on weapon
                 combatData.AttackType = equippedWeapon.WeaponType == "Ranged" ? "RangedAttack" : "MeleeAttack";
+                _logger.LogInformation($"[DEBUG WEAPON] Attack type determined: {combatData.AttackType} for weapon type {equippedWeapon.WeaponType}");
                 
                 // Validate weapon range for both melee and ranged weapons
                 if (!ValidateWeaponRange(connection, combatData, equippedWeapon))
@@ -346,11 +348,13 @@ namespace CombatMechanix.Services
             // Phase 1: New projectile-based system for ranged weapons
             if (equippedWeapon != null && equippedWeapon.WeaponType == "Ranged")
             {
+                _logger.LogInformation($"[DEBUG RANGED] Taking ranged attack path for weapon {equippedWeapon.ItemName}");
                 // Ranged weapons use new collision-based system
                 await HandleRangedAttack(connection, combatData, equippedWeapon);
             }
             else
             {
+                _logger.LogInformation($"[DEBUG MELEE] Taking melee attack path for weapon {(equippedWeapon != null ? equippedWeapon.ItemName + " (" + equippedWeapon.WeaponType + ")" : "unarmed")}");
                 // Melee weapons keep existing instant-hit system
                 if (!string.IsNullOrEmpty(combatData.TargetId) && combatData.TargetId.StartsWith("enemy_"))
                 {
