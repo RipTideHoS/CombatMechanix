@@ -601,31 +601,21 @@ namespace CombatMechanix.Services
             combatData.Damage = damage;
             await BroadcastToAll("CombatAction", combatData);
 
-            // Check if this is a ranged attack that needs projectile travel time
-            var equippedWeapon = await GetPlayerEquippedWeapon(connection.PlayerId);
-            if (equippedWeapon != null && equippedWeapon.WeaponType == "Ranged")
+            // Phase 2A: HandleEnemyAttack now only handles melee attacks
+            // Ranged attacks are routed to HandleRangedAttack() in HandleCombatAction()
+            _logger.LogInformation($"[PHASE 2A] HandleEnemyAttack processing melee attack for {damage} damage");
+
+            // Immediate damage for melee attacks (animation already played)
+            bool success = await _enemyManager.DamageEnemy(combatData.TargetId, damage, connection.PlayerId);
+            // Note: No need to call HandleDamageResult for animation since we already broadcasted
+            if (!success)
             {
-                // Calculate projectile travel time
-                float travelTime = CalculateProjectileTravelTime(connection, combatData, equippedWeapon);
-                _logger.LogInformation($"Ranged attack - delaying damage by {travelTime:F2} seconds for projectile travel");
-                
-                // Delay damage application for projectile travel time (but animation already played)
-                _ = DelayedDamageApplication(travelTime, combatData, damage, connection);
+                _logger.LogWarning($"Failed to damage enemy {combatData.TargetId}");
             }
             else
             {
-                // Immediate damage for melee attacks (animation already played)
-                bool success = await _enemyManager.DamageEnemy(combatData.TargetId, damage, connection.PlayerId);
-                // Note: No need to call HandleDamageResult for animation since we already broadcasted
-                if (!success)
-                {
-                    _logger.LogWarning($"Failed to damage enemy {combatData.TargetId}");
-                }
-                else
-                {
-                    // Handle rewards but don't re-broadcast animation
-                    await HandleCombatRewards(connection.PlayerId, combatData.TargetId, damage);
-                }
+                // Handle rewards but don't re-broadcast animation
+                await HandleCombatRewards(connection.PlayerId, combatData.TargetId, damage);
             }
         }
 
