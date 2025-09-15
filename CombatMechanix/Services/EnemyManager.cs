@@ -381,10 +381,8 @@ namespace CombatMechanix.Services
         private async Task<AIWorldContext> BuildAIWorldContext()
         {
             var activePlayers = await GetActivePlayersForAI();
-            Console.WriteLine($"[DEBUG] EnemyManager.BuildAIWorldContext: Got {activePlayers.Count} players from cache/DB");
             foreach (var player in activePlayers)
             {
-                Console.WriteLine($"[DEBUG] Player {player.PlayerId} has Health={player.Health}");
             }
             
             var context = new AIWorldContext

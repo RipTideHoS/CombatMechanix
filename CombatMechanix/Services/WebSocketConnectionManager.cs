@@ -167,8 +167,6 @@ namespace CombatMechanix.Services
                 // Special logging for combat messages
                 if (wrapper.Type == "CombatAction")
                 {
-                    _logger.LogInformation($"[DEBUG COMBAT] CombatAction message received from {connection.ConnectionId}");
-                    _logger.LogInformation($"[DEBUG COMBAT] Raw combat data: {JsonSerializer.Serialize(wrapper.Data)}");
                 }
 
                 switch (wrapper.Type)
@@ -267,7 +265,6 @@ namespace CombatMechanix.Services
                 // Reject movement from dead players
                 if (player.Health <= 0)
                 {
-                    Console.WriteLine($"[DEBUG] Rejected movement from dead player {player.PlayerId} (Health={player.Health})");
                     return;
                 }
                 
@@ -317,12 +314,10 @@ namespace CombatMechanix.Services
 
             // Determine actual attack type based on equipped weapon
             var equippedWeapon = await GetPlayerEquippedWeapon(connection.PlayerId);
-            _logger.LogInformation($"[DEBUG WEAPON] Player {connection.PlayerId} equipped weapon: {(equippedWeapon != null ? $"{equippedWeapon.ItemName} (Type: {equippedWeapon.WeaponType})" : "None")}");
             if (equippedWeapon != null)
             {
                 // Update attack type based on weapon
                 combatData.AttackType = equippedWeapon.WeaponType == "Ranged" ? "RangedAttack" : "MeleeAttack";
-                _logger.LogInformation($"[DEBUG WEAPON] Attack type determined: {combatData.AttackType} for weapon type {equippedWeapon.WeaponType}");
                 
                 // Validate weapon range for both melee and ranged weapons
                 if (!ValidateWeaponRange(connection, combatData, equippedWeapon))
@@ -348,7 +343,6 @@ namespace CombatMechanix.Services
             // Phase 1: New projectile-based system for ranged weapons
             if (equippedWeapon != null && equippedWeapon.WeaponType == "Ranged")
             {
-                _logger.LogInformation($"[DEBUG RANGED] Taking ranged attack path for weapon {equippedWeapon.ItemName}");
                 // Ranged weapons use new collision-based system
                 await HandleRangedAttack(connection, combatData, equippedWeapon);
             }
@@ -458,7 +452,6 @@ namespace CombatMechanix.Services
 
             await BroadcastToAll("ProjectileLaunch", launchMessage);
 
-            _logger.LogInformation($"[PHASE 3] Launched {projectiles.Count} projectile(s) by {connection.PlayerId} targeting {combatData.TargetId}");
         }
 
         #region Phase 3: Multi-Projectile Helper Methods
@@ -905,7 +898,6 @@ namespace CombatMechanix.Services
             // Reject attacks from dead players
             if (_players.TryGetValue(connection.ConnectionId, out var player) && player.Health <= 0)
             {
-                Console.WriteLine($"[DEBUG] Rejected attack from dead player {player.PlayerId} (Health={player.Health})");
                 return false;
             }
 
@@ -1451,7 +1443,6 @@ namespace CombatMechanix.Services
             var healthData = JsonSerializer.Deserialize<NetworkMessages.HealthChangeMessage>(data.ToString()!);
             if (healthData == null) return;
 
-            Console.WriteLine($"[DEBUG] Received HealthChange from client: PlayerId={healthData.PlayerId}, Change={healthData.HealthChange}, NewHealth={healthData.NewHealth}, Source={healthData.Source}");
 
             try
             {
@@ -1468,7 +1459,6 @@ namespace CombatMechanix.Services
                     {
                         var oldHealth = player.Health;
                         player.Health = healthData.NewHealth;
-                        Console.WriteLine($"[DEBUG] Updated player {healthData.PlayerId} in-memory health: {oldHealth} -> {player.Health}");
                     }
 
                     _logger.LogInformation($"Player {healthData.PlayerId} health persisted by {healthData.HealthChange} to {healthData.NewHealth} from {healthData.Source}");
@@ -1526,7 +1516,6 @@ namespace CombatMechanix.Services
                 if (_players.TryGetValue(connection.ConnectionId, out var playerState))
                 {
                     playerState.Health = player.MaxHealth;
-                    Console.WriteLine($"[DEBUG] Updated in-memory health for player {respawnData.PlayerId} to {player.MaxHealth}");
                 }
 
                 // Send successful respawn response
@@ -1707,12 +1696,9 @@ namespace CombatMechanix.Services
                     };
 
                     // CRITICAL FIX: Populate equipment stats before caching to avoid overwriting
-                    Console.WriteLine($"[DEBUG] HandleLogin - About to populate equipment stats for player {playerState.PlayerId}");
                     await PopulateEquipmentStatsAsync(playerState);
-                    Console.WriteLine($"[DEBUG] HandleLogin - Populated equipment stats: ATK +{playerState.EquipmentAttackPower}, DEF +{playerState.EquipmentDefensePower}");
                     
                     _players[connection.ConnectionId] = playerState;
-                    Console.WriteLine($"[DEBUG] Cached PlayerState for ConnectionId={connection.ConnectionId}, PlayerId={playerState.PlayerId}, Health={playerState.Health}");
                     
                     _logger.LogInformation($"Player {result.PlayerName} logged in successfully with Level {result.PlayerStats.Level}");
                 }
@@ -2055,7 +2041,6 @@ namespace CombatMechanix.Services
                     else
                     {
                         // Fallback to database if not in cache
-                        Console.WriteLine($"[DEBUG] Cache MISS for ConnectionId={connection.ConnectionId}, PlayerId={connection.PlayerId} - falling back to database");
                         try
                         {
                             using var scope = _serviceProvider.CreateScope();
@@ -2090,7 +2075,6 @@ namespace CombatMechanix.Services
                                     playerState.EquipmentDefensePower = defensePower;
                                     playerState.EquipmentAttackSpeed = attackSpeed;
                                     
-                                    Console.WriteLine($"[DEBUG] Cache MISS fix: Populated equipment stats for player {connection.PlayerId}: ATK +{attackPower}, DEF +{defensePower}, SPD {attackSpeed}");
                                 }
                                 catch (Exception equipEx)
                                 {
@@ -2302,14 +2286,12 @@ namespace CombatMechanix.Services
                     return;
                 }
 
-                _logger.LogInformation($"[DEBUG] Player ID: {connection.PlayerId}");
 
                 var equipRequest = JsonSerializer.Deserialize<NetworkMessages.ItemEquipRequestMessage>(
                     JsonSerializer.Serialize(data));
 
                 if (equipRequest == null)
                 {
-                    _logger.LogWarning($"[DEBUG] equipRequest is null");
                     await SendToConnection(connection.ConnectionId, "ItemEquipResponse", new NetworkMessages.ItemEquipResponseMessage
                     {
                         Success = false,
@@ -2318,15 +2300,12 @@ namespace CombatMechanix.Services
                     return;
                 }
 
-                _logger.LogInformation($"[DEBUG] Parsed request - SlotIndex: {equipRequest.SlotIndex}, ItemType: {equipRequest.ItemType}, SlotType: {equipRequest.SlotType}");
 
                 // Process equip request using EquipmentManager
                 using var scope = _serviceProvider.CreateScope();
                 var equipmentManager = scope.ServiceProvider.GetRequiredService<EquipmentManager>();
                 
-                _logger.LogInformation($"[DEBUG] About to call EquipItemAsync");
                 var result = await equipmentManager.EquipItemAsync(connection.PlayerId, equipRequest.SlotIndex, equipRequest.SlotType);
-                _logger.LogInformation($"[DEBUG] EquipItemAsync returned - Success: {result.Success}, Error: {result.ErrorMessage}");
 
                 // Send equip response
                 await SendToConnection(connection.ConnectionId, "ItemEquipResponse", new NetworkMessages.ItemEquipResponseMessage

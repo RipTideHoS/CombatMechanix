@@ -60,7 +60,6 @@ public class Projectile : MonoBehaviour
             _audioSource.PlayOneShot(ProjectileSound);
         }
         
-        Debug.Log($"Projectile launched: Speed={Speed}, Range={Range}, Accuracy={Accuracy}");
     }
     
     private void Update()
@@ -91,7 +90,6 @@ public class Projectile : MonoBehaviour
             if (enemy != null)
             {
                 hitValidTarget = true;
-                Debug.Log($"Projectile hit enemy: {enemy.EnemyId}");
             }
             
             // Check for other players (if PvP is enabled)
@@ -99,14 +97,12 @@ public class Projectile : MonoBehaviour
             if (player != null)
             {
                 hitValidTarget = true;
-                Debug.Log($"Projectile hit player: {player.PlayerId}");
             }
             
             // Check for terrain/obstacles (using safe tag comparison)
             if (hit.collider.gameObject.tag == "Terrain" || hit.collider.gameObject.tag == "Obstacle" || 
                 hit.collider.gameObject.name.Contains("Ground") || hit.collider.gameObject.name.Contains("Terrain"))
             {
-                Debug.Log("Projectile hit terrain/obstacle");
             }
             
             HitTarget(hit.point, hitValidTarget);
@@ -136,7 +132,6 @@ public class Projectile : MonoBehaviour
         Range = range;
         _isCollisionBased = true;
         
-        Debug.Log($"[Projectile] Initialized collision-based projectile: {projectileId}");
         
         // Calculate direction to target
         _direction = (targetPosition - launchPosition).normalized;
@@ -145,7 +140,6 @@ public class Projectile : MonoBehaviour
         transform.position = launchPosition;
         _startPosition = launchPosition;
         
-        Debug.Log($"[Projectile] Direction: {_direction}, Speed: {speed}, Range: {range}");
     }
     
     private void HitTarget(Vector3 hitPosition, bool hitValidTarget)
@@ -181,7 +175,6 @@ public class Projectile : MonoBehaviour
         // Notify listeners
         OnProjectileHit?.Invoke(hitPosition, hitValidTarget);
         
-        Debug.Log($"Projectile hit at {hitPosition}, valid target: {hitValidTarget}");
         
         // Destroy projectile after a short delay to allow effects to play
         Destroy(gameObject, 1f);
@@ -231,7 +224,6 @@ public class Projectile : MonoBehaviour
                 collisionContext = "TerrainHit";
             }
 
-            Debug.Log($"[Projectile] Sending collision report: {_projectileId} hit {targetType} {targetId} at {hitPosition}");
 
             // Send collision report to server
             var networkManager = GameManager.Instance?.NetworkManager ?? FindObjectOfType<NetworkManager>();
@@ -250,7 +242,6 @@ public class Projectile : MonoBehaviour
                 Debug.LogError("[Projectile] NetworkManager not found - cannot send collision report");
             }
 
-            Debug.Log($"[Projectile] ✅ Collision report sent successfully");
         }
         catch (System.Exception ex)
         {
@@ -262,6 +253,5 @@ public class Projectile : MonoBehaviour
 
     private void OnDestroy()
     {
-        Debug.Log("Projectile destroyed");
     }
 }
