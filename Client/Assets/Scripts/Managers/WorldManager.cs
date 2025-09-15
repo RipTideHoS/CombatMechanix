@@ -333,11 +333,16 @@ public class WorldManager : MonoBehaviour
 
     /// <summary>
     /// Handle projectile launch messages from server to spawn visual projectiles
+    /// Phase 3: Supports both single and multi-projectile weapons
     /// </summary>
     private void HandleProjectileLaunch(NetworkMessages.ProjectileLaunchMessage launchMessage)
     {
-        Debug.Log($"[WorldManager] ProjectileLaunch received: {launchMessage.ProjectileId} by {launchMessage.ShooterId}");
-        
+        // Phase 3: Determine if this is single or multi-projectile
+        bool isMultiProjectile = launchMessage.Projectiles.Count > 0;
+        string logId = isMultiProjectile ? $"{launchMessage.Projectiles.Count} projectiles" : launchMessage.ProjectileId;
+
+        Debug.Log($"[WorldManager] ProjectileLaunch received: {logId} by {launchMessage.ShooterId}");
+
         // Only spawn visual projectiles for ranged attacks
         if (launchMessage.WeaponData.WeaponType == "Ranged")
         {
@@ -346,18 +351,25 @@ public class WorldManager : MonoBehaviour
             {
                 combatSystem = FindObjectOfType<CombatSystem>();
             }
-            
+
             if (combatSystem != null)
             {
-                Debug.Log($"[WorldManager] 🏹 Spawning projectile: {launchMessage.ProjectileId}");
-                
-                // Spawn visual projectile through CombatSystem
-                combatSystem.SpawnProjectile(
-                    launchMessage.ProjectileId,
-                    launchMessage.LaunchPosition,
-                    launchMessage.TargetPosition,
-                    launchMessage.WeaponData
-                );
+                // Phase 3: Handle both single and multi-projectile modes
+                if (isMultiProjectile)
+                {
+                    Debug.Log($"[WorldManager] 🏹 Spawning {launchMessage.Projectiles.Count} projectiles (multi-shot weapon)");
+                    combatSystem.SpawnMultipleProjectiles(launchMessage.Projectiles, launchMessage.WeaponData);
+                }
+                else
+                {
+                    Debug.Log($"[WorldManager] 🏹 Spawning single projectile: {launchMessage.ProjectileId}");
+                    combatSystem.SpawnProjectile(
+                        launchMessage.ProjectileId,
+                        launchMessage.LaunchPosition,
+                        launchMessage.TargetPosition,
+                        launchMessage.WeaponData
+                    );
+                }
             }
             else
             {

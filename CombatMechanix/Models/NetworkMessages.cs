@@ -368,43 +368,77 @@ namespace CombatMechanix.Models
         
         /// <summary>
         /// Server authorizes projectile launch (no damage predetermined)
+        /// Supports both single and multi-projectile weapons
         /// </summary>
         public class ProjectileLaunchMessage
         {
             /// <summary>
-            /// Unique projectile identifier for tracking
+            /// Unique projectile identifier for tracking (for single projectile weapons)
             /// </summary>
             public string ProjectileId { get; set; } = string.Empty;
-            
+
             /// <summary>
-            /// Player who fired the projectile
+            /// Phase 3: Array of projectile data for multi-projectile weapons
+            /// If this is populated, ignore single ProjectileId and use this array instead
+            /// </summary>
+            public List<ProjectileData> Projectiles { get; set; } = new();
+
+            /// <summary>
+            /// Player who fired the projectile(s)
             /// </summary>
             public string ShooterId { get; set; } = string.Empty;
-            
+
             /// <summary>
             /// Initial intended target (may miss and hit something else)
             /// </summary>
             public string? IntendedTargetId { get; set; }
-            
+
             /// <summary>
-            /// Launch position
+            /// Launch position (base position for all projectiles)
             /// </summary>
             public Vector3Data LaunchPosition { get; set; } = new();
-            
+
             /// <summary>
-            /// Target position (where player aimed)
+            /// Target position (where player aimed - center aim point)
             /// </summary>
             public Vector3Data TargetPosition { get; set; } = new();
-            
+
             /// <summary>
             /// Weapon stats for projectile physics
             /// </summary>
             public ProjectileWeaponData WeaponData { get; set; } = new();
-            
+
             /// <summary>
             /// Server timestamp of launch authorization
             /// </summary>
             public long Timestamp { get; set; }
+        }
+
+        /// <summary>
+        /// Phase 3: Individual projectile data for multi-projectile weapons
+        /// </summary>
+        public class ProjectileData
+        {
+            /// <summary>
+            /// Unique identifier for this specific projectile
+            /// </summary>
+            public string ProjectileId { get; set; } = string.Empty;
+
+            /// <summary>
+            /// Launch position for this specific projectile (may be offset from base)
+            /// </summary>
+            public Vector3Data LaunchPosition { get; set; } = new();
+
+            /// <summary>
+            /// Target direction for this specific projectile (with spread applied)
+            /// </summary>
+            public Vector3Data TargetPosition { get; set; } = new();
+
+            /// <summary>
+            /// Individual projectile modifiers (for variation in multi-shot)
+            /// </summary>
+            public float SpeedMultiplier { get; set; } = 1.0f;
+            public float AccuracyMultiplier { get; set; } = 1.0f;
         }
         
         /// <summary>
@@ -500,6 +534,11 @@ namespace CombatMechanix.Models
             public int BaseDamage { get; set; } = 10;
             public string WeaponType { get; set; } = "Ranged";
             public string WeaponName { get; set; } = string.Empty;
+
+            // Phase 3: Multi-projectile support
+            public int ProjectileCount { get; set; } = 1;  // Number of projectiles per shot
+            public float SpreadAngle { get; set; } = 0f;   // Spread cone angle in degrees (0 = no spread)
+            public string SpreadPattern { get; set; } = "None"; // "None", "Cone", "Horizontal", "Circle"
         }
     }
 

@@ -404,15 +404,44 @@ public class CombatSystem : MonoBehaviour
     #region Phase 1: New Projectile Collision System
 
     /// <summary>
-    /// Spawn visual projectile for collision-based damage system
+    /// Spawn visual projectile for collision-based damage system (single projectile)
     /// </summary>
     public void SpawnProjectile(string projectileId, Vector3Data launchPosition, Vector3Data targetPosition, NetworkMessages.ProjectileWeaponData weaponData)
     {
-        Debug.Log($"[CombatSystem] SpawnProjectile: {projectileId} from {launchPosition.X},{launchPosition.Y},{launchPosition.Z} to {targetPosition.X},{targetPosition.Y},{targetPosition.Z}");
-        
+        Debug.Log($"[CombatSystem] SpawnProjectile (single): {projectileId} from {launchPosition.X},{launchPosition.Y},{launchPosition.Z} to {targetPosition.X},{targetPosition.Y},{targetPosition.Z}");
+
         Vector3 launchPos = launchPosition.ToVector3();
         Vector3 targetPos = targetPosition.ToVector3();
-        
+
+        // Create and configure single projectile
+        SpawnIndividualProjectile(projectileId, launchPos, targetPos, weaponData.ProjectileSpeed, weaponData.WeaponRange);
+    }
+
+    /// <summary>
+    /// Phase 3: Spawn multiple visual projectiles for multi-projectile weapons
+    /// </summary>
+    public void SpawnMultipleProjectiles(List<NetworkMessages.ProjectileData> projectiles, NetworkMessages.ProjectileWeaponData weaponData)
+    {
+        Debug.Log($"[CombatSystem] SpawnMultipleProjectiles: {projectiles.Count} projectiles");
+
+        foreach (var projectileData in projectiles)
+        {
+            Vector3 launchPos = projectileData.LaunchPosition.ToVector3();
+            Vector3 targetPos = projectileData.TargetPosition.ToVector3();
+
+            // Apply individual projectile modifiers
+            float speed = weaponData.ProjectileSpeed * projectileData.SpeedMultiplier;
+            float range = weaponData.WeaponRange; // Range doesn't change per projectile
+
+            SpawnIndividualProjectile(projectileData.ProjectileId, launchPos, targetPos, speed, range);
+        }
+    }
+
+    /// <summary>
+    /// Phase 3: Helper method to spawn individual projectile
+    /// </summary>
+    private void SpawnIndividualProjectile(string projectileId, Vector3 launchPos, Vector3 targetPos, float speed, float range)
+    {
         // Create projectile dynamically (reuse existing method)
         GameObject projectileObj = CreateProjectileDynamically(launchPos);
         if (projectileObj == null)
@@ -420,24 +449,24 @@ public class CombatSystem : MonoBehaviour
             Debug.LogError("[CombatSystem] Failed to create projectile!");
             return;
         }
-        
+
         // Add or get Projectile component
         Projectile projectileComponent = projectileObj.GetComponent<Projectile>();
         if (projectileComponent == null)
         {
             projectileComponent = projectileObj.AddComponent<Projectile>();
         }
-        
+
         // Configure projectile with server data
         projectileComponent.Initialize(
             projectileId,
             launchPos,
             targetPos,
-            weaponData.ProjectileSpeed,
-            weaponData.WeaponRange
+            speed,
+            range
         );
-        
-        Debug.Log($"[CombatSystem] ✅ Projectile {projectileId} spawned and initialized");
+
+        Debug.Log($"[CombatSystem] ✅ Projectile {projectileId} spawned and initialized (Speed: {speed:F1}, Range: {range:F1})");
     }
 
     /// <summary>

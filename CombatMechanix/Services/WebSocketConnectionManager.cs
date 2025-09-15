@@ -377,6 +377,7 @@ namespace CombatMechanix.Services
 
         /// <summary>
         /// Handle ranged attacks using new projectile collision system
+        /// Phase 3: Supports multi-projectile weapons with spread patterns
         /// </summary>
         private async Task HandleRangedAttack(WebSocketConnection connection, NetworkMessages.CombatActionMessage combatData, EquippedItem weapon)
         {
@@ -386,9 +387,6 @@ namespace CombatMechanix.Services
                 return;
             }
 
-            // Generate unique projectile ID
-            var projectileId = GenerateProjectileId(connection.PlayerId);
-            
             // Get player position from stored state
             Vector3Data launchPosition = new Vector3Data(0, 0, 0); // Default fallback
             if (_players.TryGetValue(connection.ConnectionId, out var playerState) && playerState != null)
@@ -396,47 +394,278 @@ namespace CombatMechanix.Services
                 launchPosition = playerState.Position;
             }
 
-            // Create projectile state for tracking
-            var projectileState = new ProjectileState
+            // Phase 3: Create weapon data with multi-projectile support
+            var weaponData = new NetworkMessages.ProjectileWeaponData
             {
-                ProjectileId = projectileId,
-                ShooterId = connection.PlayerId,
-                IntendedTargetId = combatData.TargetId,
-                LaunchPosition = launchPosition,
-                TargetPosition = combatData.Position,
-                WeaponData = new NetworkMessages.ProjectileWeaponData
-                {
-                    ProjectileSpeed = weapon.ProjectileSpeed > 0 ? weapon.ProjectileSpeed : 20f,
-                    WeaponRange = weapon.WeaponRange > 0 ? weapon.WeaponRange : 25f,
-                    Accuracy = weapon.Accuracy > 0 ? weapon.Accuracy : 0.7f,
-                    BaseDamage = weapon.AttackPower > 0 ? weapon.AttackPower : 10,
-                    WeaponType = weapon.WeaponType,
-                    WeaponName = weapon.ItemName
-                },
-                LaunchTime = DateTime.UtcNow,
-                MaxTravelDistance = weapon.WeaponRange > 0 ? weapon.WeaponRange : 25f,
-                ExpirationTime = DateTime.UtcNow.AddSeconds(10) // 10 second max lifetime
+                ProjectileSpeed = weapon.ProjectileSpeed > 0 ? weapon.ProjectileSpeed : 20f,
+                WeaponRange = weapon.WeaponRange > 0 ? weapon.WeaponRange : 25f,
+                Accuracy = weapon.Accuracy > 0 ? weapon.Accuracy : 0.7f,
+                BaseDamage = weapon.AttackPower > 0 ? weapon.AttackPower : 10,
+                WeaponType = weapon.WeaponType,
+                WeaponName = weapon.ItemName,
+                // Phase 3: Add multi-projectile properties (TODO: Get from weapon data)
+                ProjectileCount = GetProjectileCount(weapon),
+                SpreadAngle = GetSpreadAngle(weapon),
+                SpreadPattern = GetSpreadPattern(weapon)
             };
 
-            // Store projectile state for validation
-            _activeProjectiles.TryAdd(projectileId, projectileState);
+            // Phase 3: Generate multiple projectiles if needed
+            var projectiles = GenerateProjectiles(connection.PlayerId, launchPosition, combatData.Position, weaponData);
 
-            // Send ProjectileLaunch to all clients (no damage predetermined)
+            // Store all projectile states for validation
+            foreach (var projectile in projectiles)
+            {
+                var projectileState = new ProjectileState
+                {
+                    ProjectileId = projectile.ProjectileId,
+                    ShooterId = connection.PlayerId,
+                    IntendedTargetId = combatData.TargetId,
+                    LaunchPosition = projectile.LaunchPosition,
+                    TargetPosition = projectile.TargetPosition,
+                    WeaponData = weaponData,
+                    LaunchTime = DateTime.UtcNow,
+                    MaxTravelDistance = weaponData.WeaponRange,
+                    ExpirationTime = DateTime.UtcNow.AddSeconds(10) // 10 second max lifetime
+                };
+
+                _activeProjectiles.TryAdd(projectile.ProjectileId, projectileState);
+            }
+
+            // Phase 3: Send multi-projectile launch message
             var launchMessage = new NetworkMessages.ProjectileLaunchMessage
             {
-                ProjectileId = projectileId,
                 ShooterId = connection.PlayerId,
                 IntendedTargetId = combatData.TargetId,
                 LaunchPosition = launchPosition,
                 TargetPosition = combatData.Position,
-                WeaponData = projectileState.WeaponData,
+                WeaponData = weaponData,
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
             };
 
+            // Phase 3: Support both single and multi-projectile mode
+            if (projectiles.Count == 1)
+            {
+                // Single projectile - use legacy field for compatibility
+                launchMessage.ProjectileId = projectiles[0].ProjectileId;
+                launchMessage.Projectiles.Clear();
+            }
+            else
+            {
+                // Multi-projectile - use new array system
+                launchMessage.ProjectileId = string.Empty;
+                launchMessage.Projectiles = projectiles;
+            }
+
             await BroadcastToAll("ProjectileLaunch", launchMessage);
 
-            _logger.LogInformation($"Projectile launched: {projectileId} by {connection.PlayerId} targeting {combatData.TargetId}");
+            _logger.LogInformation($"[PHASE 3] Launched {projectiles.Count} projectile(s) by {connection.PlayerId} targeting {combatData.TargetId}");
         }
+
+        #region Phase 3: Multi-Projectile Helper Methods
+
+        /// <summary>
+        /// Get projectile count for weapon (Phase 3)
+        /// </summary>
+        private int GetProjectileCount(EquippedItem weapon)
+        {
+            // TODO: Read from weapon database/configuration
+            // For now, hardcode some test weapons
+            if (weapon.ItemName.Contains("Shotgun", StringComparison.OrdinalIgnoreCase) ||
+                weapon.ItemName.Contains("Scatter", StringComparison.OrdinalIgnoreCase))
+            {
+                return 5; // Shotgun fires 5 pellets
+            }
+            if (weapon.ItemName.Contains("Burst", StringComparison.OrdinalIgnoreCase))
+            {
+                return 3; // Burst weapon fires 3 shots
+            }
+            return 1; // Default single projectile
+        }
+
+        /// <summary>
+        /// Get spread angle for weapon (Phase 3)
+        /// </summary>
+        private float GetSpreadAngle(EquippedItem weapon)
+        {
+            // TODO: Read from weapon database/configuration
+            if (weapon.ItemName.Contains("Shotgun", StringComparison.OrdinalIgnoreCase))
+            {
+                return 25f; // 25 degree spread for shotgun
+            }
+            if (weapon.ItemName.Contains("Scatter", StringComparison.OrdinalIgnoreCase))
+            {
+                return 15f; // 15 degree spread
+            }
+            if (weapon.ItemName.Contains("Burst", StringComparison.OrdinalIgnoreCase))
+            {
+                return 5f; // 5 degree spread for burst
+            }
+            return 0f; // No spread for single projectile
+        }
+
+        /// <summary>
+        /// Get spread pattern for weapon (Phase 3)
+        /// </summary>
+        private string GetSpreadPattern(EquippedItem weapon)
+        {
+            // TODO: Read from weapon database/configuration
+            if (weapon.ItemName.Contains("Shotgun", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Cone"; // Shotgun uses cone pattern
+            }
+            if (weapon.ItemName.Contains("Burst", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Horizontal"; // Burst uses horizontal line
+            }
+            return "None"; // Single projectile
+        }
+
+        /// <summary>
+        /// Generate multiple projectiles with spread patterns (Phase 3)
+        /// </summary>
+        private List<NetworkMessages.ProjectileData> GenerateProjectiles(string playerId, Vector3Data launchPos, Vector3Data targetPos, NetworkMessages.ProjectileWeaponData weaponData)
+        {
+            var projectiles = new List<NetworkMessages.ProjectileData>();
+
+            if (weaponData.ProjectileCount <= 1)
+            {
+                // Single projectile
+                var projectileId = GenerateProjectileId(playerId);
+                projectiles.Add(new NetworkMessages.ProjectileData
+                {
+                    ProjectileId = projectileId,
+                    LaunchPosition = launchPos,
+                    TargetPosition = targetPos,
+                    SpeedMultiplier = 1.0f,
+                    AccuracyMultiplier = 1.0f
+                });
+                return projectiles;
+            }
+
+            // Multi-projectile with spread
+            for (int i = 0; i < weaponData.ProjectileCount; i++)
+            {
+                var projectileId = GenerateProjectileId(playerId, i);
+                var spreadTargetPos = CalculateSpreadTarget(launchPos, targetPos, weaponData.SpreadPattern, weaponData.SpreadAngle, i, weaponData.ProjectileCount);
+
+                projectiles.Add(new NetworkMessages.ProjectileData
+                {
+                    ProjectileId = projectileId,
+                    LaunchPosition = launchPos,
+                    TargetPosition = spreadTargetPos,
+                    SpeedMultiplier = 1.0f + (Random.Shared.NextSingle() - 0.5f) * 0.2f, // ±10% speed variation
+                    AccuracyMultiplier = 1.0f + (Random.Shared.NextSingle() - 0.5f) * 0.3f  // ±15% accuracy variation
+                });
+            }
+
+            return projectiles;
+        }
+
+        /// <summary>
+        /// Calculate spread target position for individual projectile (Phase 3)
+        /// </summary>
+        private Vector3Data CalculateSpreadTarget(Vector3Data launchPos, Vector3Data centerTarget, string pattern, float spreadAngle, int projectileIndex, int totalProjectiles)
+        {
+            // Calculate base direction vector
+            var direction = new Vector3(
+                centerTarget.X - launchPos.X,
+                centerTarget.Y - launchPos.Y,
+                centerTarget.Z - launchPos.Z
+            );
+            var distance = direction.Length();
+            direction = Vector3.Normalize(direction);
+
+            Vector3 spreadDirection;
+
+            switch (pattern)
+            {
+                case "Cone":
+                    spreadDirection = CalculateConeSpread(direction, spreadAngle);
+                    break;
+                case "Horizontal":
+                    spreadDirection = CalculateHorizontalSpread(direction, spreadAngle, projectileIndex, totalProjectiles);
+                    break;
+                case "Circle":
+                    spreadDirection = CalculateCircleSpread(direction, spreadAngle, projectileIndex, totalProjectiles);
+                    break;
+                default:
+                    spreadDirection = direction; // No spread
+                    break;
+            }
+
+            // Calculate new target position
+            var newTarget = new Vector3(launchPos.X, launchPos.Y, launchPos.Z) + spreadDirection * distance;
+
+            return new Vector3Data(newTarget.X, newTarget.Y, newTarget.Z);
+        }
+
+        /// <summary>
+        /// Calculate cone spread (shotgun pattern)
+        /// </summary>
+        private Vector3 CalculateConeSpread(Vector3 baseDirection, float spreadAngle)
+        {
+            var random = Random.Shared;
+            var angle = random.NextSingle() * spreadAngle * (Math.PI / 180); // Convert to radians
+            var azimuth = random.NextSingle() * 2 * Math.PI; // Random rotation around axis
+
+            // Create perpendicular vectors
+            var up = Math.Abs(baseDirection.Y) < 0.9f ? new Vector3(0, 1, 0) : new Vector3(1, 0, 0);
+            var right = Vector3.Normalize(Vector3.Cross(baseDirection, up));
+            var forward = Vector3.Normalize(Vector3.Cross(right, baseDirection));
+
+            // Apply spread
+            var spreadX = (float)(Math.Sin(angle) * Math.Cos(azimuth));
+            var spreadY = (float)(Math.Sin(angle) * Math.Sin(azimuth));
+            var spreadZ = (float)Math.Cos(angle);
+
+            return Vector3.Normalize(baseDirection * spreadZ + right * spreadX + forward * spreadY);
+        }
+
+        /// <summary>
+        /// Calculate horizontal spread (burst pattern)
+        /// </summary>
+        private Vector3 CalculateHorizontalSpread(Vector3 baseDirection, float spreadAngle, int index, int total)
+        {
+            if (total == 1) return baseDirection;
+
+            // Distribute projectiles evenly across horizontal arc
+            var angleStep = spreadAngle / (total - 1);
+            var currentAngle = -spreadAngle / 2 + (index * angleStep);
+            var radians = currentAngle * (Math.PI / 180);
+
+            // Rotate around Y axis (horizontal spread)
+            var cos = (float)Math.Cos(radians);
+            var sin = (float)Math.Sin(radians);
+
+            return new Vector3(
+                baseDirection.X * cos - baseDirection.Z * sin,
+                baseDirection.Y,
+                baseDirection.X * sin + baseDirection.Z * cos
+            );
+        }
+
+        /// <summary>
+        /// Calculate circle spread (special pattern)
+        /// </summary>
+        private Vector3 CalculateCircleSpread(Vector3 baseDirection, float spreadAngle, int index, int total)
+        {
+            if (total == 1) return baseDirection;
+
+            var angleStep = (2 * Math.PI) / total;
+            var currentAngle = index * angleStep;
+            var radians = spreadAngle * (Math.PI / 180); // Use spread angle as radius
+
+            var up = Math.Abs(baseDirection.Y) < 0.9f ? new Vector3(0, 1, 0) : new Vector3(1, 0, 0);
+            var right = Vector3.Normalize(Vector3.Cross(baseDirection, up));
+            var forward = Vector3.Normalize(Vector3.Cross(right, baseDirection));
+
+            var offsetX = (float)(Math.Cos(currentAngle) * Math.Sin(radians));
+            var offsetY = (float)(Math.Sin(currentAngle) * Math.Sin(radians));
+
+            return Vector3.Normalize(baseDirection + right * offsetX + forward * offsetY);
+        }
+
+        #endregion
 
         /// <summary>
         /// Handle projectile collision reports from clients
@@ -3066,6 +3295,14 @@ namespace CombatMechanix.Services
         private string GenerateProjectileId(string shooterId)
         {
             return $"proj_{shooterId}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{Guid.NewGuid().ToString("N")[..8]}";
+        }
+
+        /// <summary>
+        /// Generate unique projectile ID with index (Phase 3: Multi-projectile support)
+        /// </summary>
+        private string GenerateProjectileId(string shooterId, int index)
+        {
+            return $"proj_{shooterId}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{index:D2}_{Guid.NewGuid().ToString("N")[..6]}";
         }
 
         #endregion
