@@ -258,7 +258,13 @@ app.MapPost("/test/addequipment", async (IItemRepository itemRepository, IPlayer
             new { ItemTypeId = "starter_chestplate", ItemName = "Leather Chestplate", Description = "Simple leather chest armor", ItemRarity = "Common", ItemCategory = "Chest" },
             new { ItemTypeId = "starter_leggings", ItemName = "Chain Leggings", Description = "Basic chain leg protection", ItemRarity = "Common", ItemCategory = "Legs" },
             new { ItemTypeId = "starter_shield", ItemName = "Wooden Shield", Description = "A sturdy wooden shield", ItemRarity = "Common", ItemCategory = "Shield" },
-            new { ItemTypeId = "starter_ring", ItemName = "Silver Ring", Description = "A simple silver ring with minor enchantments", ItemRarity = "Uncommon", ItemCategory = "Ring" }
+            new { ItemTypeId = "starter_ring", ItemName = "Silver Ring", Description = "A simple silver ring with minor enchantments", ItemRarity = "Uncommon", ItemCategory = "Ring" },
+
+            // Phase 3: Multi-projectile weapons for testing
+            new { ItemTypeId = "combat_shotgun", ItemName = "Combat Shotgun", Description = "Fires 5 pellets in a cone spread - perfect for close range combat", ItemRarity = "Uncommon", ItemCategory = "Weapon" },
+            new { ItemTypeId = "burst_rifle", ItemName = "Burst Rifle", Description = "Fires 3 rounds in quick succession with slight horizontal spread", ItemRarity = "Rare", ItemCategory = "Weapon" },
+            new { ItemTypeId = "scatter_gun", ItemName = "Scatter Gun", Description = "Wide spread scatter weapon firing 5 projectiles", ItemRarity = "Common", ItemCategory = "Weapon" },
+            new { ItemTypeId = "basic_bow", ItemName = "Basic Bow", Description = "Simple single-shot ranged weapon for testing", ItemRarity = "Common", ItemCategory = "Weapon" }
         };
 
         // Add test items to database if they don't exist
@@ -274,9 +280,9 @@ app.MapPost("/test/addequipment", async (IItemRepository itemRepository, IPlayer
                 await connection.OpenAsync();
                 
                 const string sql = @"
-                    INSERT INTO ItemTypes (ItemTypeId, ItemName, Description, ItemRarity, ItemCategory, MaxStackSize, IconPath, AttackPower, DefensePower, BaseValue)
-                    VALUES (@ItemTypeId, @ItemName, @Description, @ItemRarity, @ItemCategory, 1, @IconPath, @AttackPower, @DefensePower, @BaseValue)";
-                
+                    INSERT INTO ItemTypes (ItemTypeId, ItemName, Description, ItemRarity, ItemCategory, MaxStackSize, IconPath, AttackPower, DefensePower, BaseValue, WeaponType, WeaponRange, ProjectileSpeed, Accuracy)
+                    VALUES (@ItemTypeId, @ItemName, @Description, @ItemRarity, @ItemCategory, 1, @IconPath, @AttackPower, @DefensePower, @BaseValue, @WeaponType, @WeaponRange, @ProjectileSpeed, @Accuracy)";
+
                 using var command = new Microsoft.Data.SqlClient.SqlCommand(sql, connection);
                 command.Parameters.AddWithValue("@ItemTypeId", item.ItemTypeId);
                 command.Parameters.AddWithValue("@ItemName", item.ItemName);
@@ -287,6 +293,14 @@ app.MapPost("/test/addequipment", async (IItemRepository itemRepository, IPlayer
                 command.Parameters.AddWithValue("@AttackPower", item.ItemCategory == "Weapon" ? 10 : 0);
                 command.Parameters.AddWithValue("@DefensePower", item.ItemCategory != "Weapon" && item.ItemCategory != "Ring" ? 5 : 0);
                 command.Parameters.AddWithValue("@BaseValue", 10);
+
+                // Phase 3: Set weapon properties for multi-projectile testing
+                bool isRangedWeapon = item.ItemTypeId.Contains("shotgun") || item.ItemTypeId.Contains("rifle") ||
+                                     item.ItemTypeId.Contains("bow") || item.ItemTypeId.Contains("scatter");
+                command.Parameters.AddWithValue("@WeaponType", isRangedWeapon ? "Ranged" : "Melee");
+                command.Parameters.AddWithValue("@WeaponRange", isRangedWeapon ? 30.0f : 2.0f);
+                command.Parameters.AddWithValue("@ProjectileSpeed", isRangedWeapon ? 25.0f : 0.0f);
+                command.Parameters.AddWithValue("@Accuracy", 0.85f);
                 
                 await command.ExecuteNonQueryAsync();
             }
@@ -576,6 +590,45 @@ app.MapGet("/debug/attack-timing", (IServiceProvider serviceProvider) =>
             StackTrace = ex.StackTrace,
             Timestamp = DateTime.UtcNow
         });
+    }
+});
+
+// Phase 3: Quick endpoint to equip multi-projectile test weapons
+app.MapPost("/test/equipweapon/{playerId}/{weaponId}", async (string playerId, string weaponId, IPlayerEquipmentRepository equipmentRepository) =>
+{
+    try
+    {
+        // Valid weapon IDs for testing
+        var validWeapons = new[] { "combat_shotgun", "burst_rifle", "scatter_gun", "basic_bow", "starter_sword" };
+        if (!validWeapons.Contains(weaponId))
+        {
+            return Results.BadRequest(new { Success = false, Message = $"Invalid weapon ID. Valid options: {string.Join(", ", validWeapons)}" });
+        }
+
+        // Unequip current weapon
+        await equipmentRepository.UnequipItemAsync(playerId, "Weapon");
+
+        // Equip new weapon
+        bool success = await equipmentRepository.EquipItemAsync(playerId, weaponId, "Weapon");
+
+        if (success)
+        {
+            return Results.Ok(new
+            {
+                Success = true,
+                Message = $"Successfully equipped {weaponId}",
+                PlayerId = playerId,
+                WeaponId = weaponId
+            });
+        }
+        else
+        {
+            return Results.BadRequest(new { Success = false, Message = "Failed to equip weapon" });
+        }
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Success = false, Message = ex.Message });
     }
 });
 

@@ -82,12 +82,29 @@ namespace CombatMechanix.Services
 
         private void CreateAdditionalTestEnemies()
         {
-            // Add a few more test enemies at different positions
+            // Add many more test enemies for better multi-projectile testing
             var positions = new[]
             {
                 new Vector3Data(10f, 0.5f, 10f),
                 new Vector3Data(-5f, 0.5f, 8f),
-                new Vector3Data(8f, 0.5f, -3f)
+                new Vector3Data(8f, 0.5f, -3f),
+                new Vector3Data(15f, 0.5f, 5f),
+                new Vector3Data(-10f, 0.5f, -5f),
+                new Vector3Data(0f, 0.5f, 15f),
+                new Vector3Data(-8f, 0.5f, 12f),
+                new Vector3Data(12f, 0.5f, -8f),
+                new Vector3Data(20f, 0.5f, 0f),
+                new Vector3Data(-15f, 0.5f, 10f),
+                new Vector3Data(6f, 0.5f, 18f),
+                new Vector3Data(-12f, 0.5f, -10f),
+                new Vector3Data(18f, 0.5f, 12f),
+                new Vector3Data(-6f, 0.5f, -15f),
+                new Vector3Data(25f, 0.5f, 8f),
+                new Vector3Data(-20f, 0.5f, 5f),
+                new Vector3Data(3f, 0.5f, 25f),
+                new Vector3Data(-25f, 0.5f, -8f),
+                new Vector3Data(22f, 0.5f, -12f),
+                new Vector3Data(-18f, 0.5f, 15f)
             };
 
             for (int i = 0; i < positions.Length; i++)

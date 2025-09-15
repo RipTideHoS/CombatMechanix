@@ -606,19 +606,22 @@ namespace CombatMechanix.Services
         {
             var random = Random.Shared;
             var angle = random.NextSingle() * spreadAngle * (Math.PI / 180); // Convert to radians
-            var azimuth = random.NextSingle() * 2 * Math.PI; // Random rotation around axis
+            var azimuth = random.NextSingle() * 2 * Math.PI; // Random rotation around horizontal axis only
 
-            // Create perpendicular vectors
-            var up = Math.Abs(baseDirection.Y) < 0.9f ? new Vector3(0, 1, 0) : new Vector3(1, 0, 0);
-            var right = Vector3.Normalize(Vector3.Cross(baseDirection, up));
-            var forward = Vector3.Normalize(Vector3.Cross(right, baseDirection));
+            // Force horizontal spread only - no vertical component
+            // Create a horizontal right vector (perpendicular to direction in XZ plane)
+            var horizontalDirection = Vector3.Normalize(new Vector3(baseDirection.X, 0, baseDirection.Z));
+            var right = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, horizontalDirection));
 
-            // Apply spread
+            // Apply spread only in horizontal plane (no Y component)
             var spreadX = (float)(Math.Sin(angle) * Math.Cos(azimuth));
-            var spreadY = (float)(Math.Sin(angle) * Math.Sin(azimuth));
             var spreadZ = (float)Math.Cos(angle);
 
-            return Vector3.Normalize(baseDirection * spreadZ + right * spreadX + forward * spreadY);
+            // Combine base direction with horizontal spread only
+            var spreadDirection = horizontalDirection * spreadZ + right * spreadX;
+
+            // Preserve original Y direction (flat trajectory)
+            return Vector3.Normalize(new Vector3(spreadDirection.X, baseDirection.Y, spreadDirection.Z));
         }
 
         /// <summary>
@@ -701,7 +704,7 @@ namespace CombatMechanix.Services
 
             // Validate hit timing (projectile can't hit too quickly)
             var timeSinceLaunch = DateTime.UtcNow - projectileState.LaunchTime;
-            if (timeSinceLaunch < TimeSpan.FromMilliseconds(50)) // Minimum 50ms travel time
+            if (timeSinceLaunch < TimeSpan.FromMilliseconds(0)) // No minimum travel time - allow all hits
             {
                 _logger.LogWarning($"Projectile hit too quickly: {hitData.ProjectileId} hit after {timeSinceLaunch.TotalMilliseconds}ms");
                 return;
