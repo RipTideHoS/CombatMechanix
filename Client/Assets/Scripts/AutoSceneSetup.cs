@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Reflection;
+using CombatMechanix.Unity;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -147,7 +148,27 @@ public class AutoSceneSetup : MonoBehaviour
         gameManagerObj.AddComponent<CombatSystem>();
         gameManagerObj.AddComponent<ChatSystem>();
         gameManagerObj.AddComponent<InventoryManager>();
-        
+
+        Debug.Log("*** AUTO SCENE SETUP *** InventoryManager added successfully, now trying GrenadeInputHandler");
+        Debug.Log("*** AUTO SCENE SETUP *** About to add GrenadeInputHandler component");
+        try
+        {
+            var grenadeInputHandler = gameManagerObj.AddComponent<GrenadeInputHandler>();
+            Debug.Log($"*** AUTO SCENE SETUP *** GrenadeInputHandler component added: {grenadeInputHandler != null}");
+            if (grenadeInputHandler != null)
+            {
+                Debug.Log($"*** AUTO SCENE SETUP *** GrenadeInputHandler type: {grenadeInputHandler.GetType().FullName}");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"*** AUTO SCENE SETUP *** Failed to add GrenadeInputHandler: {ex.Message}");
+            Debug.LogError($"*** AUTO SCENE SETUP *** Exception details: {ex}");
+        }
+
+        // NOTE: GrenadeManager no longer needed - grenades now handled by WorldManager following projectile pattern
+        Debug.Log("*** AUTO SCENE SETUP *** Grenades now handled by WorldManager + CombatSystem pattern");
+
         Debug.Log("*** AUTO SCENE SETUP *** About to add LootDropManager component");
         var lootDropManager = gameManagerObj.AddComponent<LootDropManager>();
         Debug.Log($"*** AUTO SCENE SETUP *** LootDropManager component added: {lootDropManager != null}");
@@ -2554,6 +2575,116 @@ public class AutoSceneSetup : MonoBehaviour
             Debug.LogWarning("UIManager not found or not active - panels will not be connected");
             Debug.LogWarning("This means the GameManager system may not have been created properly");
         }
+    }
+
+    /// <summary>
+    /// Create basic prefabs for the grenade system
+    /// </summary>
+    private void CreateGrenadePrefabs(GrenadeManager grenadeManager)
+    {
+        Debug.Log("*** AUTO SCENE SETUP *** Creating grenade prefabs...");
+
+        // Create basic grenade prefabs (simple spheres)
+        grenadeManager.fragGrenadePrefab = CreateBasicGrenadePrefab("FragGrenade", Color.red);
+        grenadeManager.smokeGrenadePrefab = CreateBasicGrenadePrefab("SmokeGrenade", Color.gray);
+        grenadeManager.flashGrenadePrefab = CreateBasicGrenadePrefab("FlashGrenade", Color.yellow);
+
+        // Create basic effect prefabs
+        grenadeManager.explosionEffectPrefab = CreateBasicEffectPrefab("ExplosionEffect", new Color(1f, 0.5f, 0f), 2f); // Orange color
+        grenadeManager.smokeEffectPrefab = CreateBasicEffectPrefab("SmokeEffect", Color.gray, 3f);
+        grenadeManager.flashEffectPrefab = CreateBasicEffectPrefab("FlashEffect", Color.white, 4f);
+
+        // Create warning indicator (red transparent sphere)
+        grenadeManager.warningIndicatorPrefab = CreateWarningIndicatorPrefab();
+
+        Debug.Log("*** AUTO SCENE SETUP *** Grenade prefabs created successfully");
+    }
+
+    private GameObject CreateBasicGrenadePrefab(string name, Color color)
+    {
+        GameObject prefab = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        prefab.name = name;
+        prefab.transform.localScale = Vector3.one * 0.2f; // Small sphere
+
+        // Color the grenade
+        var renderer = prefab.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            renderer.material.color = color;
+        }
+
+        // Make it a prefab by deactivating and not adding to scene
+        prefab.SetActive(false);
+
+        return prefab;
+    }
+
+    private GameObject CreateBasicEffectPrefab(string name, Color color, float size)
+    {
+        GameObject prefab = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        prefab.name = name;
+        prefab.transform.localScale = Vector3.one * size;
+
+        // Make it semi-transparent
+        var renderer = prefab.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            Material material = new Material(Shader.Find("Standard"));
+            material.color = new Color(color.r, color.g, color.b, 0.6f);
+            material.SetFloat("_Mode", 3); // Set to transparent mode
+            material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            material.SetInt("_ZWrite", 0);
+            material.DisableKeyword("_ALPHATEST_ON");
+            material.EnableKeyword("_ALPHABLEND_ON");
+            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            material.renderQueue = 3000;
+            renderer.material = material;
+        }
+
+        // Remove collider since it's just an effect
+        Collider collider = prefab.GetComponent<Collider>();
+        if (collider != null)
+        {
+            DestroyImmediate(collider);
+        }
+
+        prefab.SetActive(false);
+        return prefab;
+    }
+
+    private GameObject CreateWarningIndicatorPrefab()
+    {
+        GameObject prefab = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        prefab.name = "WarningIndicator";
+        prefab.transform.localScale = Vector3.one;
+
+        // Make it a red transparent warning circle
+        var renderer = prefab.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            Material material = new Material(Shader.Find("Standard"));
+            material.color = new Color(1f, 0f, 0f, 0.3f); // Semi-transparent red
+            material.SetFloat("_Mode", 3); // Transparent mode
+            material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            material.SetInt("_ZWrite", 0);
+            material.DisableKeyword("_ALPHATEST_ON");
+            material.EnableKeyword("_ALPHABLEND_ON");
+            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            material.renderQueue = 3000;
+            renderer.material = material;
+        }
+
+        // Remove collider since it's just a warning indicator
+        Collider collider = prefab.GetComponent<Collider>();
+        if (collider != null)
+        {
+            DestroyImmediate(collider);
+        }
+
+        prefab.SetActive(false);
+        return prefab;
     }
 }
 

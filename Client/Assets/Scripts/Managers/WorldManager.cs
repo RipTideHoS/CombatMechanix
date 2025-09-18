@@ -31,6 +31,11 @@ public class WorldManager : MonoBehaviour
         NetworkManager.OnProjectileLaunch += HandleProjectileLaunch;
         NetworkManager.OnDamageConfirmation += HandleDamageConfirmation;
 
+        // Grenade system events - following same pattern as projectiles
+        NetworkManager.OnGrenadeSpawn += HandleGrenadeSpawn;
+        NetworkManager.OnGrenadeWarning += HandleGrenadeWarning;
+        NetworkManager.OnGrenadeExplosion += HandleGrenadeExplosion;
+
         // Pre-populate object pools
         InitializeObjectPools();
     }
@@ -405,6 +410,101 @@ public class WorldManager : MonoBehaviour
 
     #endregion
 
+    #region Grenade System Handlers
+
+    /// <summary>
+    /// Handle grenade spawn messages from server - follows same pattern as projectiles
+    /// </summary>
+    private void HandleGrenadeSpawn(NetworkMessages.GrenadeSpawnMessage grenadeMessage)
+    {
+        Debug.Log($"[WorldManager] GrenadeSpawn received: {grenadeMessage.GrenadeId} by {grenadeMessage.PlayerId}");
+
+        CombatSystem combatSystem = GameManager.Instance.CombatSystem;
+        if (combatSystem == null)
+        {
+            combatSystem = FindObjectOfType<CombatSystem>();
+        }
+
+        if (combatSystem != null)
+        {
+            Debug.Log($"[WorldManager] 💣 Spawning grenade: {grenadeMessage.GrenadeId} of type {grenadeMessage.GrenadeType}");
+            combatSystem.SpawnGrenade(
+                grenadeMessage.GrenadeId,
+                grenadeMessage.StartPosition,
+                grenadeMessage.TargetPosition,
+                grenadeMessage.GrenadeType,
+                grenadeMessage.ExplosionDelay
+            );
+        }
+        else
+        {
+            Debug.LogError("[WorldManager] CombatSystem not found - cannot spawn grenade!");
+        }
+    }
+
+    /// <summary>
+    /// Handle grenade warning messages from server
+    /// </summary>
+    private void HandleGrenadeWarning(NetworkMessages.GrenadeWarningMessage warningMessage)
+    {
+        Debug.Log($"[WorldManager] GrenadeWarning received: {warningMessage.GrenadeId} - explosion in {warningMessage.TimeToExplosion}s");
+
+        CombatSystem combatSystem = GameManager.Instance.CombatSystem;
+        if (combatSystem == null)
+        {
+            combatSystem = FindObjectOfType<CombatSystem>();
+        }
+
+        if (combatSystem != null)
+        {
+            Debug.Log($"[WorldManager] ⚠️ Creating grenade warning for: {warningMessage.GrenadeId}");
+            combatSystem.CreateGrenadeWarning(
+                warningMessage.GrenadeId,
+                warningMessage.ExplosionPosition,
+                warningMessage.ExplosionRadius,
+                warningMessage.TimeToExplosion
+            );
+        }
+        else
+        {
+            Debug.LogError("[WorldManager] CombatSystem not found - cannot create grenade warning!");
+        }
+    }
+
+    /// <summary>
+    /// Handle grenade explosion messages from server
+    /// </summary>
+    private void HandleGrenadeExplosion(NetworkMessages.GrenadeExplosionMessage explosionMessage)
+    {
+        Debug.Log($"[WorldManager] GrenadeExplosion received: {explosionMessage.GrenadeId} - {explosionMessage.DamagedTargets.Count} targets affected");
+
+        CombatSystem combatSystem = GameManager.Instance.CombatSystem;
+        if (combatSystem == null)
+        {
+            combatSystem = FindObjectOfType<CombatSystem>();
+        }
+
+        if (combatSystem != null)
+        {
+            // Determine grenade type from active grenades or default
+            string grenadeType = "frag_grenade"; // Default, could be enhanced to track type
+
+            Debug.Log($"[WorldManager] 💥 Creating grenade explosion for: {explosionMessage.GrenadeId}");
+            combatSystem.CreateGrenadeExplosion(
+                explosionMessage.GrenadeId,
+                explosionMessage.ExplosionPosition,
+                explosionMessage.ExplosionRadius,
+                grenadeType
+            );
+        }
+        else
+        {
+            Debug.LogError("[WorldManager] CombatSystem not found - cannot create grenade explosion!");
+        }
+    }
+
+    #endregion
+
     private void OnDestroy()
     {
         // Unsubscribe from events
@@ -412,9 +512,14 @@ public class WorldManager : MonoBehaviour
         NetworkManager.OnWorldUpdate -= HandleWorldUpdate;
         NetworkManager.OnPlayerJoined -= HandlePlayerJoined;
         NetworkManager.OnCombatAction -= HandleCombatAction;
-        
+
         // Phase 1: Unsubscribe from projectile events
         NetworkManager.OnProjectileLaunch -= HandleProjectileLaunch;
         NetworkManager.OnDamageConfirmation -= HandleDamageConfirmation;
+
+        // Unsubscribe from grenade events
+        NetworkManager.OnGrenadeSpawn -= HandleGrenadeSpawn;
+        NetworkManager.OnGrenadeWarning -= HandleGrenadeWarning;
+        NetworkManager.OnGrenadeExplosion -= HandleGrenadeExplosion;
     }
 }

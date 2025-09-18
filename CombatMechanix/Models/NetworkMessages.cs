@@ -540,6 +540,93 @@ namespace CombatMechanix.Models
             public float SpreadAngle { get; set; } = 0f;   // Spread cone angle in degrees (0 = no spread)
             public string SpreadPattern { get; set; } = "None"; // "None", "Cone", "Horizontal", "Circle"
         }
+
+        // ===== GRENADE SYSTEM MESSAGES =====
+
+        /// <summary>
+        /// Client request to throw a grenade
+        /// </summary>
+        public class GrenadeThrowMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public Vector3Data ThrowPosition { get; set; } = new();
+            public Vector3Data TargetPosition { get; set; } = new();
+            public string GrenadeType { get; set; } = string.Empty;
+            public long Timestamp { get; set; }
+        }
+
+        /// <summary>
+        /// Server notification that a grenade has been spawned/thrown
+        /// </summary>
+        public class GrenadeSpawnMessage
+        {
+            public string GrenadeId { get; set; } = string.Empty;
+            public string PlayerId { get; set; } = string.Empty;
+            public Vector3Data StartPosition { get; set; } = new();
+            public Vector3Data TargetPosition { get; set; } = new();
+            public string GrenadeType { get; set; } = string.Empty;
+            public float ExplosionDelay { get; set; }
+            public long Timestamp { get; set; }
+        }
+
+        /// <summary>
+        /// Server warning about incoming grenade explosion
+        /// </summary>
+        public class GrenadeWarningMessage
+        {
+            public string GrenadeId { get; set; } = string.Empty;
+            public Vector3Data ExplosionPosition { get; set; } = new();
+            public float ExplosionRadius { get; set; }
+            public float TimeToExplosion { get; set; }
+            public long Timestamp { get; set; }
+        }
+
+        /// <summary>
+        /// Server notification of grenade explosion
+        /// </summary>
+        public class GrenadeExplosionMessage
+        {
+            public string GrenadeId { get; set; } = string.Empty;
+            public Vector3Data ExplosionPosition { get; set; } = new();
+            public float ExplosionRadius { get; set; }
+            public float Damage { get; set; }
+            public List<DamageTarget> DamagedTargets { get; set; } = new();
+            public long Timestamp { get; set; }
+        }
+
+        /// <summary>
+        /// Information about a target that took damage from explosion
+        /// </summary>
+        public class DamageTarget
+        {
+            public string TargetId { get; set; } = string.Empty;
+            public string TargetType { get; set; } = string.Empty; // "Player" or "Enemy"
+            public float DamageDealt { get; set; }
+            public Vector3Data Position { get; set; } = new();
+        }
+
+        /// <summary>
+        /// Error response for grenade operations
+        /// </summary>
+        public class GrenadeErrorMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public string ErrorMessage { get; set; } = string.Empty;
+            public string ErrorType { get; set; } = string.Empty; // "NoGrenades", "InvalidPosition", "CooldownActive"
+            public long Timestamp { get; set; }
+        }
+
+        /// <summary>
+        /// Message to update client about player's grenade counts
+        /// </summary>
+        public class GrenadeCountUpdateMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public int FragGrenades { get; set; } = 3;
+            public int SmokeGrenades { get; set; } = 3;
+            public int FlashGrenades { get; set; } = 3;
+            public long Timestamp { get; set; }
+        }
     }
 
     public class PlayerState
@@ -559,11 +646,16 @@ namespace CombatMechanix.Models
         public int Gold { get; set; } = 100;
         public bool IsOnline { get; set; } = true;
         public DateTime LastUpdate { get; set; } = DateTime.UtcNow;
-        
+
         // Equipment-derived stat bonuses (cached from equipped items)
         public int EquipmentAttackPower { get; set; } = 0;
         public int EquipmentDefensePower { get; set; } = 0;
         public decimal EquipmentAttackSpeed { get; set; } = 1.0m; // Default 1 attack per second
+
+        // Grenade counts (separate from inventory)
+        public int FragGrenades { get; set; } = 3;
+        public int SmokeGrenades { get; set; } = 3;
+        public int FlashGrenades { get; set; } = 3;
         
         // Combat timing tracking
         public DateTime LastAttackTime { get; set; } = DateTime.MinValue;

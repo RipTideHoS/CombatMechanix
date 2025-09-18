@@ -502,4 +502,199 @@ public class CombatSystem : MonoBehaviour
     }
 
     #endregion
+
+    #region Grenade System
+
+    /// <summary>
+    /// Spawn visual grenade following the same pattern as projectiles
+    /// </summary>
+    public void SpawnGrenade(string grenadeId, Vector3Data startPosition, Vector3Data targetPosition, string grenadeType, float explosionDelay)
+    {
+        Debug.Log($"[CombatSystem] SpawnGrenade: {grenadeId} of type {grenadeType} from {startPosition.X},{startPosition.Y},{startPosition.Z} to {targetPosition.X},{targetPosition.Y},{targetPosition.Z}");
+
+        Vector3 startPos = startPosition.ToVector3();
+        Vector3 targetPos = targetPosition.ToVector3();
+
+        // Create grenade dynamically (same pattern as projectiles)
+        GameObject grenadeObj = CreateGrenadeDynamically(startPos, grenadeType);
+        if (grenadeObj == null)
+        {
+            Debug.LogError("[CombatSystem] Failed to create grenade!");
+            return;
+        }
+
+        // Add or get Grenade component
+        var grenadeComponent = grenadeObj.GetComponent<CombatMechanix.Unity.Grenade>();
+        if (grenadeComponent == null)
+        {
+            grenadeComponent = grenadeObj.AddComponent<CombatMechanix.Unity.Grenade>();
+        }
+
+        // Configure grenade with server data
+        grenadeComponent.Initialize(grenadeId, grenadeType, targetPos, explosionDelay);
+
+        Debug.Log($"[CombatSystem] ✅ Grenade {grenadeId} spawned and initialized (Type: {grenadeType}, Delay: {explosionDelay:F1}s)");
+    }
+
+    /// <summary>
+    /// Create grenade dynamically similar to projectiles
+    /// </summary>
+    private GameObject CreateGrenadeDynamically(Vector3 spawnPos, string grenadeType)
+    {
+        Debug.Log($"[CombatSystem] Creating grenade dynamically at position: {spawnPos} of type: {grenadeType}");
+
+        // Create grenade similar to projectiles
+        GameObject grenade = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        grenade.name = $"Grenade_Dynamic_{grenadeType}";
+        grenade.transform.position = spawnPos;
+
+        Debug.Log($"[CombatSystem] Base sphere created at: {grenade.transform.position}");
+
+        // Scale it to be grenade-sized
+        grenade.transform.localScale = new Vector3(0.25f, 0.25f, 0.25f); // Slightly smaller than projectiles
+
+        Debug.Log($"[CombatSystem] Grenade scaled to: {grenade.transform.localScale}");
+
+        // Set color based on grenade type for visibility
+        var renderer = grenade.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            // Create a new material to ensure visibility
+            Material grenadeMaterial = new Material(Shader.Find("Standard"));
+
+            // Color based on grenade type
+            grenadeMaterial.color = grenadeType switch
+            {
+                "frag_grenade" => Color.red,
+                "smoke_grenade" => Color.gray,
+                "flash_grenade" => Color.yellow,
+                _ => new Color(1f, 0.5f, 0f) // Orange default
+            };
+
+            grenadeMaterial.SetFloat("_Metallic", 0.0f);
+            grenadeMaterial.SetFloat("_Glossiness", 0.7f); // More reflective than projectiles
+            renderer.material = grenadeMaterial;
+            Debug.Log($"[CombatSystem] Set {grenadeMaterial.color} material for {grenadeType}");
+        }
+        else
+        {
+            Debug.LogError("[CombatSystem] No renderer found on grenade!");
+        }
+
+        // Add Rigidbody (grenade script will control it)
+        var rigidbody = grenade.AddComponent<Rigidbody>();
+        rigidbody.isKinematic = true; // Grenade script controls physics
+        rigidbody.useGravity = false;
+        Debug.Log("[CombatSystem] Rigidbody added (kinematic)");
+
+        // Ensure grenade is active and visible
+        grenade.SetActive(true);
+        Debug.Log($"[CombatSystem] Grenade set active: {grenade.activeInHierarchy}");
+
+        return grenade;
+    }
+
+    /// <summary>
+    /// Create explosion effect for grenades
+    /// </summary>
+    public void CreateGrenadeExplosion(string grenadeId, Vector3Data explosionPosition, float explosionRadius, string grenadeType)
+    {
+        Vector3 explosionPos = explosionPosition.ToVector3();
+
+        Debug.Log($"[CombatSystem] Creating grenade explosion for {grenadeId} at {explosionPos} with radius {explosionRadius}");
+
+        // Create explosion effect
+        GameObject explosion = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        explosion.name = $"GrenadeExplosion_{grenadeType}";
+        explosion.transform.position = explosionPos;
+        explosion.transform.localScale = Vector3.one * explosionRadius * 2f; // Diameter = radius * 2
+
+        // Color based on grenade type
+        var renderer = explosion.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            Material explosionMaterial = new Material(Shader.Find("Standard"));
+            explosionMaterial.color = grenadeType switch
+            {
+                "frag_grenade" => new Color(1f, 0.5f, 0f, 0.7f), // Orange explosion
+                "smoke_grenade" => new Color(0.5f, 0.5f, 0.5f, 0.8f), // Gray smoke
+                "flash_grenade" => new Color(1f, 1f, 1f, 0.9f), // White flash
+                _ => new Color(1f, 0f, 0f, 0.7f) // Red default
+            };
+
+            // Make it semi-transparent
+            explosionMaterial.SetFloat("_Mode", 3); // Transparent mode
+            explosionMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            explosionMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            explosionMaterial.SetInt("_ZWrite", 0);
+            explosionMaterial.DisableKeyword("_ALPHATEST_ON");
+            explosionMaterial.EnableKeyword("_ALPHABLEND_ON");
+            explosionMaterial.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            explosionMaterial.renderQueue = 3000;
+
+            renderer.material = explosionMaterial;
+        }
+
+        // Remove collider to make it visual only
+        var collider = explosion.GetComponent<Collider>();
+        if (collider != null)
+        {
+            Destroy(collider);
+        }
+
+        // Auto-destroy explosion effect
+        Destroy(explosion, 3f);
+
+        Debug.Log($"[CombatSystem] ✅ Explosion effect created for {grenadeType} grenade");
+    }
+
+    /// <summary>
+    /// Create warning indicator for grenades
+    /// </summary>
+    public void CreateGrenadeWarning(string grenadeId, Vector3Data warningPosition, float explosionRadius, float timeToExplosion)
+    {
+        Vector3 warningPos = warningPosition.ToVector3();
+
+        Debug.Log($"[CombatSystem] Creating grenade warning for {grenadeId} at {warningPos} - explosion in {timeToExplosion}s");
+
+        // Create warning indicator
+        GameObject warning = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        warning.name = $"GrenadeWarning_{grenadeId}";
+        warning.transform.position = warningPos;
+        warning.transform.localScale = new Vector3(explosionRadius * 2f, 0.1f, explosionRadius * 2f); // Flat cylinder
+
+        // Red pulsing material
+        var renderer = warning.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            Material warningMaterial = new Material(Shader.Find("Standard"));
+            warningMaterial.color = new Color(1f, 0f, 0f, 0.5f); // Semi-transparent red
+
+            // Make it semi-transparent
+            warningMaterial.SetFloat("_Mode", 3); // Transparent mode
+            warningMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            warningMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            warningMaterial.SetInt("_ZWrite", 0);
+            warningMaterial.DisableKeyword("_ALPHATEST_ON");
+            warningMaterial.EnableKeyword("_ALPHABLEND_ON");
+            warningMaterial.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            warningMaterial.renderQueue = 3000;
+
+            renderer.material = warningMaterial;
+        }
+
+        // Remove collider to make it visual only
+        var collider = warning.GetComponent<Collider>();
+        if (collider != null)
+        {
+            Destroy(collider);
+        }
+
+        // Auto-destroy warning after time to explosion
+        Destroy(warning, timeToExplosion);
+
+        Debug.Log($"[CombatSystem] ✅ Warning indicator created for {grenadeId}");
+    }
+
+    #endregion
 }
