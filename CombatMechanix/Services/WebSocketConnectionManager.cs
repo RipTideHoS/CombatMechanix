@@ -18,6 +18,7 @@ namespace CombatMechanix.Services
         private readonly IServiceProvider _serviceProvider;
         private EnemyManager? _enemyManager;
         private LootManager? _lootManager;
+        private GrenadeManager? _grenadeManager;
         
         // Phase 1: Projectile state tracking for collision-based damage system
         private readonly ConcurrentDictionary<string, ProjectileState> _activeProjectiles = new();
@@ -46,6 +47,14 @@ namespace CombatMechanix.Services
         public void SetLootManager(LootManager lootManager)
         {
             _lootManager = lootManager;
+        }
+
+        /// <summary>
+        /// Set the grenade manager reference (called after both services are initialized)
+        /// </summary>
+        public void SetGrenadeManager(GrenadeManager grenadeManager)
+        {
+            _grenadeManager = grenadeManager;
         }
 
         public async Task HandleWebSocketAsync(HttpContext context, WebSocket webSocket)
@@ -179,6 +188,9 @@ namespace CombatMechanix.Services
                         break;
                     case "ProjectileHit":
                         await HandleProjectileHit(connection, wrapper.Data);
+                        break;
+                    case "GrenadeThrow":
+                        await HandleGrenadeThrow(connection, wrapper.Data);
                         break;
                     case "ChatMessage":
                         await HandleChatMessage(connection, wrapper.Data);
@@ -1692,14 +1704,31 @@ namespace CombatMechanix.Services
                         Gold = result.PlayerStats.Gold,
                         Experience = result.PlayerStats.Experience,
                         IsOnline = true,
-                        LastUpdate = DateTime.UtcNow
+                        LastUpdate = DateTime.UtcNow,
+                        // Initialize with starting grenades for testing
+                        FragGrenades = 3,
+                        SmokeGrenades = 3,
+                        FlashGrenades = 3
                     };
 
                     // CRITICAL FIX: Populate equipment stats before caching to avoid overwriting
                     await PopulateEquipmentStatsAsync(playerState);
                     
                     _players[connection.ConnectionId] = playerState;
-                    
+
+                    // Send grenade count update to newly logged in player
+                    var grenadeCountMessage = new NetworkMessages.GrenadeCountUpdateMessage
+                    {
+                        PlayerId = playerState.PlayerId,
+                        FragGrenades = playerState.FragGrenades,
+                        SmokeGrenades = playerState.SmokeGrenades,
+                        FlashGrenades = playerState.FlashGrenades,
+                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    };
+
+                    _logger.LogInformation($"Sending grenade count update to {playerState.PlayerName}: Frag={playerState.FragGrenades}, Smoke={playerState.SmokeGrenades}, Flash={playerState.FlashGrenades}");
+                    await SendToConnection(connection.ConnectionId, "GrenadeCountUpdate", grenadeCountMessage);
+
                     _logger.LogInformation($"Player {result.PlayerName} logged in successfully with Level {result.PlayerStats.Level}");
                 }
                 else
@@ -1878,6 +1907,290 @@ namespace CombatMechanix.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error during logout for player {logoutData.PlayerId}");
+            }
+        }
+
+        /// <summary>
+        /// Handle grenade throw request from client
+        /// </summary>
+        private async Task HandleGrenadeThrow(WebSocketConnection connection, object? data)
+        {
+            if (data == null) return;
+
+            try
+            {
+                var grenadeData = JsonSerializer.Deserialize<NetworkMessages.GrenadeThrowMessage>(data.ToString()!);
+                if (grenadeData == null) return;
+
+                _logger.LogInformation($"Grenade throw request from player {grenadeData.PlayerId}");
+
+                // Validate that player is connected and authenticated
+                if (connection.PlayerId != grenadeData.PlayerId)
+                {
+                    _logger.LogWarning($"Player ID mismatch in grenade throw: {connection.PlayerId} vs {grenadeData.PlayerId}");
+                    return;
+                }
+
+                // For now, use a default grenade type if none specified
+                string grenadeType = string.IsNullOrEmpty(grenadeData.GrenadeType) ? "frag_grenade" : grenadeData.GrenadeType;
+
+                // Get grenade data from database or use defaults
+                var grenadeStats = await GetGrenadeStats(grenadeType);
+                if (grenadeStats == null)
+                {
+                    await SendToConnection(connection.ConnectionId, "GrenadeError", new NetworkMessages.GrenadeErrorMessage
+                    {
+                        PlayerId = grenadeData.PlayerId,
+                        ErrorMessage = "Invalid grenade type",
+                        ErrorType = "InvalidGrenadeType",
+                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    });
+                    return;
+                }
+
+                // Validate player has grenades and consume one
+                if (!ValidateAndConsumeGrenade(grenadeData.PlayerId, grenadeType))
+                {
+                    await SendToConnection(connection.ConnectionId, "GrenadeError", new NetworkMessages.GrenadeErrorMessage
+                    {
+                        PlayerId = grenadeData.PlayerId,
+                        ErrorMessage = "No grenades of this type available",
+                        ErrorType = "NoGrenades",
+                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    });
+                    return;
+                }
+
+                // Process grenade throw through GrenadeManager
+                if (_grenadeManager != null)
+                {
+                    await _grenadeManager.ThrowGrenade(
+                        grenadeData.PlayerId,
+                        grenadeData.ThrowPosition,
+                        grenadeData.TargetPosition,
+                        grenadeStats
+                    );
+                }
+                else
+                {
+                    _logger.LogError("GrenadeManager is not initialized");
+                    await SendToConnection(connection.ConnectionId, "GrenadeError", new NetworkMessages.GrenadeErrorMessage
+                    {
+                        PlayerId = grenadeData.PlayerId,
+                        ErrorMessage = "Grenade system not available",
+                        ErrorType = "SystemError",
+                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling grenade throw");
+                if (data != null)
+                {
+                    var grenadeData = JsonSerializer.Deserialize<NetworkMessages.GrenadeThrowMessage>(data.ToString()!);
+                    if (grenadeData != null)
+                    {
+                        await SendToConnection(connection.ConnectionId, "GrenadeError", new NetworkMessages.GrenadeErrorMessage
+                        {
+                            PlayerId = grenadeData.PlayerId,
+                            ErrorMessage = "Internal server error",
+                            ErrorType = "SystemError",
+                            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                        });
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Get grenade statistics from database or return defaults
+        /// </summary>
+        private async Task<GrenadeData?> GetGrenadeStats(string grenadeType)
+        {
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+                var connectionString = configuration.GetConnectionString("DefaultConnection");
+
+                if (string.IsNullOrEmpty(connectionString))
+                {
+                    _logger.LogError("Database connection string not found");
+                    return GetDefaultGrenadeStats(grenadeType);
+                }
+
+                using var connection = new Microsoft.Data.SqlClient.SqlConnection(connectionString);
+                await connection.OpenAsync();
+
+                // Try to get grenade stats from database with new columns
+                var sql = @"
+                    SELECT ItemTypeId, ItemName, ExplosionRadius, ExplosionDelay, ThrowRange, AreaDamage, GrenadeType
+                    FROM ItemTypes
+                    WHERE ItemTypeId = @GrenadeType AND ItemCategory = 'Grenade'
+                ";
+
+                using var command = new Microsoft.Data.SqlClient.SqlCommand(sql, connection);
+                command.Parameters.AddWithValue("@GrenadeType", grenadeType);
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    return new GrenadeData
+                    {
+                        GrenadeType = reader["ItemTypeId"].ToString() ?? grenadeType,
+                        ExplosionRadius = reader["ExplosionRadius"] != DBNull.Value ? Convert.ToSingle(reader["ExplosionRadius"]) : 5.0f,
+                        ExplosionDelay = reader["ExplosionDelay"] != DBNull.Value ? Convert.ToSingle(reader["ExplosionDelay"]) : 3.0f,
+                        AreaDamage = reader["AreaDamage"] != DBNull.Value ? Convert.ToSingle(reader["AreaDamage"]) : 75.0f,
+                        ThrowRange = reader["ThrowRange"] != DBNull.Value ? Convert.ToSingle(reader["ThrowRange"]) : 25.0f
+                    };
+                }
+                else
+                {
+                    _logger.LogWarning($"Grenade type {grenadeType} not found in database, using defaults");
+                    return GetDefaultGrenadeStats(grenadeType);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error getting grenade stats for {grenadeType}, falling back to defaults");
+                return GetDefaultGrenadeStats(grenadeType);
+            }
+        }
+
+        /// <summary>
+        /// Get default grenade statistics when database lookup fails
+        /// </summary>
+        private GrenadeData GetDefaultGrenadeStats(string grenadeType)
+        {
+            return grenadeType switch
+            {
+                "frag_grenade" => new GrenadeData
+                {
+                    GrenadeType = "frag_grenade",
+                    ExplosionRadius = 5.0f,
+                    ExplosionDelay = 3.0f,
+                    AreaDamage = 75.0f,
+                    ThrowRange = 25.0f
+                },
+                "smoke_grenade" => new GrenadeData
+                {
+                    GrenadeType = "smoke_grenade",
+                    ExplosionRadius = 8.0f,
+                    ExplosionDelay = 2.0f,
+                    AreaDamage = 0.0f,
+                    ThrowRange = 20.0f
+                },
+                "flash_grenade" => new GrenadeData
+                {
+                    GrenadeType = "flash_grenade",
+                    ExplosionRadius = 4.0f,
+                    ExplosionDelay = 2.5f,
+                    AreaDamage = 30.0f,
+                    ThrowRange = 18.0f
+                },
+                _ => new GrenadeData
+                {
+                    GrenadeType = "frag_grenade",
+                    ExplosionRadius = 5.0f,
+                    ExplosionDelay = 3.0f,
+                    AreaDamage = 75.0f,
+                    ThrowRange = 25.0f
+                }
+            };
+        }
+
+        /// <summary>
+        /// Validate player has a grenade of the specified type and consume it
+        /// </summary>
+        private bool ValidateAndConsumeGrenade(string playerId, string grenadeType)
+        {
+            var connection = _connections.Values.FirstOrDefault(conn => conn.PlayerId == playerId);
+            if (connection == null) return false;
+
+            var player = _players.Values.FirstOrDefault(p => p.PlayerId == playerId);
+            if (player == null) return false;
+
+            // Check and consume grenade based on type
+            bool success = false;
+            switch (grenadeType)
+            {
+                case "frag_grenade":
+                    if (player.FragGrenades > 0)
+                    {
+                        player.FragGrenades--;
+                        success = true;
+                    }
+                    break;
+                case "smoke_grenade":
+                    if (player.SmokeGrenades > 0)
+                    {
+                        player.SmokeGrenades--;
+                        success = true;
+                    }
+                    break;
+                case "flash_grenade":
+                    if (player.FlashGrenades > 0)
+                    {
+                        player.FlashGrenades--;
+                        success = true;
+                    }
+                    break;
+                default:
+                    break;
+            }
+
+            if (success)
+            {
+                // Send grenade count update to player
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await SendToConnection(connection.ConnectionId, "GrenadeCountUpdate", new NetworkMessages.GrenadeCountUpdateMessage
+                        {
+                            PlayerId = playerId,
+                            FragGrenades = player.FragGrenades,
+                            SmokeGrenades = player.SmokeGrenades,
+                            FlashGrenades = player.FlashGrenades,
+                            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error sending grenade count update");
+                    }
+                });
+            }
+
+            return success;
+        }
+
+        /// <summary>
+        /// Send current grenade counts to a player
+        /// </summary>
+        public async Task SendGrenadeCountUpdate(string playerId)
+        {
+            try
+            {
+                var connection = _connections.Values.FirstOrDefault(conn => conn.PlayerId == playerId);
+                if (connection == null) return;
+
+                var player = _players.Values.FirstOrDefault(p => p.PlayerId == playerId);
+                if (player == null) return;
+
+                await SendToConnection(connection.ConnectionId, "GrenadeCountUpdate", new NetworkMessages.GrenadeCountUpdateMessage
+                {
+                    PlayerId = playerId,
+                    FragGrenades = player.FragGrenades,
+                    SmokeGrenades = player.SmokeGrenades,
+                    FlashGrenades = player.FlashGrenades,
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error sending grenade count update to player {playerId}");
             }
         }
 
@@ -2063,7 +2376,11 @@ namespace CombatMechanix.Services
                                     Gold = playerStats.Gold,
                                     Experience = playerStats.Experience,
                                     IsOnline = true,
-                                    LastUpdate = DateTime.UtcNow
+                                    LastUpdate = DateTime.UtcNow,
+                                    // Initialize with starting grenades for testing
+                                    FragGrenades = 3,
+                                    SmokeGrenades = 3,
+                                    FlashGrenades = 3
                                 };
                                 
                                 // CRITICAL FIX: Populate equipment stats for complete PlayerState

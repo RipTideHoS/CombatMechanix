@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
+using CombatMechanix.Unity;
 
 public class PlayerController : MonoBehaviour
 {
@@ -49,6 +50,9 @@ public class PlayerController : MonoBehaviour
     // Combat components
     private WeaponCooldownManager _weaponCooldownManager;
 
+    // Grenade system
+    private GrenadeInputHandler _grenadeInputHandler;
+
     private void Awake()
     {
         Instance = this;
@@ -90,6 +94,9 @@ public class PlayerController : MonoBehaviour
         
         // Initialize combat systems
         InitializeCombatSystems();
+
+        // Initialize grenade system with delay to ensure AutoSceneSetup completes
+        StartCoroutine(InitializeGrenadeSystemDelayed());
     }
 
     private void Update()
@@ -185,6 +192,12 @@ public class PlayerController : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.I))
         {
             HandleInventoryToggle();
+        }
+
+        // Grenade aiming toggle (G key)
+        if (Input.GetKeyDown(KeyCode.G))
+        {
+            HandleGrenadeToggle();
         }
 
         // Character panel toggle (C key)
@@ -474,6 +487,77 @@ public class PlayerController : MonoBehaviour
         {
             bool currentState = characterPanel.activeSelf;
             characterPanel.SetActive(!currentState);
+        }
+    }
+
+    private System.Collections.IEnumerator InitializeGrenadeSystemDelayed()
+    {
+        // Wait a frame to ensure AutoSceneSetup has completed
+        yield return new WaitForEndOfFrame();
+        yield return new WaitForSeconds(0.1f); // Small additional delay
+
+        Debug.Log("[PlayerController] Initializing grenade system...");
+        _grenadeInputHandler = FindObjectOfType<GrenadeInputHandler>();
+
+        if (_grenadeInputHandler != null)
+        {
+            Debug.Log("[PlayerController] GrenadeInputHandler found and cached successfully");
+        }
+        else
+        {
+            Debug.LogWarning("[PlayerController] GrenadeInputHandler not found, creating one manually...");
+
+            // Create GrenadeInputHandler manually since AutoSceneSetup isn't working
+            GameObject gameManager = GameObject.Find("GameManager");
+            if (gameManager != null)
+            {
+                try
+                {
+                    _grenadeInputHandler = gameManager.AddComponent<GrenadeInputHandler>();
+                    Debug.Log($"[PlayerController] Successfully created GrenadeInputHandler manually: {_grenadeInputHandler != null}");
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogError($"[PlayerController] Failed to create GrenadeInputHandler manually: {ex.Message}");
+                }
+            }
+            else
+            {
+                Debug.LogError("[PlayerController] GameManager not found, cannot create GrenadeInputHandler");
+            }
+        }
+    }
+
+    private void HandleGrenadeToggle()
+    {
+        Debug.Log("[PlayerController] G key pressed - toggling grenade aiming");
+
+        // Use cached reference first, fallback to search if needed
+        if (_grenadeInputHandler == null)
+        {
+            Debug.Log("[PlayerController] Cached GrenadeInputHandler is null, searching again...");
+            _grenadeInputHandler = FindObjectOfType<GrenadeInputHandler>();
+        }
+
+        if (_grenadeInputHandler != null)
+        {
+            Debug.Log("[PlayerController] Calling ToggleAiming on GrenadeInputHandler");
+            _grenadeInputHandler.ToggleAiming();
+        }
+        else
+        {
+            Debug.LogWarning("[PlayerController] GrenadeInputHandler not found!");
+
+            // Let's also check what components ARE on the GameManager
+            GameObject gameManager = GameObject.Find("GameManager");
+            if (gameManager != null)
+            {
+                Debug.Log($"[PlayerController] GameManager found. Components: {string.Join(", ", gameManager.GetComponents<Component>().Select(c => c.GetType().Name))}");
+            }
+            else
+            {
+                Debug.LogWarning("[PlayerController] GameManager GameObject not found!");
+            }
         }
     }
 

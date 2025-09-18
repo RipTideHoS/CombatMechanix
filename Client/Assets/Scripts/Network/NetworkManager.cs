@@ -79,6 +79,13 @@ public class NetworkManager : MonoBehaviour
     public static event Action<NetworkMessages.ProjectileLaunchMessage> OnProjectileLaunch;
     public static event Action<NetworkMessages.DamageConfirmationMessage> OnDamageConfirmation;
 
+    // Grenade system events
+    public static event Action<NetworkMessages.GrenadeSpawnMessage> OnGrenadeSpawn;
+    public static event Action<NetworkMessages.GrenadeWarningMessage> OnGrenadeWarning;
+    public static event Action<NetworkMessages.GrenadeExplosionMessage> OnGrenadeExplosion;
+    public static event Action<NetworkMessages.GrenadeErrorMessage> OnGrenadeError;
+    public static event Action<NetworkMessages.GrenadeCountUpdateMessage> OnGrenadeCountUpdate;
+
     private ClientWebSocket _webSocket;
     private CancellationTokenSource _cancellationTokenSource;
     private bool _isConnecting = false;
@@ -482,7 +489,58 @@ public class NetworkManager : MonoBehaviour
                         QueueMainThreadAction(() => OnDamageConfirmation?.Invoke(damageConfirmationMsg));
                     }
                     break;
-                    
+
+                // Grenade system message handlers
+                case "GrenadeSpawn":
+                    Debug.Log($"[NetworkManager] Raw GrenadeSpawn message received: {wrapper.Data}");
+                    var grenadeSpawnMsg = JsonConvert.DeserializeObject<NetworkMessages.GrenadeSpawnMessage>(wrapper.Data.ToString());
+                    if (grenadeSpawnMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] GrenadeSpawn received: {grenadeSpawnMsg.GrenadeId} by {grenadeSpawnMsg.PlayerId}");
+                        QueueMainThreadAction(() => OnGrenadeSpawn?.Invoke(grenadeSpawnMsg));
+                    }
+                    else
+                    {
+                        Debug.LogError("[NetworkManager] Failed to deserialize GrenadeSpawn message");
+                    }
+                    break;
+
+                case "GrenadeWarning":
+                    var grenadeWarningMsg = JsonConvert.DeserializeObject<NetworkMessages.GrenadeWarningMessage>(wrapper.Data.ToString());
+                    if (grenadeWarningMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] GrenadeWarning received: {grenadeWarningMsg.GrenadeId} exploding in {grenadeWarningMsg.TimeToExplosion}s");
+                        QueueMainThreadAction(() => OnGrenadeWarning?.Invoke(grenadeWarningMsg));
+                    }
+                    break;
+
+                case "GrenadeExplosion":
+                    var grenadeExplosionMsg = JsonConvert.DeserializeObject<NetworkMessages.GrenadeExplosionMessage>(wrapper.Data.ToString());
+                    if (grenadeExplosionMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] GrenadeExplosion received: {grenadeExplosionMsg.GrenadeId} exploded, {grenadeExplosionMsg.DamagedTargets.Count} targets affected");
+                        QueueMainThreadAction(() => OnGrenadeExplosion?.Invoke(grenadeExplosionMsg));
+                    }
+                    break;
+
+                case "GrenadeError":
+                    var grenadeErrorMsg = JsonConvert.DeserializeObject<NetworkMessages.GrenadeErrorMessage>(wrapper.Data.ToString());
+                    if (grenadeErrorMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] GrenadeError received: {grenadeErrorMsg.ErrorMessage}");
+                        QueueMainThreadAction(() => OnGrenadeError?.Invoke(grenadeErrorMsg));
+                    }
+                    break;
+
+                case "GrenadeCountUpdate":
+                    var grenadeCountMsg = JsonConvert.DeserializeObject<NetworkMessages.GrenadeCountUpdateMessage>(wrapper.Data.ToString());
+                    if (grenadeCountMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] GrenadeCountUpdate received: Frag={grenadeCountMsg.FragGrenades}, Smoke={grenadeCountMsg.SmokeGrenades}, Flash={grenadeCountMsg.FlashGrenades}");
+                        QueueMainThreadAction(() => OnGrenadeCountUpdate?.Invoke(grenadeCountMsg));
+                    }
+                    break;
+
                 default:
                     Debug.LogWarning($"Unknown message type: {wrapper.Type}");
                     break;
@@ -692,7 +750,7 @@ public class NetworkManager : MonoBehaviour
     public async Task SendItemSellRequest(NetworkMessages.ItemSellRequestMessage sellRequest)
     {
         if (!IsConnected || string.IsNullOrEmpty(ConnectionId)) return;
-        
+
         try
         {
             await SendMessage("ItemSellRequest", sellRequest);
@@ -701,6 +759,34 @@ public class NetworkManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Failed to send item sell request: {ex.Message}");
+        }
+    }
+
+    public async Task SendGrenadeThrow(string grenadeType, Vector3 throwPosition, Vector3 targetPosition)
+    {
+        if (!IsConnected || string.IsNullOrEmpty(ConnectionId)) return;
+
+        try
+        {
+            // Use the actual logged-in player ID, not the connection ID
+            string actualPlayerId = GameManager.Instance?.LocalPlayerId ?? ConnectionId;
+            Debug.Log($"[NetworkManager] Sending grenade throw with PlayerId: {actualPlayerId} (ConnectionId: {ConnectionId})");
+
+            var grenadeThrowMessage = new NetworkMessages.GrenadeThrowMessage
+            {
+                PlayerId = actualPlayerId,
+                ThrowPosition = new Vector3Data(throwPosition),
+                TargetPosition = new Vector3Data(targetPosition),
+                GrenadeType = grenadeType,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            };
+
+            await SendMessage("GrenadeThrow", grenadeThrowMessage);
+            Debug.Log($"[NetworkManager] Sent grenade throw request: {grenadeType} from {throwPosition} to {targetPosition}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send grenade throw: {ex.Message}");
         }
     }
 
