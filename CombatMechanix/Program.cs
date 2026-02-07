@@ -8,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<WebSocketConnectionManager>();
 builder.Services.AddSingleton<EnemyManager>();
 builder.Services.AddSingleton<LootManager>();
+builder.Services.AddSingleton<GrenadeManager>();
 builder.Services.AddScoped<EquipmentManager>();
 builder.Services.AddSingleton<EnemyAIManager>(serviceProvider =>
 {
@@ -41,6 +42,7 @@ builder.Services.AddScoped<IPlayerInventoryRepository, PlayerInventoryRepository
 builder.Services.AddScoped<IPlayerEquipmentRepository, PlayerEquipmentRepository>();
 builder.Services.AddScoped<CombatMechanix.Services.IAuthenticationService, CombatMechanix.Services.AuthenticationService>();
 builder.Services.AddScoped<IAttackTimingService, AttackTimingService>();
+builder.Services.AddSingleton<TerrainService>();
 builder.Services.AddLogging();
 
 // Configure CORS for Unity client
@@ -73,21 +75,25 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Initialize enemy and loot systems
+// Initialize enemy, loot, grenade, and terrain systems
 var enemyManager = app.Services.GetRequiredService<EnemyManager>();
 var wsManager = app.Services.GetRequiredService<WebSocketConnectionManager>();
 var lootManager = app.Services.GetRequiredService<LootManager>();
+var grenadeManager = app.Services.GetRequiredService<GrenadeManager>();
 var aiManager = app.Services.GetRequiredService<EnemyAIManager>();
+var terrainService = app.Services.GetRequiredService<TerrainService>();
 
 // Wire up dependencies
 wsManager.SetEnemyManager(enemyManager);
 wsManager.SetLootManager(lootManager);
+wsManager.SetGrenadeManager(grenadeManager);
 enemyManager.SetLootManager(lootManager);
 enemyManager.SetAIManager(aiManager);
+enemyManager.SetTerrainService(terrainService);
 
 // Initialize default content
 enemyManager.InitializeDefaultEnemies();
-app.Logger.LogInformation("Enemy, loot, and AI systems initialized");
+app.Logger.LogInformation("Enemy, loot, grenade, terrain, and AI systems initialized");
 
 // Configure the HTTP request pipeline
 app.UseCors("AllowUnityClient");
@@ -264,7 +270,12 @@ app.MapPost("/test/addequipment", async (IItemRepository itemRepository, IPlayer
             new { ItemTypeId = "combat_shotgun", ItemName = "Combat Shotgun", Description = "Fires 5 pellets in a cone spread - perfect for close range combat", ItemRarity = "Uncommon", ItemCategory = "Weapon" },
             new { ItemTypeId = "burst_rifle", ItemName = "Burst Rifle", Description = "Fires 3 rounds in quick succession with slight horizontal spread", ItemRarity = "Rare", ItemCategory = "Weapon" },
             new { ItemTypeId = "scatter_gun", ItemName = "Scatter Gun", Description = "Wide spread scatter weapon firing 5 projectiles", ItemRarity = "Common", ItemCategory = "Weapon" },
-            new { ItemTypeId = "basic_bow", ItemName = "Basic Bow", Description = "Simple single-shot ranged weapon for testing", ItemRarity = "Common", ItemCategory = "Weapon" }
+            new { ItemTypeId = "basic_bow", ItemName = "Basic Bow", Description = "Simple single-shot ranged weapon for testing", ItemRarity = "Common", ItemCategory = "Weapon" },
+
+            // Phase 4: Grenade system items
+            new { ItemTypeId = "frag_grenade", ItemName = "Fragmentation Grenade", Description = "High-explosive grenade with wide damage radius", ItemRarity = "Uncommon", ItemCategory = "Grenade" },
+            new { ItemTypeId = "smoke_grenade", ItemName = "Smoke Grenade", Description = "Creates smoke cloud that blocks vision", ItemRarity = "Common", ItemCategory = "Grenade" },
+            new { ItemTypeId = "flash_grenade", ItemName = "Flash Grenade", Description = "Blinds and disorients enemies in area", ItemRarity = "Rare", ItemCategory = "Grenade" }
         };
 
         // Add test items to database if they don't exist
@@ -280,8 +291,8 @@ app.MapPost("/test/addequipment", async (IItemRepository itemRepository, IPlayer
                 await connection.OpenAsync();
                 
                 const string sql = @"
-                    INSERT INTO ItemTypes (ItemTypeId, ItemName, Description, ItemRarity, ItemCategory, MaxStackSize, IconPath, AttackPower, DefensePower, BaseValue, WeaponType, WeaponRange, ProjectileSpeed, Accuracy)
-                    VALUES (@ItemTypeId, @ItemName, @Description, @ItemRarity, @ItemCategory, 1, @IconPath, @AttackPower, @DefensePower, @BaseValue, @WeaponType, @WeaponRange, @ProjectileSpeed, @Accuracy)";
+                    INSERT INTO ItemTypes (ItemTypeId, ItemName, Description, ItemRarity, ItemCategory, MaxStackSize, IconPath, AttackPower, DefensePower, BaseValue, WeaponType, WeaponRange, ProjectileSpeed, Accuracy, ExplosionRadius, ExplosionDelay, ThrowRange, AreaDamage, GrenadeType)
+                    VALUES (@ItemTypeId, @ItemName, @Description, @ItemRarity, @ItemCategory, @MaxStackSize, @IconPath, @AttackPower, @DefensePower, @BaseValue, @WeaponType, @WeaponRange, @ProjectileSpeed, @Accuracy, @ExplosionRadius, @ExplosionDelay, @ThrowRange, @AreaDamage, @GrenadeType)";
 
                 using var command = new Microsoft.Data.SqlClient.SqlCommand(sql, connection);
                 command.Parameters.AddWithValue("@ItemTypeId", item.ItemTypeId);
@@ -289,6 +300,7 @@ app.MapPost("/test/addequipment", async (IItemRepository itemRepository, IPlayer
                 command.Parameters.AddWithValue("@Description", item.Description);
                 command.Parameters.AddWithValue("@ItemRarity", item.ItemRarity);
                 command.Parameters.AddWithValue("@ItemCategory", item.ItemCategory);
+                command.Parameters.AddWithValue("@MaxStackSize", item.ItemCategory == "Grenade" ? 5 : 1);
                 command.Parameters.AddWithValue("@IconPath", $"{item.ItemTypeId}_icon");
                 command.Parameters.AddWithValue("@AttackPower", item.ItemCategory == "Weapon" ? 10 : 0);
                 command.Parameters.AddWithValue("@DefensePower", item.ItemCategory != "Weapon" && item.ItemCategory != "Ring" ? 5 : 0);
@@ -297,14 +309,56 @@ app.MapPost("/test/addequipment", async (IItemRepository itemRepository, IPlayer
                 // Phase 3: Set weapon properties for multi-projectile testing
                 bool isRangedWeapon = item.ItemTypeId.Contains("shotgun") || item.ItemTypeId.Contains("rifle") ||
                                      item.ItemTypeId.Contains("bow") || item.ItemTypeId.Contains("scatter");
+                bool isGrenade = item.ItemCategory == "Grenade";
+
                 command.Parameters.AddWithValue("@WeaponType", isRangedWeapon ? "Ranged" : "Melee");
                 command.Parameters.AddWithValue("@WeaponRange", isRangedWeapon ? 30.0f : 2.0f);
                 command.Parameters.AddWithValue("@ProjectileSpeed", isRangedWeapon ? 25.0f : 0.0f);
                 command.Parameters.AddWithValue("@Accuracy", 0.85f);
+
+                // Grenade properties
+                command.Parameters.AddWithValue("@ExplosionRadius", isGrenade ? GetGrenadeRadius(item.ItemTypeId) : 0.0f);
+                command.Parameters.AddWithValue("@ExplosionDelay", isGrenade ? GetGrenadeDelay(item.ItemTypeId) : 0.0f);
+                command.Parameters.AddWithValue("@ThrowRange", isGrenade ? 25.0f : 0.0f);
+                command.Parameters.AddWithValue("@AreaDamage", isGrenade ? GetGrenadeDamage(item.ItemTypeId) : 0.0f);
+                command.Parameters.AddWithValue("@GrenadeType", isGrenade ? GetGrenadeType(item.ItemTypeId) : DBNull.Value);
                 
                 await command.ExecuteNonQueryAsync();
             }
         }
+
+        // Helper methods for grenade properties
+        static float GetGrenadeRadius(string grenadeId) => grenadeId switch
+        {
+            "frag_grenade" => 5.0f,
+            "smoke_grenade" => 8.0f,
+            "flash_grenade" => 4.0f,
+            _ => 0.0f
+        };
+
+        static float GetGrenadeDelay(string grenadeId) => grenadeId switch
+        {
+            "frag_grenade" => 3.0f,
+            "smoke_grenade" => 2.0f,
+            "flash_grenade" => 2.5f,
+            _ => 0.0f
+        };
+
+        static float GetGrenadeDamage(string grenadeId) => grenadeId switch
+        {
+            "frag_grenade" => 75.0f,
+            "smoke_grenade" => 0.0f,
+            "flash_grenade" => 30.0f,
+            _ => 0.0f
+        };
+
+        static string GetGrenadeType(string grenadeId) => grenadeId switch
+        {
+            "frag_grenade" => "Explosive",
+            "smoke_grenade" => "Smoke",
+            "flash_grenade" => "Flash",
+            _ => "Unknown"
+        };
 
         // Clear existing equipment for this player
         await equipmentRepository.UnequipItemAsync(playerId, "Weapon");
@@ -510,6 +564,158 @@ app.MapGet("/debug/cache/{playerId}", (string playerId, WebSocketConnectionManag
     catch (Exception ex)
     {
         return Results.BadRequest(new { Error = ex.Message, StackTrace = ex.ToString() });
+    }
+});
+
+// Terrain API endpoint - serves terrain data to clients
+app.MapGet("/api/terrain", (TerrainService terrainService) =>
+{
+    try
+    {
+        var terrainData = terrainService.GetTerrainData();
+        return Results.Ok(terrainData);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Error = ex.Message });
+    }
+});
+
+// Terrain management endpoints
+app.MapPost("/api/terrain/load/{hillSetName}", (string hillSetName, TerrainService terrainService) =>
+{
+    try
+    {
+        bool success = terrainService.LoadHillSet(hillSetName);
+        return Results.Ok(new { Success = success, HillSet = hillSetName, Message = success ? "Hill set loaded" : "Hill set not found" });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Error = ex.Message });
+    }
+});
+
+app.MapPost("/api/terrain/unload/{hillSetName}", (string hillSetName, TerrainService terrainService) =>
+{
+    try
+    {
+        bool success = terrainService.UnloadHillSet(hillSetName);
+        return Results.Ok(new { Success = success, HillSet = hillSetName, Message = success ? "Hill set unloaded" : "Hill set not currently loaded" });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Error = ex.Message });
+    }
+});
+
+app.MapGet("/api/terrain/hillsets", (TerrainService terrainService) =>
+{
+    try
+    {
+        var available = terrainService.GetAvailableHillSets();
+        var active = terrainService.GetActiveHillSets();
+        return Results.Ok(new { Available = available, Active = active });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Error = ex.Message });
+    }
+});
+
+// Database migration endpoint for grenade system
+app.MapPost("/migration/add-grenade-columns", async (IConfiguration configuration) =>
+{
+    try
+    {
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrEmpty(connectionString))
+        {
+            return Results.BadRequest(new { Success = false, Message = "Database connection string not found" });
+        }
+
+        // Execute the migration script
+        using var connection = new Microsoft.Data.SqlClient.SqlConnection(connectionString);
+        await connection.OpenAsync();
+
+        // Check if columns already exist before adding them
+        var columnCheckSql = @"
+            SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_NAME = 'ItemTypes' AND COLUMN_NAME = 'ExplosionRadius'
+        ";
+
+        using var checkCommand = new Microsoft.Data.SqlClient.SqlCommand(columnCheckSql, connection);
+        var columnExists = (int)await checkCommand.ExecuteScalarAsync() > 0;
+
+        if (!columnExists)
+        {
+            var addColumnsSql = @"
+                ALTER TABLE ItemTypes ADD ExplosionRadius FLOAT DEFAULT 0.0;
+                ALTER TABLE ItemTypes ADD ExplosionDelay FLOAT DEFAULT 0.0;
+                ALTER TABLE ItemTypes ADD ThrowRange FLOAT DEFAULT 0.0;
+                ALTER TABLE ItemTypes ADD AreaDamage FLOAT DEFAULT 0.0;
+                ALTER TABLE ItemTypes ADD GrenadeType VARCHAR(50) DEFAULT NULL;
+            ";
+
+            using var addCommand = new Microsoft.Data.SqlClient.SqlCommand(addColumnsSql, connection);
+            await addCommand.ExecuteNonQueryAsync();
+
+            // Update existing grenade items with proper stats
+            var updateGrenadesSql = @"
+                UPDATE ItemTypes SET
+                    ExplosionRadius = 5.0,
+                    ExplosionDelay = 3.0,
+                    ThrowRange = 25.0,
+                    AreaDamage = 75.0,
+                    GrenadeType = 'Explosive'
+                WHERE ItemTypeId = 'frag_grenade';
+
+                UPDATE ItemTypes SET
+                    ExplosionRadius = 8.0,
+                    ExplosionDelay = 2.0,
+                    ThrowRange = 20.0,
+                    AreaDamage = 0.0,
+                    GrenadeType = 'Smoke'
+                WHERE ItemTypeId = 'smoke_grenade';
+
+                UPDATE ItemTypes SET
+                    ExplosionRadius = 4.0,
+                    ExplosionDelay = 2.5,
+                    ThrowRange = 18.0,
+                    AreaDamage = 30.0,
+                    GrenadeType = 'Flash'
+                WHERE ItemTypeId = 'flash_grenade';
+            ";
+
+            using var updateCommand = new Microsoft.Data.SqlClient.SqlCommand(updateGrenadesSql, connection);
+            var rowsUpdated = await updateCommand.ExecuteNonQueryAsync();
+
+            return Results.Ok(new
+            {
+                Success = true,
+                Message = "Grenade columns added successfully",
+                ColumnsAdded = new[] { "ExplosionRadius", "ExplosionDelay", "ThrowRange", "AreaDamage", "GrenadeType" },
+                GrenadeItemsUpdated = rowsUpdated
+            });
+        }
+        else
+        {
+            return Results.Ok(new
+            {
+                Success = true,
+                Message = "Grenade columns already exist. No migration needed.",
+                ColumnsAdded = new string[0],
+                GrenadeItemsUpdated = 0
+            });
+        }
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new
+        {
+            Success = false,
+            Message = $"Failed to add grenade columns: {ex.Message}",
+            Error = ex.ToString()
+        });
     }
 });
 

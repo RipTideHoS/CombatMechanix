@@ -17,6 +17,16 @@ namespace CombatMechanix.Services
         private readonly Timer _updateTimer;
         private LootManager? _lootManager;
         private EnemyAIManager? _aiManager;
+        private TerrainService? _terrainService;
+
+        // Level/wave tracking
+        private int _currentLevel = 1;
+        private bool _levelTransitionInProgress = false;
+
+        /// <summary>
+        /// Event fired when all enemies are defeated (level complete)
+        /// </summary>
+        public event Action<int>? OnLevelComplete;
         
         public EnemyManager(WebSocketConnectionManager connectionManager, ILogger<EnemyManager> logger, IServiceProvider serviceProvider)
         {
@@ -45,6 +55,19 @@ namespace CombatMechanix.Services
         {
             _aiManager = aiManager;
         }
+
+        /// <summary>
+        /// Set the terrain service reference (called after both services are initialized)
+        /// </summary>
+        public void SetTerrainService(TerrainService terrainService)
+        {
+            _terrainService = terrainService;
+        }
+
+        /// <summary>
+        /// Get current level/wave number
+        /// </summary>
+        public int CurrentLevel => _currentLevel;
 
         /// <summary>
         /// Initialize default enemies in the world
@@ -252,8 +275,199 @@ namespace CombatMechanix.Services
                 _logger.LogWarning("LootManager not available - no loot will be generated for enemy {EnemyId}", enemy.EnemyId);
             }
 
-            // Schedule respawn (for testing - 30 seconds)
-            _ = Task.Delay(TimeSpan.FromSeconds(30)).ContinueWith(_ => RespawnEnemy(enemy.EnemyId));
+            // Check if all enemies are defeated (level complete)
+            await CheckLevelComplete(killerId);
+        }
+
+        /// <summary>
+        /// Check if all enemies are defeated and trigger level completion
+        /// </summary>
+        private async Task CheckLevelComplete(string killerId)
+        {
+            // Check if any enemies are still alive
+            int aliveCount = _enemies.Values.Count(e => e.IsAlive);
+
+            if (aliveCount == 0 && !_levelTransitionInProgress)
+            {
+                _levelTransitionInProgress = true;
+                _currentLevel++;
+
+                _logger.LogInformation($"🎉 Level complete! All enemies defeated. Transitioning to level {_currentLevel}");
+
+                // Fire level complete event
+                OnLevelComplete?.Invoke(_currentLevel);
+
+                // Trigger terrain change and enemy respawn
+                await TriggerLevelTransition(killerId);
+            }
+        }
+
+        /// <summary>
+        /// Trigger level transition: change terrain and spawn new enemies
+        /// </summary>
+        private async Task TriggerLevelTransition(string killerId)
+        {
+            try
+            {
+                // Get new terrain data from TerrainService
+                if (_terrainService != null)
+                {
+                    // Cycle through available hill sets based on level
+                    var hillSets = _terrainService.GetAvailableHillSets();
+                    var activeHillSets = _terrainService.GetActiveHillSets();
+
+                    // Simple progression: alternate between hill sets
+                    string nextHillSet = GetHillSetForLevel(_currentLevel, hillSets);
+
+                    // Unload current hill sets and load new one
+                    foreach (var activeSet in activeHillSets.ToList())
+                    {
+                        _terrainService.UnloadHillSet(activeSet);
+                    }
+                    _terrainService.LoadHillSet(nextHillSet);
+
+                    _logger.LogInformation($"🏔️ Loaded hill set '{nextHillSet}' for level {_currentLevel}");
+
+                    // Get updated terrain data
+                    var terrainData = _terrainService.GetTerrainData();
+
+                    // Broadcast terrain change to all clients
+                    var terrainChangeMessage = new NetworkMessages.TerrainChangeMessage
+                    {
+                        Reason = "LevelComplete",
+                        CurrentLevel = _currentLevel,
+                        TerrainData = new NetworkMessages.TerrainData
+                        {
+                            BaseGroundLevel = terrainData.BaseGroundLevel,
+                            Hills = terrainData.Hills.Select(h => new NetworkMessages.TerrainHillData
+                            {
+                                Id = h.Id,
+                                Name = h.Name,
+                                HillSet = h.HillSet,
+                                Position = h.Position,
+                                Scale = h.Scale,
+                                Color = new NetworkMessages.TerrainColorData
+                                {
+                                    R = h.Color.R,
+                                    G = h.Color.G,
+                                    B = h.Color.B,
+                                    A = h.Color.A
+                                }
+                            }).ToList(),
+                            ActiveHillSets = terrainData.ActiveHillSets
+                        },
+                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    };
+
+                    await _connectionManager.BroadcastToAll("TerrainChange", terrainChangeMessage);
+                    _logger.LogInformation($"🏔️ Broadcast terrain change to all clients for level {_currentLevel}");
+                }
+
+                // Broadcast level complete notification
+                await _connectionManager.BroadcastToAll("SystemNotification", new NetworkMessages.SystemNotification
+                {
+                    Message = $"Level {_currentLevel - 1} Complete! Entering Level {_currentLevel}...",
+                    Type = "LevelComplete",
+                    Priority = "High",
+                    Timestamp = DateTime.UtcNow
+                });
+
+                // Wait a moment for terrain transition effect
+                await Task.Delay(2000);
+
+                // Spawn new enemies for the new level
+                await SpawnEnemiesForLevel(_currentLevel);
+
+                _levelTransitionInProgress = false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during level transition");
+                _levelTransitionInProgress = false;
+            }
+        }
+
+        /// <summary>
+        /// Get the hill set name for a given level
+        /// </summary>
+        private string GetHillSetForLevel(int level, List<string> availableHillSets)
+        {
+            if (availableHillSets.Count == 0) return "default";
+
+            // Cycle through available hill sets based on level
+            int setIndex = (level - 1) % availableHillSets.Count;
+            return availableHillSets[setIndex];
+        }
+
+        /// <summary>
+        /// Spawn enemies appropriate for the current level
+        /// </summary>
+        private async Task SpawnEnemiesForLevel(int level)
+        {
+            _logger.LogInformation($"🎮 Spawning enemies for level {level}");
+
+            // Clear any remaining dead enemies
+            var deadEnemies = _enemies.Values.Where(e => !e.IsAlive).Select(e => e.EnemyId).ToList();
+            foreach (var enemyId in deadEnemies)
+            {
+                _enemies.TryRemove(enemyId, out _);
+                _aiManager?.RemoveEnemyAI(enemyId);
+            }
+
+            // Calculate number of enemies based on level (3 base + 2 per level)
+            int enemyCount = 3 + (level * 2);
+            int baseHealth = 50 + (level * 25);
+            float baseDamage = 10f + (level * 5f);
+
+            var newEnemies = new List<EnemyState>();
+            var random = new Random();
+
+            for (int i = 0; i < enemyCount; i++)
+            {
+                // Randomize position within play area
+                float x = (float)(random.NextDouble() * 60 - 30); // -30 to 30
+                float z = (float)(random.NextDouble() * 60 - 30); // -30 to 30
+
+                // Get ground height from terrain service
+                float y = 0.5f;
+                if (_terrainService != null)
+                {
+                    y = _terrainService.GetGroundHeightAtPosition(x, z) + 0.5f;
+                }
+
+                var enemy = new EnemyState
+                {
+                    EnemyId = $"enemy_lvl{level}_{i + 1:D3}",
+                    EnemyName = $"Level {level} Enemy {i + 1}",
+                    EnemyType = level % 3 == 0 ? "Elite" : "Basic",
+                    Position = new Vector3Data(x, y, z),
+                    Rotation = (float)(random.NextDouble() * 360),
+                    Health = baseHealth + random.Next(-20, 20),
+                    MaxHealth = baseHealth + random.Next(-20, 20),
+                    Level = level,
+                    Damage = baseDamage + (float)(random.NextDouble() * 5),
+                    IsAlive = true,
+                    LastUpdate = DateTime.UtcNow
+                };
+
+                // Ensure MaxHealth >= Health
+                enemy.MaxHealth = Math.Max(enemy.MaxHealth, enemy.Health);
+
+                _enemies.TryAdd(enemy.EnemyId, enemy);
+                _aiManager?.InitializeEnemyAI(enemy, "RandomWander");
+                newEnemies.Add(enemy);
+
+                _logger.LogInformation($"🎮 Spawned {enemy.EnemyName} (HP: {enemy.Health}) at ({x:F1}, {y:F1}, {z:F1})");
+            }
+
+            // Broadcast new enemies to all clients
+            var spawnMessage = new NetworkMessages.EnemySpawnMessage
+            {
+                Enemies = newEnemies
+            };
+
+            await _connectionManager.BroadcastToAll("EnemySpawn", spawnMessage);
+            _logger.LogInformation($"🎮 Spawned {newEnemies.Count} enemies for level {level}");
         }
 
         /// <summary>
