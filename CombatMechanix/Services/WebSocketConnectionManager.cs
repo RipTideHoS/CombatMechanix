@@ -236,6 +236,9 @@ namespace CombatMechanix.Services
                     case "Heartbeat":
                         await HandleHeartbeat(connection, wrapper.Data);
                         break;
+                    case "LevelContinue":
+                        await HandleLevelContinue(connection, wrapper.Data);
+                        break;
                     case "ExperienceGain":
                         await HandleExperienceGain(connection, wrapper.Data);
                         break;
@@ -1353,10 +1356,37 @@ namespace CombatMechanix.Services
         {
             // Simple heartbeat acknowledgment
             _logger.LogDebug($"Heartbeat from {connection.ConnectionId}");
-            
+
             if (_players.TryGetValue(connection.ConnectionId, out var player))
             {
                 player.LastUpdate = DateTime.UtcNow;
+            }
+        }
+
+        private async Task HandleLevelContinue(WebSocketConnection connection, object? data)
+        {
+            if (data == null) return;
+
+            try
+            {
+                var continueData = JsonSerializer.Deserialize<NetworkMessages.LevelContinueMessage>(data.ToString()!);
+                if (continueData == null) return;
+
+                _logger.LogInformation($"Player {continueData.PlayerId} requesting to continue to level {continueData.NextLevel}");
+
+                // Forward to EnemyManager to handle the level transition
+                if (_enemyManager != null)
+                {
+                    await _enemyManager.HandlePlayerContinue(continueData.PlayerId, continueData.NextLevel);
+                }
+                else
+                {
+                    _logger.LogWarning("EnemyManager not available for level continue");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling LevelContinue message");
             }
         }
 

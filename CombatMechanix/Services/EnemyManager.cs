@@ -22,6 +22,13 @@ namespace CombatMechanix.Services
         // Level/wave tracking
         private int _currentLevel = 1;
         private bool _levelTransitionInProgress = false;
+        private bool _waitingForPlayerContinue = false;
+
+        // Level stats tracking
+        private int _levelKills = 0;
+        private long _levelExperienceEarned = 0;
+        private float _levelDamageDealt = 0f;
+        private DateTime _levelStartTime = DateTime.UtcNow;
 
         /// <summary>
         /// Event fired when all enemies are defeated (level complete)
@@ -252,7 +259,12 @@ namespace CombatMechanix.Services
             enemy.Health = 0;
             enemy.LastUpdate = DateTime.UtcNow;
 
-            _logger.LogInformation($"Enemy {enemy.EnemyName} (ID: {enemy.EnemyId}) was killed by {killerId}");
+            // Track level stats
+            _levelKills++;
+            long expFromKill = CalculateExperienceFromEnemy(enemy);
+            _levelExperienceEarned += expFromKill;
+
+            _logger.LogInformation($"Enemy {enemy.EnemyName} (ID: {enemy.EnemyId}) was killed by {killerId}. Level kills: {_levelKills}, Level XP: {_levelExperienceEarned}");
 
             // Broadcast death event
             var deathMessage = new NetworkMessages.EnemyDeathMessage
@@ -280,6 +292,28 @@ namespace CombatMechanix.Services
         }
 
         /// <summary>
+        /// Calculate experience reward from killing an enemy
+        /// </summary>
+        private long CalculateExperienceFromEnemy(EnemyState enemy)
+        {
+            // Base XP based on enemy level and type
+            long baseXP = 10 + (enemy.Level * 5);
+            if (enemy.EnemyType == "Elite")
+            {
+                baseXP *= 2;
+            }
+            return baseXP;
+        }
+
+        /// <summary>
+        /// Track damage dealt for level stats
+        /// </summary>
+        public void TrackDamageDealt(float damage)
+        {
+            _levelDamageDealt += damage;
+        }
+
+        /// <summary>
         /// Check if all enemies are defeated and trigger level completion
         /// </summary>
         private async Task CheckLevelComplete(string killerId)
@@ -287,18 +321,33 @@ namespace CombatMechanix.Services
             // Check if any enemies are still alive
             int aliveCount = _enemies.Values.Count(e => e.IsAlive);
 
-            if (aliveCount == 0 && !_levelTransitionInProgress)
+            if (aliveCount == 0 && !_levelTransitionInProgress && !_waitingForPlayerContinue)
             {
                 _levelTransitionInProgress = true;
-                _currentLevel++;
+                _waitingForPlayerContinue = true;
 
-                _logger.LogInformation($"🎉 Level complete! All enemies defeated. Transitioning to level {_currentLevel}");
+                // Calculate time taken
+                float timeTaken = (float)(DateTime.UtcNow - _levelStartTime).TotalSeconds;
+
+                _logger.LogInformation($"🎉 Level {_currentLevel} complete! Kills: {_levelKills}, XP: {_levelExperienceEarned}, Time: {timeTaken:F1}s");
 
                 // Fire level complete event
                 OnLevelComplete?.Invoke(_currentLevel);
 
-                // Trigger terrain change and enemy respawn
-                await TriggerLevelTransition(killerId);
+                // Send level complete message to all clients (they will show UI and wait for continue)
+                var levelCompleteMessage = new NetworkMessages.LevelCompleteMessage
+                {
+                    CompletedLevel = _currentLevel,
+                    NextLevel = _currentLevel + 1,
+                    EnemiesKilled = _levelKills,
+                    ExperienceEarned = _levelExperienceEarned,
+                    DamageDealt = _levelDamageDealt,
+                    TimeTaken = timeTaken,
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                };
+
+                await _connectionManager.BroadcastToAll("LevelComplete", levelCompleteMessage);
+                _logger.LogInformation($"📢 Sent LevelComplete message to all clients. Waiting for player to continue...");
             }
         }
 
@@ -468,7 +517,41 @@ namespace CombatMechanix.Services
 
             await _connectionManager.BroadcastToAll("EnemySpawn", spawnMessage);
             _logger.LogInformation($"🎮 Spawned {newEnemies.Count} enemies for level {level}");
+
+            // Reset level stats for next level
+            _levelKills = 0;
+            _levelExperienceEarned = 0;
+            _levelDamageDealt = 0f;
+            _levelStartTime = DateTime.UtcNow;
         }
+
+        /// <summary>
+        /// Handle player requesting to continue to next level
+        /// Called when player clicks the continue button after level complete
+        /// </summary>
+        public async Task HandlePlayerContinue(string playerId, int nextLevel)
+        {
+            if (!_waitingForPlayerContinue)
+            {
+                _logger.LogWarning($"Player {playerId} sent continue request but not waiting for continue");
+                return;
+            }
+
+            _logger.LogInformation($"▶️ Player {playerId} is ready to continue to level {nextLevel}");
+
+            _waitingForPlayerContinue = false;
+            _currentLevel = nextLevel;
+
+            // Trigger terrain change and enemy spawn
+            await TriggerLevelTransition(playerId);
+
+            _levelTransitionInProgress = false;
+        }
+
+        /// <summary>
+        /// Check if waiting for player to continue
+        /// </summary>
+        public bool IsWaitingForPlayerContinue => _waitingForPlayerContinue;
 
         /// <summary>
         /// Respawn a dead enemy
