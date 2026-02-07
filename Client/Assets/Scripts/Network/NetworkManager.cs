@@ -86,6 +86,9 @@ public class NetworkManager : MonoBehaviour
     public static event Action<NetworkMessages.GrenadeErrorMessage> OnGrenadeError;
     public static event Action<NetworkMessages.GrenadeCountUpdateMessage> OnGrenadeCountUpdate;
 
+    // Terrain system events
+    public static event Action<TerrainChangeMessage> OnTerrainChange;
+
     private ClientWebSocket _webSocket;
     private CancellationTokenSource _cancellationTokenSource;
     private bool _isConnecting = false;
@@ -538,6 +541,16 @@ public class NetworkManager : MonoBehaviour
                     {
                         Debug.Log($"[NetworkManager] GrenadeCountUpdate received: Frag={grenadeCountMsg.FragGrenades}, Smoke={grenadeCountMsg.SmokeGrenades}, Flash={grenadeCountMsg.FlashGrenades}");
                         QueueMainThreadAction(() => OnGrenadeCountUpdate?.Invoke(grenadeCountMsg));
+                    }
+                    break;
+
+                // Terrain system message handler
+                case "TerrainChange":
+                    var terrainChangeMsg = JsonConvert.DeserializeObject<TerrainChangeMessage>(wrapper.Data.ToString());
+                    if (terrainChangeMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] TerrainChange received: Reason={terrainChangeMsg.reason}, Level={terrainChangeMsg.currentLevel}, Hills={terrainChangeMsg.terrainData?.hills?.Count ?? 0}");
+                        QueueMainThreadAction(() => OnTerrainChange?.Invoke(terrainChangeMsg));
                     }
                     break;
 
