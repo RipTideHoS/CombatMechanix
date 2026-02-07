@@ -690,6 +690,72 @@ namespace CombatMechanix.Models
             public float B { get; set; }
             public float A { get; set; } = 1f;
         }
+
+        // ===== LEVEL SYSTEM MESSAGES =====
+
+        /// <summary>
+        /// Server notification that a level/wave has been completed
+        /// Sent when all enemies are defeated, contains stats for display
+        /// </summary>
+        public class LevelCompleteMessage
+        {
+            /// <summary>
+            /// The level that was just completed
+            /// </summary>
+            public int CompletedLevel { get; set; }
+
+            /// <summary>
+            /// The next level number
+            /// </summary>
+            public int NextLevel { get; set; }
+
+            /// <summary>
+            /// Total enemies killed this level
+            /// </summary>
+            public int EnemiesKilled { get; set; }
+
+            /// <summary>
+            /// Total experience earned this level
+            /// </summary>
+            public long ExperienceEarned { get; set; }
+
+            /// <summary>
+            /// Total damage dealt this level
+            /// </summary>
+            public float DamageDealt { get; set; }
+
+            /// <summary>
+            /// Time taken to complete the level in seconds
+            /// </summary>
+            public float TimeTaken { get; set; }
+
+            /// <summary>
+            /// Server timestamp
+            /// </summary>
+            public long Timestamp { get; set; }
+        }
+
+        /// <summary>
+        /// Client request to continue to the next level
+        /// Sent when player clicks the continue button
+        /// </summary>
+        public class LevelContinueMessage
+        {
+            /// <summary>
+            /// Player requesting to continue
+            /// </summary>
+            public string PlayerId { get; set; } = string.Empty;
+
+            /// <summary>
+            /// The level they're ready to start
+            /// </summary>
+            public int NextLevel { get; set; }
+
+            /// <summary>
+            /// Client timestamp
+            /// </summary>
+            public long Timestamp { get; set; }
+        }
     }
 
     public class PlayerState

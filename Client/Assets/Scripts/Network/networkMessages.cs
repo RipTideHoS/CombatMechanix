@@ -790,3 +790,31 @@ public class ServerTerrainData
     public List<TerrainHill> hills;
     public List<string> activeHillSets;
 }
+
+// ===== LEVEL SYSTEM MESSAGES =====
+
+/// <summary>
+/// Server notification that a level/wave has been completed
+/// </summary>
+[Serializable]
+public class LevelCompleteMessage
+{
+    public int completedLevel;
+    public int nextLevel;
+    public int enemiesKilled;
+    public long experienceEarned;
+    public float damageDealt;
+    public float timeTaken;
+    public long timestamp;
+}
+
+/// <summary>
+/// Client request to continue to the next level
+/// </summary>
+[Serializable]
+public class LevelContinueMessage
+{
+    public string playerId;
+    public int nextLevel;
+    public long timestamp;
+}
