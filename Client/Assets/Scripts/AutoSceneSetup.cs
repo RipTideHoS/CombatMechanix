@@ -1,5 +1,9 @@
 using UnityEngine;
 using System.Reflection;
+using System.Linq;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine.Networking;
 using CombatMechanix.Unity;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -20,18 +24,124 @@ public class AutoSceneSetup : MonoBehaviour
     public bool CreateTestEnemy = false; // Disable local enemy creation - use network enemies
     public bool SetupEnemyNetworkManager = true;
     public bool SetupHealthBarSystem = true;
-    
+
+    [Header("Terrain Settings")]
+    public bool FetchTerrainFromServer = true;
+    public string ServerUrl = "http://localhost:5207";
+
+    // Reference to hills parent for terrain refresh
+    private GameObject _hillsParent;
+    private int _currentLevel = 1;
+
     private void Start()
     {
+        Debug.Log("=== AUTOSCENESETUP START() CALLED ===");
+        Debug.Log($"AutoSetupOnStart: {AutoSetupOnStart}");
+        Debug.Log($"CreateGround: {CreateGround}");
+        Debug.Log($"CreatePlayer: {CreatePlayer}");
+
         if (AutoSetupOnStart)
         {
+            Debug.Log("AutoSetupOnStart is TRUE - calling SetupScene()");
             SetupScene();
         }
-        
+        else
+        {
+            Debug.Log("AutoSetupOnStart is FALSE - skipping setup");
+        }
+
         // Keep this GameObject alive during play mode for debugging
         DontDestroyOnLoad(gameObject);
-        
+
+        // Add emergency ground creator as backup
+        AddEmergencyGroundCreator();
+
         Debug.Log($"AutoSceneSetup: GameObject '{gameObject.name}' will persist during play mode");
+        Debug.Log("=== AUTOSCENESETUP START() COMPLETED ===");
+
+        // Subscribe to terrain change events
+        NetworkManager.OnTerrainChange += HandleTerrainChange;
+    }
+
+    private void OnDestroy()
+    {
+        // Unsubscribe from terrain change events
+        NetworkManager.OnTerrainChange -= HandleTerrainChange;
+    }
+
+    /// <summary>
+    /// Handle terrain change message from server (e.g., when level is completed)
+    /// </summary>
+    private void HandleTerrainChange(TerrainChangeMessage terrainChange)
+    {
+        Debug.Log($"🏔️ Received terrain change: Reason={terrainChange.reason}, Level={terrainChange.currentLevel}");
+        _currentLevel = terrainChange.currentLevel;
+
+        if (terrainChange.terrainData != null && terrainChange.terrainData.hills != null)
+        {
+            StartCoroutine(RefreshTerrain(terrainChange.terrainData));
+        }
+        else
+        {
+            Debug.LogWarning("🏔️ Terrain change received but no terrain data provided");
+        }
+    }
+
+    /// <summary>
+    /// Refresh terrain by destroying old hills and creating new ones from server data
+    /// </summary>
+    private IEnumerator RefreshTerrain(ServerTerrainData terrainData)
+    {
+        Debug.Log($"🏔️ Refreshing terrain with {terrainData.hills?.Count ?? 0} hills (Level {_currentLevel})");
+
+        // Destroy old hills
+        if (_hillsParent != null)
+        {
+            Debug.Log("🏔️ Destroying old hills...");
+            Destroy(_hillsParent);
+            _hillsParent = null;
+            yield return null; // Wait a frame for destruction to complete
+        }
+
+        // Create new hills parent
+        _hillsParent = new GameObject("Hills");
+        _hillsParent.transform.position = Vector3.zero;
+
+        // Create new hills from server data
+        int hillCount = 0;
+        foreach (TerrainHill hillInfo in terrainData.hills)
+        {
+            Vector3 position = hillInfo.position.ToVector3();
+            Vector3 scale = hillInfo.scale.ToVector3();
+            Color color = hillInfo.color.ToColor();
+
+            CreateSingleHill(position, scale, color, _hillsParent.transform, hillCount);
+            hillCount++;
+        }
+
+        Debug.Log($"🏔️ ✅ Terrain refreshed with {hillCount} hills for level {_currentLevel}!");
+    }
+
+    private void AddEmergencyGroundCreator()
+    {
+        Debug.Log("*** AUTO SCENE SETUP *** Adding EmergencyGroundCreator as backup...");
+
+        // Check if EmergencyGroundCreator already exists
+        EmergencyGroundCreator existingCreator = FindObjectOfType<EmergencyGroundCreator>();
+        if (existingCreator != null)
+        {
+            Debug.Log("EmergencyGroundCreator already exists - keeping existing one");
+            return;
+        }
+
+        // Create new GameObject with EmergencyGroundCreator
+        GameObject emergencyCreator = new GameObject("EmergencyGroundCreator");
+        EmergencyGroundCreator creator = emergencyCreator.AddComponent<EmergencyGroundCreator>();
+
+        // Make it persistent
+        DontDestroyOnLoad(emergencyCreator);
+
+        Debug.Log("✅ EmergencyGroundCreator added as backup ground system");
     }
 
     [ContextMenu("Setup Scene")]
@@ -48,8 +158,16 @@ public class AutoSceneSetup : MonoBehaviour
         CreateGameStartup();
 
         // 3. Create Ground for visual reference
+        Debug.Log($"*** AUTO SCENE SETUP *** CreateGround flag is: {CreateGround}");
         if (CreateGround)
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** Calling CreateGroundPlane()");
             CreateGroundPlane();
+        }
+        else
+        {
+            Debug.Log("*** AUTO SCENE SETUP *** Skipping ground creation (CreateGround = false)");
+        }
 
         // 4. Create Player GameObject
         Debug.Log($"*** AUTO SCENE SETUP *** CreatePlayer flag is: {CreatePlayer}");
@@ -324,37 +442,633 @@ public class AutoSceneSetup : MonoBehaviour
 
     private void CreateGroundPlane()
     {
+        Debug.Log("=== GROUND CREATION START ===");
+
         GameObject ground = GameObject.Find("Ground");
-        
+
         // Check if ground already exists
         if (ground != null)
         {
-            Debug.Log("Ground already exists in scene - updating color to grey");
-            
-            // Update existing ground color
-            Renderer existingRenderer = ground.GetComponent<Renderer>();
-            if (existingRenderer != null)
+            Debug.Log($"Ground already exists in scene: {ground.name} at position {ground.transform.position}");
+            Debug.Log($"Ground has components: {string.Join(", ", ground.GetComponents<Component>().Select(c => c.GetType().Name))}");
+
+            // Check if it's already a terrain
+            Terrain existingTerrain = ground.GetComponent<Terrain>();
+            if (existingTerrain != null && existingTerrain.terrainData != null)
             {
-                existingRenderer.material.color = new Color(0.5f, 0.5f, 0.5f); // Grey ground for better contrast
-                Debug.Log("Updated existing ground color to grey");
+                Debug.Log("Ground is already a terrain with data - keeping existing terrain");
+                return;
             }
-            return;
+
+            Debug.Log("Ground exists but is not terrain - replacing with new terrain");
+            DestroyImmediate(ground);
+        }
+        else
+        {
+            Debug.Log("No existing Ground found - creating new one");
         }
 
-        Debug.Log("Creating Ground plane...");
-        ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        Debug.Log("Creating ground terrain...");
+
+        try
+        {
+            // Try to create terrain first
+            CreateProceduralTerrain();
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Failed to create procedural terrain: {ex.Message}");
+            Debug.Log("Falling back to simple ground plane...");
+            CreateSimpleGroundPlane();
+        }
+
+        Debug.Log("=== GROUND CREATION END ===");
+    }
+
+    private void CreateProceduralTerrain()
+    {
+        Debug.Log("Attempting to create procedural terrain with hills...");
+
+        // Create terrain GameObject
+        GameObject ground = new GameObject("Ground");
+
+        // Verify scene placement
+        Debug.Log($"🔍 Created Ground GameObject: {ground.name}");
+        Debug.Log($"🔍 Ground GameObject ID: {ground.GetInstanceID()}");
+        Debug.Log($"🔍 Ground in scene: {ground.scene.name}");
+        Debug.Log($"🔍 Ground active: {ground.activeInHierarchy}");
+        Debug.Log($"🔍 Ground parent: {(ground.transform.parent != null ? ground.transform.parent.name : "None")}");
+
+        // Unity terrains have their origin at one corner, so center the terrain
+        // For a 500x500 terrain, we need to offset by -250 on X and Z to center it at origin
+        ground.transform.position = new Vector3(-250f, 0f, -250f);
+        Debug.Log($"🔧 TERRAIN POSITIONING FIX: Set terrain position to {ground.transform.position} to center 500x500 terrain at origin");
+
+        // Add terrain component
+        Terrain terrain = ground.AddComponent<Terrain>();
+        TerrainCollider terrainCollider = ground.AddComponent<TerrainCollider>();
+
+        Debug.Log("Terrain components added, creating terrain data...");
+
+        // Create terrain data with much larger size
+        TerrainData terrainData = CreateTerrainData();
+
+        if (terrainData == null)
+        {
+            Debug.LogError("TerrainData creation failed!");
+            DestroyImmediate(ground);
+            throw new System.Exception("TerrainData creation failed");
+        }
+
+        Debug.Log("TerrainData created successfully, assigning to terrain...");
+
+        // Assign terrain data
+        terrain.terrainData = terrainData;
+        terrainCollider.terrainData = terrainData;
+        Debug.Log($"🔧 After assigning terrain data, terrain position is: {ground.transform.position}");
+
+        // Configure terrain rendering
+        try
+        {
+            Material terrainMaterial = CreateTerrainMaterial();
+            if (terrainMaterial != null)
+            {
+                terrain.materialTemplate = terrainMaterial;
+                Debug.Log($"🎨 ✅ Applied material to terrain successfully");
+            }
+            else
+            {
+                Debug.LogWarning("🎨 No material created - terrain will use default");
+            }
+
+            // Ensure terrain is set to render
+            terrain.drawHeightmap = true;
+            terrain.drawTreesAndFoliage = true;
+            terrain.castShadows = false; // Disable shadows for better performance
+
+            Debug.Log($"🎨 Terrain render settings: drawHeightmap={terrain.drawHeightmap}, active={terrain.enabled}");
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"Could not configure terrain rendering: {ex.Message}, using defaults");
+        }
+
+        Debug.Log($"✅ Created procedural terrain successfully: {terrainData.size.x}x{terrainData.size.z} units with {terrainData.heightmapResolution}x{terrainData.heightmapResolution} heightmap");
+        Debug.Log($"Terrain position: {ground.transform.position}, Active: {ground.activeInHierarchy}");
+        Debug.Log($"Terrain world bounds: from ({ground.transform.position.x},{ground.transform.position.y},{ground.transform.position.z}) to ({ground.transform.position.x + terrainData.size.x},{ground.transform.position.y + terrainData.size.y},{ground.transform.position.z + terrainData.size.z})");
+        Debug.Log($"Player should spawn at (0,1,0) which is within terrain bounds: {ground.transform.position.x <= 0 && 0 <= ground.transform.position.x + terrainData.size.x && ground.transform.position.z <= 0 && 0 <= ground.transform.position.z + terrainData.size.z}");
+
+        // Final verification
+        Debug.Log($"🔍 FINAL TERRAIN STATE:");
+        Debug.Log($"🔍 GameObject exists: {ground != null}");
+        Debug.Log($"🔍 GameObject active: {ground.activeInHierarchy}");
+        Debug.Log($"🔍 In scene: {ground.scene.name}");
+        Debug.Log($"🔍 Terrain component: {terrain != null}");
+        Debug.Log($"🔍 TerrainData assigned: {terrain.terrainData != null}");
+        Debug.Log($"🔍 TerrainCollider: {terrainCollider != null}");
+
+        // Check if it's in hierarchy by trying to find it
+        GameObject foundGround = GameObject.Find("Ground");
+        Debug.Log($"🔍 Can find 'Ground' in hierarchy: {foundGround != null}");
+        if (foundGround != null)
+        {
+            Debug.Log($"🔍 Found Ground at: {foundGround.transform.position}");
+        }
+
+        // EMERGENCY: Create a simple visible plane as backup since terrain isn't showing
+        Debug.Log("🚨 Creating emergency visible plane as backup...");
+        CreateEmergencyVisiblePlane();
+    }
+
+    private void CreateSimpleGroundPlane()
+    {
+        Debug.Log("Creating simple ground plane as fallback...");
+
+        GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
         ground.name = "Ground";
         ground.transform.position = Vector3.zero;
-        ground.transform.localScale = new Vector3(10, 1, 10); // 100x100 units
+        ground.transform.localScale = new Vector3(50, 1, 50); // Much larger than before (500x500 units)
 
         // Add a simple material/color
-        Renderer newRenderer = ground.GetComponent<Renderer>();
-        if (newRenderer != null)
+        Renderer renderer = ground.GetComponent<Renderer>();
+        if (renderer != null)
         {
-            newRenderer.material.color = new Color(0.5f, 0.5f, 0.5f); // Grey ground for better contrast
+            renderer.material.color = new Color(0.4f, 0.6f, 0.3f); // Forest green like the terrain
         }
-        
-        Debug.Log("Created new grey ground plane");
+
+        Debug.Log("✅ Created large simple ground plane: 500x500 units");
+    }
+
+    private void CreateEmergencyVisiblePlane()
+    {
+        Debug.Log("🚨 Creating emergency visible plane for immediate ground...");
+
+        // Create a reliable plane that we know works
+        GameObject emergencyGround = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        emergencyGround.name = "EmergencyGround";
+        emergencyGround.transform.position = new Vector3(0, 0f, 0); // AT ground level, not below
+        emergencyGround.transform.localScale = new Vector3(20, 1, 20); // 200x200 units
+
+        // Make it green like natural ground
+        Renderer renderer = emergencyGround.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            renderer.material.color = new Color(0.4f, 0.7f, 0.3f); // Natural green
+            Debug.Log("🌱 Set emergency ground to natural green color");
+        }
+
+        // Ensure it has proper collision for CharacterController
+        Collider collider = emergencyGround.GetComponent<Collider>();
+        if (collider != null)
+        {
+            collider.isTrigger = false;
+            collider.enabled = true;
+
+            // If it's a MeshCollider, make sure it's convex for better collision
+            MeshCollider meshCollider = collider as MeshCollider;
+            if (meshCollider != null)
+            {
+                meshCollider.convex = false; // Keep non-convex for plane collision
+                Debug.Log($"🚨 MeshCollider configured: convex={meshCollider.convex}, enabled={meshCollider.enabled}");
+            }
+
+            Debug.Log($"🚨 Emergency ground collision: Type={collider.GetType().Name}, Trigger={collider.isTrigger}, Enabled={collider.enabled}");
+            Debug.Log($"🚨 Ground bounds: {collider.bounds}");
+        }
+        else
+        {
+            Debug.LogError("🚨 NO COLLIDER FOUND ON EMERGENCY GROUND!");
+        }
+
+        Debug.Log($"🚨 ✅ Created emergency visible ground at {emergencyGround.transform.position}");
+        Debug.Log($"🚨 ✅ Size: 200x200 units, Color: Natural Green");
+        Debug.Log($"🚨 ✅ This ground should be impossible to miss!");
+
+        // Also create a tall visible marker at origin
+        GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        marker.name = "OriginMarker";
+        marker.transform.position = new Vector3(0, 2, 0); // Above player spawn
+        marker.transform.localScale = new Vector3(1, 4, 1); // Tall cube
+        marker.GetComponent<Renderer>().material.color = Color.yellow; // Bright yellow
+
+        Debug.Log("🚨 ✅ Created tall yellow origin marker at (0,2,0)");
+
+        // Now add hills to make terrain interesting
+        StartCoroutine(CreateHills());
+
+        // Debug player collision setup
+        StartCoroutine(DebugPlayerCollisionAfterDelay());
+    }
+
+    private System.Collections.IEnumerator DebugPlayerCollisionAfterDelay()
+    {
+        // Wait a moment for player to be created
+        yield return new WaitForSeconds(2f);
+
+        Debug.Log("🔍 DEBUGGING PLAYER COLLISION SETUP:");
+
+        // Find the local player
+        GameObject localPlayer = GameObject.Find("LocalPlayer");
+        if (localPlayer != null)
+        {
+            Debug.Log($"🔍 Found LocalPlayer at position: {localPlayer.transform.position}");
+
+            // Check CharacterController
+            CharacterController cc = localPlayer.GetComponent<CharacterController>();
+            if (cc != null)
+            {
+                Debug.Log($"🔍 CharacterController: enabled={cc.enabled}, isGrounded={cc.isGrounded}");
+                Debug.Log($"🔍 CC bounds: {cc.bounds}");
+                Debug.Log($"🔍 CC radius={cc.radius}, height={cc.height}, center={cc.center}");
+
+                // Try a manual ground check
+                float groundCheckDistance = cc.height / 2f + 0.1f;
+                RaycastHit hit;
+                Vector3 rayStart = localPlayer.transform.position + Vector3.up * 0.1f;
+
+                if (Physics.Raycast(rayStart, Vector3.down, out hit, groundCheckDistance))
+                {
+                    Debug.Log($"🔍 ✅ Ground detected via raycast: {hit.collider.name} at distance {hit.distance}");
+                    Debug.Log($"🔍 Ground point: {hit.point}");
+                }
+                else
+                {
+                    Debug.Log($"🔍 ❌ NO GROUND detected via raycast from {rayStart}");
+                }
+            }
+            else
+            {
+                Debug.Log("🔍 ❌ No CharacterController found on LocalPlayer!");
+            }
+        }
+        else
+        {
+            Debug.Log("🔍 ❌ No LocalPlayer found!");
+        }
+    }
+
+    private IEnumerator CreateHills()
+    {
+        Debug.Log("🏔️ Creating hills around the terrain...");
+
+        // Create a parent object to organize hills (store reference for terrain refresh)
+        _hillsParent = new GameObject("Hills");
+        _hillsParent.transform.position = Vector3.zero;
+
+        List<TerrainHill> hillData = new List<TerrainHill>();
+
+        if (FetchTerrainFromServer)
+        {
+            Debug.Log("🏔️ Fetching terrain data from server...");
+            Debug.Log($"🏔️ Server URL configured as: {ServerUrl}");
+            yield return StartCoroutine(FetchTerrainDataFromServer(serverData => {
+                if (serverData != null && serverData.hills != null)
+                {
+                    hillData.AddRange(serverData.hills);
+                    Debug.Log($"🏔️ ✅ Fetched {hillData.Count} hills from server. Active hill sets: [{string.Join(", ", serverData.activeHillSets)}]");
+                }
+                else
+                {
+                    Debug.LogWarning("🏔️ ⚠️ Failed to fetch terrain from server, using fallback hills");
+                    hillData.AddRange(GetFallbackHillData());
+                }
+            }));
+        }
+        else
+        {
+            Debug.Log("🏔️ Using fallback terrain data (server fetch disabled)");
+            hillData.AddRange(GetFallbackHillData());
+        }
+
+        // Create hills from fetched or fallback data
+        int hillCount = 0;
+        foreach (var hillInfo in hillData)
+        {
+            Vector3 position = hillInfo.position.ToVector3();
+            Vector3 scale = hillInfo.scale.ToVector3();
+            Color color = hillInfo.color.ToColor();
+
+            CreateSingleHill(position, scale, color, _hillsParent.transform, hillCount);
+            hillCount++;
+        }
+
+        Debug.Log($"🏔️ ✅ Created {hillCount} hills for varied terrain!");
+    }
+
+    private IEnumerator FetchTerrainDataFromServer(System.Action<ServerTerrainData> onComplete)
+    {
+        string url = $"{ServerUrl}/api/terrain";
+        Debug.Log($"🏔️ Fetching terrain from: {url}");
+
+        using (UnityWebRequest request = UnityWebRequest.Get(url))
+        {
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                try
+                {
+                    string jsonResponse = request.downloadHandler.text;
+                    Debug.Log($"🏔️ Server response: {jsonResponse}");
+
+                    ServerTerrainData terrainData = JsonUtility.FromJson<ServerTerrainData>(jsonResponse);
+                    onComplete?.Invoke(terrainData);
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"🏔️ ❌ Failed to parse terrain JSON: {e.Message}");
+                    onComplete?.Invoke(null);
+                }
+            }
+            else
+            {
+                Debug.LogError($"🏔️ ❌ Failed to fetch terrain from server: {request.error}");
+                onComplete?.Invoke(null);
+            }
+        }
+    }
+
+    private List<TerrainHill> GetFallbackHillData()
+    {
+        Debug.Log("🏔️ Using hardcoded fallback hills");
+        return new List<TerrainHill>
+        {
+            // Large hills (distant) - very flat and wide
+            new TerrainHill { id = "fallback_hill_01", name = "Northern Peak", hillSet = "fallback",
+                position = new Vector3Data { X = 30f, Y = 0.4f, Z = 40f },
+                scale = new Vector3Data { X = 25f, Y = 4f, Z = 20f },
+                color = new ColorData { r = 0.3f, g = 0.6f, b = 0.2f } },
+            new TerrainHill { id = "fallback_hill_02", name = "Western Heights", hillSet = "fallback",
+                position = new Vector3Data { X = -45f, Y = 0.5f, Z = 30f },
+                scale = new Vector3Data { X = 30f, Y = 5f, Z = 25f },
+                color = new ColorData { r = 0.35f, g = 0.65f, b = 0.25f } },
+            new TerrainHill { id = "fallback_hill_03", name = "Eastern Ridge", hillSet = "fallback",
+                position = new Vector3Data { X = 50f, Y = 0.35f, Z = -35f },
+                scale = new Vector3Data { X = 22f, Y = 3.5f, Z = 18f },
+                color = new ColorData { r = 0.4f, g = 0.7f, b = 0.3f } }
+        };
+    }
+
+    private void CreateSingleHill(Vector3 position, Vector3 scale, Color color, Transform parent, int hillIndex)
+    {
+        // Create hill using a sphere for smooth, natural shape
+        GameObject hill = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        hill.name = $"Hill_{hillIndex:D2}";
+        hill.transform.SetParent(parent);
+
+        // Position the hill so it's very deeply embedded for subtle rolling hills
+        // Only show the very top cap of the sphere
+        Vector3 hillPosition = position;
+        hillPosition.y = scale.y * 0.1f; // Show only top 20% of sphere (embed bottom 80%)
+        hill.transform.position = hillPosition;
+        hill.transform.localScale = scale;
+
+        // Apply natural hill color (slight variation of green)
+        Renderer hillRenderer = hill.GetComponent<Renderer>();
+        if (hillRenderer != null)
+        {
+            hillRenderer.material.color = color;
+        }
+
+        // Replace the round SphereCollider with MeshCollider to match the flattened shape
+        Collider originalCollider = hill.GetComponent<Collider>();
+        if (originalCollider != null)
+        {
+            DestroyImmediate(originalCollider); // Remove the round SphereCollider
+        }
+
+        // Add MeshCollider that matches the actual stretched mesh shape
+        MeshCollider meshCollider = hill.AddComponent<MeshCollider>();
+        meshCollider.convex = true; // Required for moving objects to interact with it
+        meshCollider.isTrigger = false;
+
+        Debug.Log($"🏔️ Hill_{hillIndex:D2}: Replaced SphereCollider with MeshCollider for accurate collision");
+
+        Debug.Log($"🏔️ Created Hill_{hillIndex:D2} at {hillPosition} with scale {scale}");
+    }
+
+    private float GetGroundHeightAtPosition(float x, float z)
+    {
+        // Cast a ray downward from high above to find the actual ground height
+        Vector3 rayStart = new Vector3(x, 100f, z); // Start high above
+        RaycastHit hit;
+
+        // Cast ray downward to hit ground or hills (exclude triggers)
+        int layerMask = ~0; // All layers
+        if (Physics.Raycast(rayStart, Vector3.down, out hit, Mathf.Infinity, layerMask))
+        {
+            // Found ground or hill surface
+            Debug.Log($"🎯 Ground height at ({x}, {z}): {hit.point.y} (hit: {hit.collider.name})");
+            return hit.point.y;
+        }
+        else
+        {
+            // Fallback to base ground level if no hit
+            Debug.LogWarning($"⚠️ No ground found at ({x}, {z}), using default height 0");
+            return 0f; // Base ground plane level
+        }
+    }
+
+    private Mesh CreateProceduralTerrainMesh()
+    {
+        Debug.Log("🏔️ Generating procedural mesh with hills...");
+
+        int meshSize = 100; // 100x100 vertices
+        float worldSize = 500f; // 500x500 world units
+        float maxHeight = 25f; // Maximum hill height
+
+        Mesh mesh = new Mesh();
+
+        // Create vertices
+        Vector3[] vertices = new Vector3[(meshSize + 1) * (meshSize + 1)];
+        Vector2[] uv = new Vector2[vertices.Length];
+
+        for (int i = 0, z = 0; z <= meshSize; z++)
+        {
+            for (int x = 0; x <= meshSize; x++, i++)
+            {
+                // Convert to world coordinates
+                float worldX = ((float)x / meshSize - 0.5f) * worldSize;
+                float worldZ = ((float)z / meshSize - 0.5f) * worldSize;
+
+                // Generate height using Perlin noise (same as terrain)
+                float xCoord = (float)x / meshSize;
+                float zCoord = (float)z / meshSize;
+
+                // Multiple noise layers for varied terrain
+                float noise1 = Mathf.PerlinNoise(xCoord * 4f, zCoord * 4f) * 0.6f;
+                float noise2 = Mathf.PerlinNoise(xCoord * 8f, zCoord * 8f) * 0.3f;
+                float noise3 = Mathf.PerlinNoise(xCoord * 16f, zCoord * 16f) * 0.1f;
+
+                float combinedNoise = noise1 + noise2 + noise3;
+                float height = combinedNoise * maxHeight;
+
+                vertices[i] = new Vector3(worldX, height, worldZ);
+                uv[i] = new Vector2((float)x / meshSize, (float)z / meshSize);
+            }
+        }
+
+        // Create triangles
+        int[] triangles = new int[meshSize * meshSize * 6];
+        int vert = 0;
+        int tris = 0;
+
+        for (int z = 0; z < meshSize; z++)
+        {
+            for (int x = 0; x < meshSize; x++)
+            {
+                triangles[tris + 0] = vert + 0;
+                triangles[tris + 1] = vert + meshSize + 1;
+                triangles[tris + 2] = vert + 1;
+                triangles[tris + 3] = vert + 1;
+                triangles[tris + 4] = vert + meshSize + 1;
+                triangles[tris + 5] = vert + meshSize + 2;
+
+                vert++;
+                tris += 6;
+            }
+            vert++;
+        }
+
+        mesh.vertices = vertices;
+        mesh.triangles = triangles;
+        mesh.uv = uv;
+        mesh.RecalculateNormals();
+
+        Debug.Log($"🏔️ ✅ Generated mesh: {vertices.Length} vertices, {triangles.Length / 3} triangles");
+
+        return mesh;
+    }
+
+    private TerrainData CreateTerrainData()
+    {
+        try
+        {
+            Debug.Log("Creating TerrainData...");
+            TerrainData terrainData = new TerrainData();
+
+            // Set terrain size - much larger than the original 100x100
+            int terrainSize = 500; // 500x500 units (5x larger)
+            float terrainHeight = 50f; // Maximum hill height
+
+            Debug.Log($"Setting terrain size: {terrainSize}x{terrainSize}, height: {terrainHeight}");
+            terrainData.size = new Vector3(terrainSize, terrainHeight, terrainSize);
+
+            // Set heightmap resolution (must be power of 2 + 1)
+            int heightmapResolution = 257; // Good balance of detail vs performance
+            Debug.Log($"Setting heightmap resolution: {heightmapResolution}");
+            terrainData.heightmapResolution = heightmapResolution;
+
+            Debug.Log("Generating height map with Perlin noise...");
+            // Generate height map with random hills using Perlin noise
+            float[,] heights = new float[heightmapResolution, heightmapResolution];
+
+            // Multiple noise layers for varied terrain
+            for (int x = 0; x < heightmapResolution; x++)
+            {
+                for (int y = 0; y < heightmapResolution; y++)
+                {
+                    // Convert to normalized coordinates (0-1)
+                    float xCoord = (float)x / heightmapResolution;
+                    float yCoord = (float)y / heightmapResolution;
+
+                    // Layer 1: Large hills (low frequency, high amplitude)
+                    float noise1 = Mathf.PerlinNoise(xCoord * 4f, yCoord * 4f) * 0.6f;
+
+                    // Layer 2: Medium hills (medium frequency, medium amplitude)
+                    float noise2 = Mathf.PerlinNoise(xCoord * 8f, yCoord * 8f) * 0.3f;
+
+                    // Layer 3: Small details (high frequency, low amplitude)
+                    float noise3 = Mathf.PerlinNoise(xCoord * 16f, yCoord * 16f) * 0.1f;
+
+                    // Combine layers and normalize to 0-1 range
+                    float combinedNoise = noise1 + noise2 + noise3;
+
+                    // Apply some smoothing to avoid too sharp transitions
+                    heights[x, y] = Mathf.Clamp01(combinedNoise);
+                }
+            }
+
+            Debug.Log("Applying heights to terrain data...");
+            terrainData.SetHeights(0, 0, heights);
+
+            Debug.Log("Setting additional terrain properties...");
+            // Set control texture resolution for texture painting (if needed later)
+            terrainData.alphamapResolution = 128;
+
+            // Set detail resolution for grass/details (if needed later)
+            terrainData.SetDetailResolution(128, 8);
+
+            Debug.Log("✅ TerrainData created successfully!");
+            return terrainData;
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Error creating TerrainData: {ex.Message}");
+            Debug.LogError($"Stack trace: {ex.StackTrace}");
+            return null;
+        }
+    }
+
+    private Material CreateTerrainMaterial()
+    {
+        try
+        {
+            Debug.Log("🎨 Creating terrain material...");
+
+            // Try different shaders for terrain compatibility
+            string[] shaderNames = {
+                "Nature/Terrain/Standard",
+                "Standard",
+                "Legacy Shaders/Diffuse",
+                "Unlit/Color"
+            };
+
+            Shader terrainShader = null;
+            string usedShaderName = "";
+
+            foreach (string shaderName in shaderNames)
+            {
+                terrainShader = Shader.Find(shaderName);
+                if (terrainShader != null)
+                {
+                    usedShaderName = shaderName;
+                    Debug.Log($"🎨 Found shader: {shaderName}");
+                    break;
+                }
+                else
+                {
+                    Debug.Log($"🎨 Shader not found: {shaderName}");
+                }
+            }
+
+            if (terrainShader == null)
+            {
+                Debug.LogError("🎨 No suitable shader found for terrain!");
+                return null;
+            }
+
+            // Create material with found shader
+            Material terrainMaterial = new Material(terrainShader);
+
+            // Set bright, visible color for terrain
+            terrainMaterial.color = new Color(0.2f, 0.8f, 0.3f, 1f); // Bright green for visibility
+
+            // Configure based on shader type
+            if (usedShaderName.Contains("Standard"))
+            {
+                terrainMaterial.SetFloat("_Smoothness", 0.1f);
+                terrainMaterial.SetFloat("_Metallic", 0.0f);
+            }
+
+            Debug.Log($"🎨 ✅ Created terrain material with shader: {usedShaderName}");
+            return terrainMaterial;
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"🎨 Error creating terrain material: {ex.Message}");
+            return null;
+        }
     }
 
     private void CreateLocalPlayer()
@@ -384,7 +1098,10 @@ public class AutoSceneSetup : MonoBehaviour
         Debug.Log("Creating LocalPlayer GameObject...");
         GameObject player = GameObject.CreatePrimitive(PrimitiveType.Capsule);
         player.name = "LocalPlayer";
-        player.transform.position = new Vector3(0, 1f, 0); // Transform at y=1 so CC bottom sits on ground
+
+        // Use proper ground height detection for player spawn
+        float groundHeight = GetGroundHeightAtPosition(0f, 0f);
+        player.transform.position = new Vector3(0, groundHeight + 1f, 0); // 1 unit above ground surface
         
         // Add the PlayerController component
         PlayerController playerController = player.AddComponent<PlayerController>();
@@ -541,9 +1258,10 @@ public class AutoSceneSetup : MonoBehaviour
             }
         }
         
-        // Make sure it's on the ground
+        // Make sure it's on the proper ground height (accounting for hills)
         Vector3 pos = enemyObj.transform.position;
-        pos.y = 0.5f; // Half cube height above ground
+        float groundHeight = GetGroundHeightAtPosition(pos.x, pos.z);
+        pos.y = groundHeight + 0.5f; // Half cube height above ground surface
         enemyObj.transform.position = pos;
         
         // Ensure collision is enabled (cube primitive already has a BoxCollider)
