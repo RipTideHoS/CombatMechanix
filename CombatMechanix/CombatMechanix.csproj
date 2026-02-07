@@ -12,4 +12,10 @@
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
   </ItemGroup>
 
+  <!-- Exclude Unity client files from server build -->
+  <ItemGroup>
+    <Compile Remove="Unity/**/*.cs" />
+    <None Include="Unity/**/*.cs" />
+  </ItemGroup>
+
 </Project>
