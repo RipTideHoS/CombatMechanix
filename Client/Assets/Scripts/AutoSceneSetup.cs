@@ -1345,13 +1345,17 @@ public class AutoSceneSetup : MonoBehaviour
         
         // Create the login panel
         GameObject loginPanel = CreateLoginPanel(canvasObj);
-        
+
+        // Create the level complete UI
+        LevelCompleteUI.CreateUI(canvasObj.transform);
+        Debug.Log("Level Complete UI created");
+
         // Connect the panels to UIManager
         ConnectUIManagerReferences(inventoryPanel, characterPanel, chatPanel, vendorPanel, loginPanel);
-        
+
         // Force Canvas to update
         Canvas.ForceUpdateCanvases();
-        
+
         Debug.Log("UI Canvas created with inventory panel and connected to UIManager");
         Debug.Log($"Canvas settings: RenderMode={canvas.renderMode}, SortingOrder={canvas.sortingOrder}");
     }

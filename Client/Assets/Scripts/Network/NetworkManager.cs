@@ -89,6 +89,9 @@ public class NetworkManager : MonoBehaviour
     // Terrain system events
     public static event Action<TerrainChangeMessage> OnTerrainChange;
 
+    // Level system events
+    public static event Action<LevelCompleteMessage> OnLevelComplete;
+
     private ClientWebSocket _webSocket;
     private CancellationTokenSource _cancellationTokenSource;
     private bool _isConnecting = false;
@@ -554,6 +557,16 @@ public class NetworkManager : MonoBehaviour
                     }
                     break;
 
+                // Level system message handler
+                case "LevelComplete":
+                    var levelCompleteMsg = JsonConvert.DeserializeObject<LevelCompleteMessage>(wrapper.Data.ToString());
+                    if (levelCompleteMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] LevelComplete received: Level {levelCompleteMsg.completedLevel}, Kills={levelCompleteMsg.enemiesKilled}, XP={levelCompleteMsg.experienceEarned}");
+                        QueueMainThreadAction(() => OnLevelComplete?.Invoke(levelCompleteMsg));
+                    }
+                    break;
+
                 default:
                     Debug.LogWarning($"Unknown message type: {wrapper.Type}");
                     break;
@@ -800,6 +813,30 @@ public class NetworkManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Failed to send grenade throw: {ex.Message}");
+        }
+    }
+
+    public async Task SendLevelContinue(int nextLevel)
+    {
+        if (!IsConnected || string.IsNullOrEmpty(ConnectionId)) return;
+
+        try
+        {
+            string actualPlayerId = GameManager.Instance?.LocalPlayerId ?? ConnectionId;
+
+            var continueMessage = new LevelContinueMessage
+            {
+                playerId = actualPlayerId,
+                nextLevel = nextLevel,
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            };
+
+            await SendMessage("LevelContinue", continueMessage);
+            Debug.Log($"[NetworkManager] Sent level continue request for level {nextLevel}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send level continue: {ex.Message}");
         }
     }
 
