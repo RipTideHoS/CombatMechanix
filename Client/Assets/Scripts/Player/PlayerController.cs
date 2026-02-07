@@ -214,6 +214,19 @@ public class PlayerController : MonoBehaviour
         // Check if grounded
         _isGrounded = _characterController != null ? _characterController.isGrounded : true;
 
+        // Debug ground detection issues
+        if (!_isGrounded && _characterController != null)
+        {
+            // Check if ground exists in scene
+            GameObject ground = GameObject.Find("Ground");
+            string groundInfo = ground != null ?
+                $"Ground exists at {ground.transform.position} with components: {string.Join(", ", ground.GetComponents<Component>().Select(c => c.GetType().Name))}" :
+                "No Ground found in scene!";
+
+            Debug.LogWarning($"⚠️ Player not grounded! Position: {transform.position}, Velocity: {_verticalVelocity}");
+            Debug.LogWarning($"⚠️ Ground check: {groundInfo}");
+        }
+
         // Handle gravity
         if (_isGrounded && _verticalVelocity < 0)
         {
@@ -222,6 +235,41 @@ public class PlayerController : MonoBehaviour
         else
         {
             _verticalVelocity += _gravity * Time.deltaTime; // Apply gravity
+
+            // CRITICAL: Immediate validation after gravity calculation
+            if (!float.IsFinite(_verticalVelocity))
+            {
+                Debug.LogError($"🚨 CRITICAL: Invalid velocity after gravity calculation! _verticalVelocity={_verticalVelocity}, _gravity={_gravity}, Time.deltaTime={Time.deltaTime}");
+                _verticalVelocity = -2f; // Reset to small downward force
+                CreateEmergencyGroundIfNeeded();
+            }
+
+            // Emergency fix: Prevent infinite falling
+            if (_verticalVelocity < -50f) // Terminal velocity cap
+            {
+                _verticalVelocity = -50f;
+                Debug.LogWarning($"⚠️ EMERGENCY: Capped falling velocity at -50. Player position: {transform.position}");
+            }
+
+            // Emergency ground detection: If player falls below -100, teleport back up
+            if (transform.position.y < -100f)
+            {
+                Debug.LogError("🚨 EMERGENCY: Player fell below -100! Teleporting to ground level.");
+                transform.position = new Vector3(transform.position.x, 1f, transform.position.z);
+                _verticalVelocity = 0f;
+
+                // Create emergency ground if none exists
+                CreateEmergencyGroundIfNeeded();
+            }
+
+            // More aggressive emergency check for continuous falling
+            if (transform.position.y < -10f && _verticalVelocity < -10f)
+            {
+                Debug.LogError("🚨 EMERGENCY: Player falling too fast! Creating emergency ground.");
+                CreateEmergencyGroundIfNeeded();
+                transform.position = new Vector3(transform.position.x, 1f, transform.position.z);
+                _verticalVelocity = 0f;
+            }
         }
 
         // Calculate horizontal movement
@@ -241,10 +289,57 @@ public class PlayerController : MonoBehaviour
         Vector3 finalMovement = horizontalMovement;
         finalMovement.y = _verticalVelocity;
 
+        // CRITICAL: Validate movement before applying to prevent infinite/NaN values
+        if (!float.IsFinite(_verticalVelocity) || !float.IsFinite(finalMovement.y))
+        {
+            Debug.LogError($"🚨 CRITICAL: Invalid velocity detected! _verticalVelocity={_verticalVelocity}, finalMovement.y={finalMovement.y}");
+            _verticalVelocity = 0f;
+            finalMovement.y = 0f;
+            transform.position = new Vector3(transform.position.x, 1f, transform.position.z);
+            CreateEmergencyGroundIfNeeded();
+        }
+
+        // Cap movement to prevent extreme values
+        if (Mathf.Abs(finalMovement.y) > 100f)
+        {
+            Debug.LogError($"🚨 CRITICAL: Extreme vertical movement detected: {finalMovement.y}! Capping to -50.");
+            finalMovement.y = finalMovement.y > 0 ? 50f : -50f;
+            _verticalVelocity = finalMovement.y;
+        }
+
         // Apply movement with collision detection
         if (_characterController != null)
         {
-            _characterController.Move(finalMovement * Time.deltaTime);
+            // CRITICAL: Final validation right before Move() to prevent Infinity/NaN
+            Vector3 moveVector = finalMovement * Time.deltaTime;
+            if (!float.IsFinite(moveVector.x) || !float.IsFinite(moveVector.y) || !float.IsFinite(moveVector.z) ||
+                !float.IsFinite(transform.position.x) || !float.IsFinite(transform.position.y) || !float.IsFinite(transform.position.z))
+            {
+                Debug.LogError($"🚨 CRITICAL: Invalid move vector or position detected! moveVector={moveVector}, position={transform.position}");
+                _verticalVelocity = 0f;
+                _characterController.enabled = false;
+                transform.position = new Vector3(
+                    float.IsFinite(transform.position.x) ? transform.position.x : 0f,
+                    1f,
+                    float.IsFinite(transform.position.z) ? transform.position.z : 0f
+                );
+                _characterController.enabled = true;
+                CreateEmergencyGroundIfNeeded();
+                return; // Skip this frame's movement
+            }
+
+            _characterController.Move(moveVector);
+
+            // IMMEDIATE position validation after move
+            if (!float.IsFinite(transform.position.y) || transform.position.y > 1000f || transform.position.y < -1000f)
+            {
+                Debug.LogError($"🚨 CRITICAL: Invalid position after move! Y={transform.position.y}! Emergency reset!");
+                _characterController.enabled = false;
+                transform.position = new Vector3(transform.position.x, 1f, transform.position.z);
+                _characterController.enabled = true;
+                _verticalVelocity = 0f;
+                CreateEmergencyGroundIfNeeded();
+            }
         }
         else
         {
@@ -335,6 +430,35 @@ public class PlayerController : MonoBehaviour
             // Clear prediction history since we're now synced
             _positionHistory.Clear();
             _timeHistory.Clear();
+        }
+    }
+
+    private void CreateEmergencyGroundIfNeeded()
+    {
+        GameObject existingGround = GameObject.Find("Ground");
+        GameObject existingEmergency = GameObject.Find("EmergencyGround");
+
+        if (existingGround == null && existingEmergency == null)
+        {
+            Debug.LogError("🚨 No ground found! Creating emergency ground plane.");
+
+            GameObject emergencyGround = GameObject.CreatePrimitive(PrimitiveType.Plane);
+            emergencyGround.name = "EmergencyGround";
+            emergencyGround.transform.position = new Vector3(0, 0f, 0);
+            emergencyGround.transform.localScale = new Vector3(50, 1, 50); // Large 500x500 units
+
+            // Make it visible red for emergency
+            Renderer renderer = emergencyGround.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                renderer.material.color = new Color(0.8f, 0.2f, 0.2f); // Red for emergency visibility
+            }
+
+            Debug.LogError("🚨 Emergency ground created at Y=0 with 500x500 size!");
+        }
+        else
+        {
+            Debug.Log($"🔍 Ground check: Ground={existingGround != null}, Emergency={existingEmergency != null}");
         }
     }
 
