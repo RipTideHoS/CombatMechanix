@@ -644,15 +644,6 @@ public class AutoSceneSetup : MonoBehaviour
         Debug.Log($"🚨 ✅ Size: 200x200 units, Color: Natural Green");
         Debug.Log($"🚨 ✅ This ground should be impossible to miss!");
 
-        // Also create a tall visible marker at origin
-        GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        marker.name = "OriginMarker";
-        marker.transform.position = new Vector3(0, 2, 0); // Above player spawn
-        marker.transform.localScale = new Vector3(1, 4, 1); // Tall cube
-        marker.GetComponent<Renderer>().material.color = Color.yellow; // Bright yellow
-
-        Debug.Log("🚨 ✅ Created tall yellow origin marker at (0,2,0)");
-
         // Now add hills to make terrain interesting
         StartCoroutine(CreateHills());
 
