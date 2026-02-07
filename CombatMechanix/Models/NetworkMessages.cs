@@ -627,6 +627,69 @@ namespace CombatMechanix.Models
             public int FlashGrenades { get; set; } = 3;
             public long Timestamp { get; set; }
         }
+
+        // ===== TERRAIN SYSTEM MESSAGES =====
+
+        /// <summary>
+        /// Server notification that terrain has changed (e.g., level complete, new area)
+        /// Sent via WebSocket to trigger client terrain refresh
+        /// </summary>
+        public class TerrainChangeMessage
+        {
+            /// <summary>
+            /// Reason for terrain change (e.g., "LevelComplete", "AreaTransition")
+            /// </summary>
+            public string Reason { get; set; } = string.Empty;
+
+            /// <summary>
+            /// Current level/wave number
+            /// </summary>
+            public int CurrentLevel { get; set; } = 1;
+
+            /// <summary>
+            /// The new terrain data to apply
+            /// </summary>
+            public TerrainData TerrainData { get; set; } = new();
+
+            /// <summary>
+            /// Server timestamp when terrain changed
+            /// </summary>
+            public long Timestamp { get; set; }
+        }
+
+        /// <summary>
+        /// Terrain data for client synchronization (matches TerrainService.ServerTerrainData)
+        /// </summary>
+        public class TerrainData
+        {
+            public float BaseGroundLevel { get; set; }
+            public List<TerrainHillData> Hills { get; set; } = new();
+            public List<string> ActiveHillSets { get; set; } = new();
+        }
+
+        /// <summary>
+        /// Hill data for terrain (matches TerrainService.TerrainHill)
+        /// </summary>
+        public class TerrainHillData
+        {
+            public string Id { get; set; } = string.Empty;
+            public string Name { get; set; } = string.Empty;
+            public string HillSet { get; set; } = string.Empty;
+            public Vector3Data Position { get; set; } = new();
+            public Vector3Data Scale { get; set; } = new();
+            public TerrainColorData Color { get; set; } = new();
+        }
+
+        /// <summary>
+        /// Color data for terrain hills
+        /// </summary>
+        public class TerrainColorData
+        {
+            public float R { get; set; }
+            public float G { get; set; }
+            public float B { get; set; }
+            public float A { get; set; } = 1f;
+        }
     }
 
     public class PlayerState

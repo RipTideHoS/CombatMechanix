@@ -499,6 +499,71 @@ public class NetworkMessages
         public float SpreadAngle { get; set; } = 0f;   // Spread cone angle in degrees (0 = no spread)
         public string SpreadPattern { get; set; } = "None"; // "None", "Cone", "Horizontal", "Circle"
     }
+
+    // Grenade system messages
+    public class GrenadeThrowMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public Vector3Data ThrowPosition { get; set; } = new();
+        public Vector3Data TargetPosition { get; set; } = new();
+        public string GrenadeType { get; set; } = string.Empty;
+        public long Timestamp { get; set; }
+    }
+
+    public class GrenadeSpawnMessage
+    {
+        public string GrenadeId { get; set; } = string.Empty;
+        public string PlayerId { get; set; } = string.Empty;
+        public Vector3Data StartPosition { get; set; } = new();
+        public Vector3Data TargetPosition { get; set; } = new();
+        public string GrenadeType { get; set; } = string.Empty;
+        public float ExplosionDelay { get; set; }
+        public long Timestamp { get; set; }
+    }
+
+    public class GrenadeWarningMessage
+    {
+        public string GrenadeId { get; set; } = string.Empty;
+        public Vector3Data ExplosionPosition { get; set; } = new();
+        public float ExplosionRadius { get; set; }
+        public float TimeToExplosion { get; set; }
+        public long Timestamp { get; set; }
+    }
+
+    public class GrenadeExplosionMessage
+    {
+        public string GrenadeId { get; set; } = string.Empty;
+        public Vector3Data ExplosionPosition { get; set; } = new();
+        public float ExplosionRadius { get; set; }
+        public float Damage { get; set; }
+        public List<DamageTarget> DamagedTargets { get; set; } = new();
+        public long Timestamp { get; set; }
+    }
+
+    public class GrenadeErrorMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public string ErrorMessage { get; set; } = string.Empty;
+        public string ErrorType { get; set; } = string.Empty;
+        public long Timestamp { get; set; }
+    }
+
+    public class GrenadeCountUpdateMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public int FragGrenades { get; set; }
+        public int SmokeGrenades { get; set; }
+        public int FlashGrenades { get; set; }
+        public long Timestamp { get; set; }
+    }
+
+    public class DamageTarget
+    {
+        public string TargetId { get; set; } = string.Empty;
+        public string TargetType { get; set; } = string.Empty; // "Player", "Enemy"
+        public float DamageDealt { get; set; }
+        public Vector3Data Position { get; set; } = new();
+    }
 }
 
 public class PlayerState
@@ -663,4 +728,65 @@ public class WeaponTimingMessage
     public string WeaponType { get; set; } = "Melee"; // "Melee", "Ranged"
     public string WeaponName { get; set; } = ""; // For debugging/display
     public bool HasWeaponEquipped { get; set; } = false; // If no weapon, use default timing
+}
+
+// Terrain system data structures
+[Serializable]
+public class ColorData
+{
+    public float r;
+    public float g;
+    public float b;
+    public float a = 1f;
+
+    public Color ToColor() => new Color(r, g, b, a);
+}
+
+[Serializable]
+public class TerrainHill
+{
+    public string id;
+    public string name;
+    public string hillSet;
+    public Vector3Data position;
+    public Vector3Data scale;
+    public ColorData color;
+}
+
+// ===== TERRAIN SYSTEM MESSAGES =====
+
+/// <summary>
+/// Server notification that terrain has changed (e.g., level complete, new area)
+/// Sent via WebSocket to trigger client terrain refresh
+/// </summary>
+[Serializable]
+public class TerrainChangeMessage
+{
+    /// <summary>
+    /// Reason for terrain change (e.g., "LevelComplete", "AreaTransition")
+    /// </summary>
+    public string reason;
+
+    /// <summary>
+    /// Current level/wave number
+    /// </summary>
+    public int currentLevel;
+
+    /// <summary>
+    /// The new terrain data to apply
+    /// </summary>
+    public ServerTerrainData terrainData;
+
+    /// <summary>
+    /// Server timestamp when terrain changed
+    /// </summary>
+    public long timestamp;
+}
+
+[Serializable]
+public class ServerTerrainData
+{
+    public float baseGroundLevel;
+    public List<TerrainHill> hills;
+    public List<string> activeHillSets;
 }
