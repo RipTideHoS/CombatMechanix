@@ -36,7 +36,8 @@ public class EnemyBase : MonoBehaviour
 
     // Rolling animation
     private Vector3 _lastPosition;
-    private Quaternion _rollRotation = Quaternion.identity;
+    private Quaternion _facingRotation = Quaternion.identity;
+    private float _rollAngle = 0f;
     private bool _positionInitialized = false;
     
     // Events
@@ -62,29 +63,15 @@ public class EnemyBase : MonoBehaviour
         float distance = delta.magnitude;
         if (distance > 0.001f)
         {
-            // Pick a world axis (X or Z) based on dominant movement direction
-            // This keeps the roll axis aligned with a cube face normal
-            float absDx = Mathf.Abs(delta.x);
-            float absDz = Mathf.Abs(delta.z);
+            // Step 1: Face the cube in the movement direction (Y-axis rotation)
+            _facingRotation = Quaternion.LookRotation(delta.normalized, Vector3.up);
 
-            Vector3 rollAxis;
-            float rollAngle;
+            // Step 2: Accumulate forward roll around the local X axis
+            // (perpendicular to movement direction, parallel to ground)
+            _rollAngle += distance * 90f; // 90 degrees per unit of distance
 
-            if (absDz >= absDx)
-            {
-                // Moving primarily in Z - roll around the X axis
-                rollAxis = Vector3.right;
-                rollAngle = Mathf.Sign(delta.z) * distance * 90f;
-            }
-            else
-            {
-                // Moving primarily in X - roll around the Z axis
-                rollAxis = Vector3.forward;
-                rollAngle = -Mathf.Sign(delta.x) * distance * 90f;
-            }
-
-            _rollRotation = Quaternion.AngleAxis(rollAngle, rollAxis) * _rollRotation;
-            transform.rotation = _rollRotation;
+            // Combine: facing direction first, then roll forward in local space
+            transform.rotation = _facingRotation * Quaternion.AngleAxis(_rollAngle, Vector3.right);
         }
 
         _lastPosition = currentPos;
@@ -262,7 +249,8 @@ public class EnemyBase : MonoBehaviour
     {
         _isDead = false;
         _currentHealth = _maxHealth;
-        _rollRotation = Quaternion.identity;
+        _facingRotation = Quaternion.identity;
+        _rollAngle = 0f;
         _lastPosition = transform.position;
 
         if (_collider != null)
