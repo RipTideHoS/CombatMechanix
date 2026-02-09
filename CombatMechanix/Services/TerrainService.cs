@@ -258,45 +258,46 @@ namespace CombatMechanix.Services
         private void InitializeDefaultHillSets()
         {
             // Default hill set - the original hills
+            // Position.Y = scale.Y * -0.2f embeds 70% of sphere, exposing top 30% for gentle slopes
             var defaultHills = new List<HillData>
             {
                 // Large hills (distant) - very flat and wide
-                new HillData { Id = "hill_01", Name = "Northern Peak", HillSet = "default", Position = new Vector3Data { X = 30f, Y = 4f * 0.1f, Z = 40f }, Scale = new Vector3Data { X = 25f, Y = 4f, Z = 20f }, Color = new ColorData { R = 0.3f, G = 0.6f, B = 0.2f } },
-                new HillData { Id = "hill_02", Name = "Western Heights", HillSet = "default", Position = new Vector3Data { X = -45f, Y = 5f * 0.1f, Z = 30f }, Scale = new Vector3Data { X = 30f, Y = 5f, Z = 25f }, Color = new ColorData { R = 0.35f, G = 0.65f, B = 0.25f } },
-                new HillData { Id = "hill_03", Name = "Eastern Ridge", HillSet = "default", Position = new Vector3Data { X = 50f, Y = 3.5f * 0.1f, Z = -35f }, Scale = new Vector3Data { X = 22f, Y = 3.5f, Z = 18f }, Color = new ColorData { R = 0.4f, G = 0.7f, B = 0.3f } },
+                new HillData { Id = "hill_01", Name = "Northern Peak", HillSet = "default", Position = new Vector3Data { X = 30f, Y = 4f * -0.2f, Z = 40f }, Scale = new Vector3Data { X = 25f, Y = 4f, Z = 20f }, Color = new ColorData { R = 0.3f, G = 0.6f, B = 0.2f } },
+                new HillData { Id = "hill_02", Name = "Western Heights", HillSet = "default", Position = new Vector3Data { X = -45f, Y = 5f * -0.2f, Z = 30f }, Scale = new Vector3Data { X = 30f, Y = 5f, Z = 25f }, Color = new ColorData { R = 0.35f, G = 0.65f, B = 0.25f } },
+                new HillData { Id = "hill_03", Name = "Eastern Ridge", HillSet = "default", Position = new Vector3Data { X = 50f, Y = 3.5f * -0.2f, Z = -35f }, Scale = new Vector3Data { X = 22f, Y = 3.5f, Z = 18f }, Color = new ColorData { R = 0.4f, G = 0.7f, B = 0.3f } },
 
                 // Medium hills - moderately flat
-                new HillData { Id = "hill_04", Name = "Central Mound", HillSet = "default", Position = new Vector3Data { X = -25f, Y = 3f * 0.1f, Z = -20f }, Scale = new Vector3Data { X = 18f, Y = 3f, Z = 15f }, Color = new ColorData { R = 0.38f, G = 0.68f, B = 0.28f } },
-                new HillData { Id = "hill_05", Name = "Sunrise Hill", HillSet = "default", Position = new Vector3Data { X = 15f, Y = 2.5f * 0.1f, Z = 25f }, Scale = new Vector3Data { X = 16f, Y = 2.5f, Z = 12f }, Color = new ColorData { R = 0.42f, G = 0.72f, B = 0.32f } },
-                new HillData { Id = "hill_06", Name = "Far Meadow", HillSet = "default", Position = new Vector3Data { X = -10f, Y = 2.8f * 0.1f, Z = 45f }, Scale = new Vector3Data { X = 17f, Y = 2.8f, Z = 14f }, Color = new ColorData { R = 0.36f, G = 0.66f, B = 0.26f } },
+                new HillData { Id = "hill_04", Name = "Central Mound", HillSet = "default", Position = new Vector3Data { X = -25f, Y = 3f * -0.2f, Z = -20f }, Scale = new Vector3Data { X = 18f, Y = 3f, Z = 15f }, Color = new ColorData { R = 0.38f, G = 0.68f, B = 0.28f } },
+                new HillData { Id = "hill_05", Name = "Sunrise Hill", HillSet = "default", Position = new Vector3Data { X = 15f, Y = 2.5f * -0.2f, Z = 25f }, Scale = new Vector3Data { X = 16f, Y = 2.5f, Z = 12f }, Color = new ColorData { R = 0.42f, G = 0.72f, B = 0.32f } },
+                new HillData { Id = "hill_06", Name = "Far Meadow", HillSet = "default", Position = new Vector3Data { X = -10f, Y = 2.8f * -0.2f, Z = 45f }, Scale = new Vector3Data { X = 17f, Y = 2.8f, Z = 14f }, Color = new ColorData { R = 0.36f, G = 0.66f, B = 0.26f } },
 
                 // Small hills (closer) - gentle mounds
-                new HillData { Id = "hill_07", Name = "Little Knoll", HillSet = "default", Position = new Vector3Data { X = 12f, Y = 2f * 0.1f, Z = 8f }, Scale = new Vector3Data { X = 12f, Y = 2f, Z = 10f }, Color = new ColorData { R = 0.45f, G = 0.75f, B = 0.35f } },
-                new HillData { Id = "hill_08", Name = "Nearby Rise", HillSet = "default", Position = new Vector3Data { X = -8f, Y = 1.5f * 0.1f, Z = 12f }, Scale = new Vector3Data { X = 10f, Y = 1.5f, Z = 8f }, Color = new ColorData { R = 0.43f, G = 0.73f, B = 0.33f } },
-                new HillData { Id = "hill_09", Name = "South Bump", HillSet = "default", Position = new Vector3Data { X = 20f, Y = 1.8f * 0.1f, Z = -15f }, Scale = new Vector3Data { X = 14f, Y = 1.8f, Z = 11f }, Color = new ColorData { R = 0.41f, G = 0.71f, B = 0.31f } },
-                new HillData { Id = "hill_10", Name = "Close Mound", HillSet = "default", Position = new Vector3Data { X = -18f, Y = 1.6f * 0.1f, Z = 5f }, Scale = new Vector3Data { X = 11f, Y = 1.6f, Z = 9f }, Color = new ColorData { R = 0.44f, G = 0.74f, B = 0.34f } },
+                new HillData { Id = "hill_07", Name = "Little Knoll", HillSet = "default", Position = new Vector3Data { X = 12f, Y = 2f * -0.2f, Z = 8f }, Scale = new Vector3Data { X = 12f, Y = 2f, Z = 10f }, Color = new ColorData { R = 0.45f, G = 0.75f, B = 0.35f } },
+                new HillData { Id = "hill_08", Name = "Nearby Rise", HillSet = "default", Position = new Vector3Data { X = -8f, Y = 1.5f * -0.2f, Z = 12f }, Scale = new Vector3Data { X = 10f, Y = 1.5f, Z = 8f }, Color = new ColorData { R = 0.43f, G = 0.73f, B = 0.33f } },
+                new HillData { Id = "hill_09", Name = "South Bump", HillSet = "default", Position = new Vector3Data { X = 20f, Y = 1.8f * -0.2f, Z = -15f }, Scale = new Vector3Data { X = 14f, Y = 1.8f, Z = 11f }, Color = new ColorData { R = 0.41f, G = 0.71f, B = 0.31f } },
+                new HillData { Id = "hill_10", Name = "Close Mound", HillSet = "default", Position = new Vector3Data { X = -18f, Y = 1.6f * -0.2f, Z = 5f }, Scale = new Vector3Data { X = 11f, Y = 1.6f, Z = 9f }, Color = new ColorData { R = 0.44f, G = 0.74f, B = 0.34f } },
 
                 // Rolling hills (medium distance) - elongated and flat
-                new HillData { Id = "hill_11", Name = "Rolling Ridge", HillSet = "default", Position = new Vector3Data { X = 35f, Y = 2.5f * 0.1f, Z = 15f }, Scale = new Vector3Data { X = 20f, Y = 2.5f, Z = 12f }, Color = new ColorData { R = 0.37f, G = 0.67f, B = 0.27f } },
-                new HillData { Id = "hill_12", Name = "Distant Plateau", HillSet = "default", Position = new Vector3Data { X = -30f, Y = 3.2f * 0.1f, Z = -40f }, Scale = new Vector3Data { X = 24f, Y = 3.2f, Z = 15f }, Color = new ColorData { R = 0.39f, G = 0.69f, B = 0.29f } }
+                new HillData { Id = "hill_11", Name = "Rolling Ridge", HillSet = "default", Position = new Vector3Data { X = 35f, Y = 2.5f * -0.2f, Z = 15f }, Scale = new Vector3Data { X = 20f, Y = 2.5f, Z = 12f }, Color = new ColorData { R = 0.37f, G = 0.67f, B = 0.27f } },
+                new HillData { Id = "hill_12", Name = "Distant Plateau", HillSet = "default", Position = new Vector3Data { X = -30f, Y = 3.2f * -0.2f, Z = -40f }, Scale = new Vector3Data { X = 24f, Y = 3.2f, Z = 15f }, Color = new ColorData { R = 0.39f, G = 0.69f, B = 0.29f } }
             };
 
             _hillSets["default"] = defaultHills;
 
-            // Example additional hill sets for different scenarios
+            // Additional hill sets for different scenarios
             var mountainSet = new List<HillData>
             {
-                new HillData { Id = "mountain_01", Name = "Great Peak", HillSet = "mountains", Position = new Vector3Data { X = 0f, Y = 15f * 0.1f, Z = 0f }, Scale = new Vector3Data { X = 40f, Y = 15f, Z = 40f }, Color = new ColorData { R = 0.25f, G = 0.5f, B = 0.2f } },
-                new HillData { Id = "mountain_02", Name = "Twin Peak North", HillSet = "mountains", Position = new Vector3Data { X = -60f, Y = 12f * 0.1f, Z = 60f }, Scale = new Vector3Data { X = 35f, Y = 12f, Z = 30f }, Color = new ColorData { R = 0.3f, G = 0.55f, B = 0.25f } },
-                new HillData { Id = "mountain_03", Name = "Twin Peak South", HillSet = "mountains", Position = new Vector3Data { X = 60f, Y = 12f * 0.1f, Z = -60f }, Scale = new Vector3Data { X = 35f, Y = 12f, Z = 30f }, Color = new ColorData { R = 0.3f, G = 0.55f, B = 0.25f } }
+                new HillData { Id = "mountain_01", Name = "Great Peak", HillSet = "mountains", Position = new Vector3Data { X = 0f, Y = 15f * -0.2f, Z = 0f }, Scale = new Vector3Data { X = 40f, Y = 15f, Z = 40f }, Color = new ColorData { R = 0.25f, G = 0.5f, B = 0.2f } },
+                new HillData { Id = "mountain_02", Name = "Twin Peak North", HillSet = "mountains", Position = new Vector3Data { X = -60f, Y = 12f * -0.2f, Z = 60f }, Scale = new Vector3Data { X = 35f, Y = 12f, Z = 30f }, Color = new ColorData { R = 0.3f, G = 0.55f, B = 0.25f } },
+                new HillData { Id = "mountain_03", Name = "Twin Peak South", HillSet = "mountains", Position = new Vector3Data { X = 60f, Y = 12f * -0.2f, Z = -60f }, Scale = new Vector3Data { X = 35f, Y = 12f, Z = 30f }, Color = new ColorData { R = 0.3f, G = 0.55f, B = 0.25f } }
             };
 
             _hillSets["mountains"] = mountainSet;
 
             var plainsSet = new List<HillData>
             {
-                new HillData { Id = "plain_01", Name = "Gentle Rise", HillSet = "plains", Position = new Vector3Data { X = 25f, Y = 1f * 0.1f, Z = 25f }, Scale = new Vector3Data { X = 30f, Y = 1f, Z = 30f }, Color = new ColorData { R = 0.5f, G = 0.8f, B = 0.4f } },
-                new HillData { Id = "plain_02", Name = "Meadow Swell", HillSet = "plains", Position = new Vector3Data { X = -25f, Y = 0.8f * 0.1f, Z = -25f }, Scale = new Vector3Data { X = 25f, Y = 0.8f, Z = 25f }, Color = new ColorData { R = 0.52f, G = 0.82f, B = 0.42f } }
+                new HillData { Id = "plain_01", Name = "Gentle Rise", HillSet = "plains", Position = new Vector3Data { X = 25f, Y = 1f * -0.2f, Z = 25f }, Scale = new Vector3Data { X = 30f, Y = 1f, Z = 30f }, Color = new ColorData { R = 0.5f, G = 0.8f, B = 0.4f } },
+                new HillData { Id = "plain_02", Name = "Meadow Swell", HillSet = "plains", Position = new Vector3Data { X = -25f, Y = 0.8f * -0.2f, Z = -25f }, Scale = new Vector3Data { X = 25f, Y = 0.8f, Z = 25f }, Color = new ColorData { R = 0.52f, G = 0.82f, B = 0.42f } }
             };
 
             _hillSets["plains"] = plainsSet;

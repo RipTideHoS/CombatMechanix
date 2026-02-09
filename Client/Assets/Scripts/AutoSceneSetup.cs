@@ -786,15 +786,15 @@ public class AutoSceneSetup : MonoBehaviour
         {
             // Large hills (distant) - very flat and wide
             new TerrainHill { id = "fallback_hill_01", name = "Northern Peak", hillSet = "fallback",
-                position = new Vector3Data { X = 30f, Y = 0.4f, Z = 40f },
+                position = new Vector3Data { X = 30f, Y = -0.8f, Z = 40f },
                 scale = new Vector3Data { X = 25f, Y = 4f, Z = 20f },
                 color = new ColorData { r = 0.3f, g = 0.6f, b = 0.2f } },
             new TerrainHill { id = "fallback_hill_02", name = "Western Heights", hillSet = "fallback",
-                position = new Vector3Data { X = -45f, Y = 0.5f, Z = 30f },
+                position = new Vector3Data { X = -45f, Y = -1f, Z = 30f },
                 scale = new Vector3Data { X = 30f, Y = 5f, Z = 25f },
                 color = new ColorData { r = 0.35f, g = 0.65f, b = 0.25f } },
             new TerrainHill { id = "fallback_hill_03", name = "Eastern Ridge", hillSet = "fallback",
-                position = new Vector3Data { X = 50f, Y = 0.35f, Z = -35f },
+                position = new Vector3Data { X = 50f, Y = -0.7f, Z = -35f },
                 scale = new Vector3Data { X = 22f, Y = 3.5f, Z = 18f },
                 color = new ColorData { r = 0.4f, g = 0.7f, b = 0.3f } }
         };
@@ -807,10 +807,9 @@ public class AutoSceneSetup : MonoBehaviour
         hill.name = $"Hill_{hillIndex:D2}";
         hill.transform.SetParent(parent);
 
-        // Position the hill so it's very deeply embedded for subtle rolling hills
-        // Only show the very top cap of the sphere
+        // Position the hill so only the top 30% is exposed, creating gentle walkable slopes
         Vector3 hillPosition = position;
-        hillPosition.y = scale.y * 0.1f; // Show only top 20% of sphere (embed bottom 80%)
+        hillPosition.y = scale.y * -0.2f; // Expose top 30% of sphere (embed bottom 70%)
         hill.transform.position = hillPosition;
         hill.transform.localScale = scale;
 
