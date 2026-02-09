@@ -38,8 +38,6 @@ namespace CombatMechanix.AI
         public void InitializeBehavior(EnemyState enemy)
         {
             var wanderRadius = (float)_config.CustomParameters["WanderRadius"];
-            
-            var wanderRadius = (float)_config.CustomParameters["WanderRadius"];
 
             // Pick an initial wander target so enemies start moving right away
             var initAngle = _random.NextDouble() * 2 * Math.PI;
