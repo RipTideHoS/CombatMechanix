@@ -33,6 +33,11 @@ public class EnemyBase : MonoBehaviour
     private Renderer _renderer;
     private Color _originalColor;
     private Collider _collider;
+
+    // Rolling animation
+    private Vector3 _lastPosition;
+    private Quaternion _rollRotation = Quaternion.identity;
+    private bool _positionInitialized = false;
     
     // Events
     public System.Action<float, float> OnHealthChanged; // current, max
@@ -42,6 +47,32 @@ public class EnemyBase : MonoBehaviour
     private void Start()
     {
         InitializeEnemy();
+        _lastPosition = transform.position;
+        _positionInitialized = true;
+    }
+
+    private void Update()
+    {
+        if (!_positionInitialized || _isDead) return;
+
+        Vector3 currentPos = transform.position;
+        Vector3 delta = currentPos - _lastPosition;
+        delta.y = 0; // Only horizontal movement
+
+        float distance = delta.magnitude;
+        if (distance > 0.001f)
+        {
+            Vector3 moveDir = delta.normalized;
+            // Roll axis is perpendicular to movement direction and parallel to ground
+            Vector3 rollAxis = Vector3.Cross(Vector3.up, moveDir).normalized;
+            // Roll angle: 90 degrees per unit of distance (one cube face per unit)
+            float rollAngle = -distance * 90f;
+
+            _rollRotation = Quaternion.AngleAxis(rollAngle, rollAxis) * _rollRotation;
+            transform.rotation = _rollRotation;
+        }
+
+        _lastPosition = currentPos;
     }
     
     private void InitializeEnemy()
@@ -216,17 +247,19 @@ public class EnemyBase : MonoBehaviour
     {
         _isDead = false;
         _currentHealth = _maxHealth;
-        
+        _rollRotation = Quaternion.identity;
+        _lastPosition = transform.position;
+
         if (_collider != null)
         {
             _collider.enabled = true;
         }
-        
+
         if (_renderer != null)
         {
             _renderer.material.color = _originalColor;
         }
-        
+
         Debug.Log($"[EnemyBase] {EnemyName} reset to full health");
         OnHealthChanged?.Invoke(_currentHealth, _maxHealth);
     }

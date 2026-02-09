@@ -158,10 +158,9 @@ public class EnemyNetworkManager : MonoBehaviour
         GameObject enemyObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
         enemyObj.name = $"NetworkEnemy_{enemyState.EnemyName}_{enemyState.EnemyId}";
         
-        // Position the enemy
+        // Position the enemy (rolling rotation is handled by EnemyBase.Update)
         Vector3 position = enemyState.Position.ToVector3();
         enemyObj.transform.position = position;
-        enemyObj.transform.rotation = Quaternion.Euler(0, enemyState.Rotation, 0);
         
         // Add EnemyBase component
         EnemyBase enemyBase = enemyObj.AddComponent<EnemyBase>();
@@ -216,10 +215,9 @@ public class EnemyNetworkManager : MonoBehaviour
     /// </summary>
     private void UpdateNetworkEnemyState(EnemyBase enemy, EnemyState enemyState)
     {
-        // Update position
+        // Update position (rolling rotation is handled by EnemyBase.Update)
         Vector3 newPosition = enemyState.Position.ToVector3();
         enemy.transform.position = newPosition;
-        enemy.transform.rotation = Quaternion.Euler(0, enemyState.Rotation, 0);
         
         // Update health (this will trigger UI updates and visual effects)
         float currentHealthPercent = enemy.GetHealthPercentage();
