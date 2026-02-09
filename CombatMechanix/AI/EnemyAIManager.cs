@@ -273,9 +273,9 @@ namespace CombatMechanix.AI
                 // Check if this is a significant update (position change > 0.5 units or rotation > 15 degrees)
                 var lastKnownState = GetLastNetworkState(enemy.EnemyId);
                 
-                if (lastKnownState == null || 
-                    AIWorldContext.CalculateDistance(enemy.Position, lastKnownState.Position) > 0.5f ||
-                    Math.Abs(enemy.Rotation - lastKnownState.Rotation) > 15f)
+                if (lastKnownState == null ||
+                    AIWorldContext.CalculateDistance(enemy.Position, lastKnownState.Position) > 0.1f ||
+                    Math.Abs(enemy.Rotation - lastKnownState.Rotation) > 10f)
                 {
                     significantUpdates.Add(enemy);
                     UpdateLastNetworkState(enemy);

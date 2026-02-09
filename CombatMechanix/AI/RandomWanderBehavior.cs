@@ -21,14 +21,14 @@ namespace CombatMechanix.AI
             _config = config ?? new BehaviorConfig
             {
                 UpdateIntervalMs = 50, // Update every 50ms for smooth movement
-                MovementSpeed = 2.0f,   // Active wandering speed
+                MovementSpeed = 1.2f,   // Casual wandering speed
                 DetectionRange = 15.0f, // Detection range for players
                 CustomParameters = new Dictionary<string, object>
                 {
-                    { "WanderRadius", 12.0f },     // How far to wander from spawn
-                    { "DirectionChangeInterval", 2.5f }, // Seconds between direction changes
-                    { "PauseChance", 0.15f },      // 15% chance to pause instead of move
-                    { "PauseDuration", 1.5f }      // How long to pause when stopping
+                    { "WanderRadius", 8.0f },      // How far to wander from spawn
+                    { "DirectionChangeInterval", 3.5f }, // Seconds between direction changes
+                    { "PauseChance", 0.25f },      // 25% chance to pause instead of move
+                    { "PauseDuration", 2.5f }      // How long to pause when stopping
                 }
             };
         }
@@ -39,15 +39,26 @@ namespace CombatMechanix.AI
         {
             var wanderRadius = (float)_config.CustomParameters["WanderRadius"];
             
+            var wanderRadius = (float)_config.CustomParameters["WanderRadius"];
+
+            // Pick an initial wander target so enemies start moving right away
+            var initAngle = _random.NextDouble() * 2 * Math.PI;
+            var initDist = _random.NextDouble() * wanderRadius;
+
             _enemyStates[enemy.EnemyId] = new WanderState
             {
-                SpawnPosition = new Vector3Data 
-                { 
-                    X = enemy.Position.X, 
-                    Y = enemy.Position.Y, 
-                    Z = enemy.Position.Z 
+                SpawnPosition = new Vector3Data
+                {
+                    X = enemy.Position.X,
+                    Y = enemy.Position.Y,
+                    Z = enemy.Position.Z
                 },
-                CurrentTarget = enemy.Position,
+                CurrentTarget = new Vector3Data
+                {
+                    X = enemy.Position.X + (float)(Math.Cos(initAngle) * initDist),
+                    Y = enemy.Position.Y,
+                    Z = enemy.Position.Z + (float)(Math.Sin(initAngle) * initDist)
+                },
                 LastDirectionChange = DateTime.UtcNow,
                 IsChasing = false,
                 IsPaused = false,
