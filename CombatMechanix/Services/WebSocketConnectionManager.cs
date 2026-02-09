@@ -1369,7 +1369,8 @@ namespace CombatMechanix.Services
 
             try
             {
-                var continueData = JsonSerializer.Deserialize<NetworkMessages.LevelContinueMessage>(data.ToString()!);
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var continueData = JsonSerializer.Deserialize<NetworkMessages.LevelContinueMessage>(data.ToString()!, options);
                 if (continueData == null) return;
 
                 _logger.LogInformation($"Player {continueData.PlayerId} requesting to continue to level {continueData.NextLevel}");
@@ -2354,7 +2355,72 @@ namespace CombatMechanix.Services
             
             await Task.CompletedTask; // Method signature requires async
         }
-        
+
+        /// <summary>
+        /// Restore all players to max health (called on level completion)
+        /// </summary>
+        public async Task RestoreAllPlayersHealth()
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var playerStatsRepository = scope.ServiceProvider.GetRequiredService<IPlayerStatsRepository>();
+
+            foreach (var player in _players.Values)
+            {
+                if (player.Health < player.MaxHealth)
+                {
+                    int oldHealth = player.Health;
+                    player.Health = player.MaxHealth;
+
+                    // Persist to database
+                    await playerStatsRepository.UpdatePlayerHealthAsync(player.PlayerId, player.MaxHealth);
+
+                    // Send health change notification to the player
+                    var connectionId = _connections.FirstOrDefault(c => c.Value.PlayerId == player.PlayerId).Key;
+                    if (!string.IsNullOrEmpty(connectionId))
+                    {
+                        await SendToConnection(connectionId, "HealthChange", new NetworkMessages.HealthChangeMessage
+                        {
+                            PlayerId = player.PlayerId,
+                            NewHealth = player.MaxHealth,
+                            HealthChange = player.MaxHealth - oldHealth,
+                            Source = "LevelComplete"
+                        });
+                    }
+
+                    _logger.LogInformation($"Restored player {player.PlayerId} health to max: {oldHealth} -> {player.MaxHealth}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reposition all players to clear spawn positions (called during level transitions)
+        /// </summary>
+        public async Task RepositionAllPlayers(TerrainService terrainService)
+        {
+            foreach (var player in _players.Values)
+            {
+                // Find a clear spawn position near origin for the new terrain
+                var spawnPos = terrainService.FindClearSpawnPosition(0f, 0f);
+
+                player.Position = spawnPos;
+
+                // Send reposition message to the player's client
+                var connectionId = _connections.FirstOrDefault(c => c.Value.PlayerId == player.PlayerId).Key;
+                if (!string.IsNullOrEmpty(connectionId))
+                {
+                    await SendToConnection(connectionId, "PlayerReposition", new NetworkMessages.PlayerRepositionMessage
+                    {
+                        PlayerId = player.PlayerId,
+                        Position = spawnPos,
+                        Reason = "LevelTransition",
+                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    });
+                }
+
+                _logger.LogInformation($"Repositioned player {player.PlayerId} to ({spawnPos.X:F1}, {spawnPos.Y:F1}, {spawnPos.Z:F1})");
+            }
+        }
+
         /// <summary>
         /// Get active players for AI context using cached in-memory data
         /// Returns the ACTUAL cached objects, not copies, so AI modifies the shared instances

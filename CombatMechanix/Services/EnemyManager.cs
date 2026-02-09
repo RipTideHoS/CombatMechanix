@@ -82,14 +82,16 @@ namespace CombatMechanix.Services
         public void InitializeDefaultEnemies()
         {
             _logger.LogInformation("Initializing default enemies...");
-            
-            // Create a test enemy near the spawn point
+
+            // Find terrain-clear positions for initial enemies
+            var spawnPos1 = _terrainService?.FindClearSpawnPosition(5f, 5f) ?? new Vector3Data(5f, 0.5f, 5f);
+
             var testEnemy = new EnemyState
             {
                 EnemyId = "enemy_test_001",
                 EnemyName = "Test Enemy",
                 EnemyType = "Basic",
-                Position = new Vector3Data(5f, 0.5f, 5f), // Near reference box
+                Position = spawnPos1,
                 Rotation = 0f,
                 Health = 100,
                 MaxHealth = 100,
@@ -98,53 +100,35 @@ namespace CombatMechanix.Services
                 IsAlive = true,
                 LastUpdate = DateTime.UtcNow
             };
-            
+
             _enemies.TryAdd(testEnemy.EnemyId, testEnemy);
-            
+
             // Initialize AI for the enemy
             _aiManager?.InitializeEnemyAI(testEnemy, "RandomWander");
-            
+
             _logger.LogInformation($"Spawned enemy: {testEnemy.EnemyName} (ID: {testEnemy.EnemyId}) at position ({testEnemy.Position.X}, {testEnemy.Position.Y}, {testEnemy.Position.Z})");
-            
+
             // Could add more default enemies here
             CreateAdditionalTestEnemies();
         }
 
         private void CreateAdditionalTestEnemies()
         {
-            // Add many more test enemies for better multi-projectile testing
-            var positions = new[]
-            {
-                new Vector3Data(10f, 0.5f, 10f),
-                new Vector3Data(-5f, 0.5f, 8f),
-                new Vector3Data(8f, 0.5f, -3f),
-                new Vector3Data(15f, 0.5f, 5f),
-                new Vector3Data(-10f, 0.5f, -5f),
-                new Vector3Data(0f, 0.5f, 15f),
-                new Vector3Data(-8f, 0.5f, 12f),
-                new Vector3Data(12f, 0.5f, -8f),
-                new Vector3Data(20f, 0.5f, 0f),
-                new Vector3Data(-15f, 0.5f, 10f),
-                new Vector3Data(6f, 0.5f, 18f),
-                new Vector3Data(-12f, 0.5f, -10f),
-                new Vector3Data(18f, 0.5f, 12f),
-                new Vector3Data(-6f, 0.5f, -15f),
-                new Vector3Data(25f, 0.5f, 8f),
-                new Vector3Data(-20f, 0.5f, 5f),
-                new Vector3Data(3f, 0.5f, 25f),
-                new Vector3Data(-25f, 0.5f, -8f),
-                new Vector3Data(22f, 0.5f, -12f),
-                new Vector3Data(-18f, 0.5f, 15f)
-            };
+            // Reduced for quick level completion testing (was 20 enemies)
+            // Use terrain-aware spawning to avoid placing enemies inside hills
+            var preferredPositions = new[] { (10f, 10f) };
 
-            for (int i = 0; i < positions.Length; i++)
+            for (int i = 0; i < preferredPositions.Length; i++)
             {
+                var (prefX, prefZ) = preferredPositions[i];
+                var spawnPos = _terrainService?.FindClearSpawnPosition(prefX, prefZ) ?? new Vector3Data(prefX, 0.5f, prefZ);
+
                 var enemy = new EnemyState
                 {
                     EnemyId = $"enemy_test_{i + 2:D3}",
                     EnemyName = $"Test Enemy {i + 2}",
                     EnemyType = "Basic",
-                    Position = positions[i],
+                    Position = spawnPos,
                     Rotation = 0f,
                     Health = 80 + (i * 20), // Varying health
                     MaxHealth = 80 + (i * 20),
@@ -155,11 +139,11 @@ namespace CombatMechanix.Services
                 };
 
                 _enemies.TryAdd(enemy.EnemyId, enemy);
-                
+
                 // Initialize AI for each additional enemy
                 _aiManager?.InitializeEnemyAI(enemy, "RandomWander");
-                
-                _logger.LogInformation($"Spawned enemy: {enemy.EnemyName} (ID: {enemy.EnemyId}) Level {enemy.Level}");
+
+                _logger.LogInformation($"Spawned enemy: {enemy.EnemyName} (ID: {enemy.EnemyId}) at ({spawnPos.X:F1}, {spawnPos.Y:F1}, {spawnPos.Z:F1}) Level {enemy.Level}");
             }
         }
 
@@ -217,6 +201,9 @@ namespace CombatMechanix.Services
             var oldHealth = enemy.Health;
             enemy.Health = Math.Max(0, enemy.Health - (int)damage);
             enemy.LastUpdate = DateTime.UtcNow;
+
+            // Track damage for level stats
+            TrackDamageDealt(damage);
 
             _logger.LogInformation($"Enemy {enemy.EnemyName} (ID: {enemyId}) took {damage} damage. Health: {enemy.Health}/{enemy.MaxHealth}");
 
@@ -410,6 +397,9 @@ namespace CombatMechanix.Services
 
                     await _connectionManager.BroadcastToAll("TerrainChange", terrainChangeMessage);
                     _logger.LogInformation($"🏔️ Broadcast terrain change to all clients for level {_currentLevel}");
+
+                    // Reposition all players to clear spawn positions for the new terrain
+                    await _connectionManager.RepositionAllPlayers(_terrainService);
                 }
 
                 // Broadcast level complete notification
@@ -473,15 +463,19 @@ namespace CombatMechanix.Services
 
             for (int i = 0; i < enemyCount; i++)
             {
-                // Randomize position within play area
-                float x = (float)(random.NextDouble() * 60 - 30); // -30 to 30
-                float z = (float)(random.NextDouble() * 60 - 30); // -30 to 30
+                // Randomize preferred position within play area
+                float preferredX = (float)(random.NextDouble() * 60 - 30); // -30 to 30
+                float preferredZ = (float)(random.NextDouble() * 60 - 30); // -30 to 30
 
-                // Get ground height from terrain service
-                float y = 0.5f;
+                // Find a clear spawn position (not on hills) that player can reach
+                Vector3Data spawnPos;
                 if (_terrainService != null)
                 {
-                    y = _terrainService.GetGroundHeightAtPosition(x, z) + 0.5f;
+                    spawnPos = _terrainService.FindClearSpawnPosition(preferredX, preferredZ);
+                }
+                else
+                {
+                    spawnPos = new Vector3Data(preferredX, 0.5f, preferredZ);
                 }
 
                 var enemy = new EnemyState
@@ -489,7 +483,7 @@ namespace CombatMechanix.Services
                     EnemyId = $"enemy_lvl{level}_{i + 1:D3}",
                     EnemyName = $"Level {level} Enemy {i + 1}",
                     EnemyType = level % 3 == 0 ? "Elite" : "Basic",
-                    Position = new Vector3Data(x, y, z),
+                    Position = spawnPos,
                     Rotation = (float)(random.NextDouble() * 360),
                     Health = baseHealth + random.Next(-20, 20),
                     MaxHealth = baseHealth + random.Next(-20, 20),
@@ -506,7 +500,7 @@ namespace CombatMechanix.Services
                 _aiManager?.InitializeEnemyAI(enemy, "RandomWander");
                 newEnemies.Add(enemy);
 
-                _logger.LogInformation($"🎮 Spawned {enemy.EnemyName} (HP: {enemy.Health}) at ({x:F1}, {y:F1}, {z:F1})");
+                _logger.LogInformation($"🎮 Spawned {enemy.EnemyName} (HP: {enemy.Health}) at ({spawnPos.X:F1}, {spawnPos.Y:F1}, {spawnPos.Z:F1})");
             }
 
             // Broadcast new enemies to all clients
@@ -541,6 +535,9 @@ namespace CombatMechanix.Services
 
             _waitingForPlayerContinue = false;
             _currentLevel = nextLevel;
+
+            // Restore all players to max health
+            await _connectionManager.RestoreAllPlayersHealth();
 
             // Trigger terrain change and enemy spawn
             await TriggerLevelTransition(playerId);

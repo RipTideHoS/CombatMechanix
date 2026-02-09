@@ -91,6 +91,7 @@ public class NetworkManager : MonoBehaviour
 
     // Level system events
     public static event Action<LevelCompleteMessage> OnLevelComplete;
+    public static event Action<PlayerRepositionMessage> OnPlayerReposition;
 
     private ClientWebSocket _webSocket;
     private CancellationTokenSource _cancellationTokenSource;
@@ -564,6 +565,25 @@ public class NetworkManager : MonoBehaviour
                     {
                         Debug.Log($"[NetworkManager] LevelComplete received: Level {levelCompleteMsg.completedLevel}, Kills={levelCompleteMsg.enemiesKilled}, XP={levelCompleteMsg.experienceEarned}");
                         QueueMainThreadAction(() => OnLevelComplete?.Invoke(levelCompleteMsg));
+                    }
+                    break;
+
+                case "PlayerReposition":
+                    var repositionMsg = JsonConvert.DeserializeObject<PlayerRepositionMessage>(wrapper.Data.ToString());
+                    if (repositionMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] PlayerReposition received: ({repositionMsg.position.X:F1}, {repositionMsg.position.Y:F1}, {repositionMsg.position.Z:F1}) Reason={repositionMsg.reason}");
+                        QueueMainThreadAction(() =>
+                        {
+                            OnPlayerReposition?.Invoke(repositionMsg);
+                            // Directly reposition the local player
+                            var player = GameManager.Instance?.LocalPlayer;
+                            if (player != null)
+                            {
+                                player.SetPosition(new Vector3(repositionMsg.position.X, repositionMsg.position.Y, repositionMsg.position.Z));
+                                Debug.Log($"[NetworkManager] Player repositioned to ({repositionMsg.position.X:F1}, {repositionMsg.position.Y:F1}, {repositionMsg.position.Z:F1})");
+                            }
+                        });
                     }
                     break;
 

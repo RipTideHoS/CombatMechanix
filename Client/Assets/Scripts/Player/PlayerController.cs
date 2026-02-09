@@ -328,14 +328,21 @@ public class PlayerController : MonoBehaviour
                 return; // Skip this frame's movement
             }
 
+            // Store pre-move position for recovery
+            Vector3 preMovePos = transform.position;
             _characterController.Move(moveVector);
 
             // IMMEDIATE position validation after move
-            if (!float.IsFinite(transform.position.y) || transform.position.y > 1000f || transform.position.y < -1000f)
+            if (!float.IsFinite(transform.position.x) || !float.IsFinite(transform.position.y) || !float.IsFinite(transform.position.z) ||
+                transform.position.y > 1000f || transform.position.y < -1000f)
             {
-                Debug.LogError($"🚨 CRITICAL: Invalid position after move! Y={transform.position.y}! Emergency reset!");
+                Debug.LogError($"[PlayerController] Invalid position after Move! pos={transform.position}, reverting to safe position");
                 _characterController.enabled = false;
-                transform.position = new Vector3(transform.position.x, 1f, transform.position.z);
+                transform.position = new Vector3(
+                    float.IsFinite(preMovePos.x) ? preMovePos.x : 0f,
+                    1f,
+                    float.IsFinite(preMovePos.z) ? preMovePos.z : 0f
+                );
                 _characterController.enabled = true;
                 _verticalVelocity = 0f;
                 CreateEmergencyGroundIfNeeded();
@@ -870,6 +877,13 @@ public class PlayerController : MonoBehaviour
 
     public void SetPosition(Vector3 position)
     {
+        // Validate position to prevent Infinity/NaN from corrupting the transform
+        if (!float.IsFinite(position.x) || !float.IsFinite(position.y) || !float.IsFinite(position.z))
+        {
+            Debug.LogError($"[PlayerController] SetPosition rejected invalid position: {position}");
+            return;
+        }
+
         if (_characterController != null)
         {
             _characterController.enabled = false;
@@ -880,6 +894,9 @@ public class PlayerController : MonoBehaviour
         {
             transform.position = position;
         }
+
+        // Reset vertical velocity so gravity doesn't accumulate from the old position
+        _verticalVelocity = 0f;
     }
 
     public void SetRotation(float rotation)

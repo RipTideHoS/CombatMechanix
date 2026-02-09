@@ -818,3 +818,15 @@ public class LevelContinueMessage
     public int nextLevel;
     public long timestamp;
 }
+
+/// <summary>
+/// Server tells client to reposition player (e.g., after level transition to avoid spawning inside terrain)
+/// </summary>
+[Serializable]
+public class PlayerRepositionMessage
+{
+    public string playerId;
+    public Vector3Data position;
+    public string reason;
+    public long timestamp;
+}

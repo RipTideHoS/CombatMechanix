@@ -22,19 +22,15 @@ public class LevelCompleteUI : MonoBehaviour
 
     private void Awake()
     {
-        // Hide panel on start
-        if (panel != null)
-        {
-            panel.SetActive(false);
-        }
+        // Subscribe to level complete event immediately in Awake
+        // This ensures we catch the event even if Start hasn't run yet
+        NetworkManager.OnLevelComplete += HandleLevelComplete;
+        Debug.Log("[LevelCompleteUI] Subscribed to OnLevelComplete in Awake");
     }
 
     private void Start()
     {
         _networkManager = FindObjectOfType<NetworkManager>();
-
-        // Subscribe to level complete event
-        NetworkManager.OnLevelComplete += HandleLevelComplete;
 
         // Set up continue button
         if (continueButton != null)
@@ -42,7 +38,15 @@ public class LevelCompleteUI : MonoBehaviour
             continueButton.onClick.AddListener(OnContinueClicked);
         }
 
-        Debug.Log("[LevelCompleteUI] Initialized and subscribed to OnLevelComplete");
+        Debug.Log("[LevelCompleteUI] Initialized in Start");
+    }
+
+    private void OnEnable()
+    {
+        // Re-subscribe when enabled (in case we were disabled)
+        NetworkManager.OnLevelComplete -= HandleLevelComplete; // Prevent double subscription
+        NetworkManager.OnLevelComplete += HandleLevelComplete;
+        Debug.Log("[LevelCompleteUI] OnEnable - ensured event subscription");
     }
 
     private void OnDestroy()
@@ -135,9 +139,20 @@ public class LevelCompleteUI : MonoBehaviour
     /// </summary>
     public static LevelCompleteUI CreateUI(Transform canvasTransform)
     {
-        // Create main panel
+        // Create controller object that stays active (for event subscription)
+        GameObject controllerObj = new GameObject("LevelCompleteUIController");
+        controllerObj.transform.SetParent(canvasTransform, false);
+
+        // Add RectTransform to controller (required for canvas hierarchy)
+        RectTransform controllerRect = controllerObj.AddComponent<RectTransform>();
+        controllerRect.anchorMin = Vector2.zero;
+        controllerRect.anchorMax = Vector2.one;
+        controllerRect.offsetMin = Vector2.zero;
+        controllerRect.offsetMax = Vector2.zero;
+
+        // Create visual panel as child (this gets enabled/disabled)
         GameObject panelObj = new GameObject("LevelCompletePanel");
-        panelObj.transform.SetParent(canvasTransform, false);
+        panelObj.transform.SetParent(controllerObj.transform, false);
 
         // Add RectTransform
         RectTransform panelRect = panelObj.AddComponent<RectTransform>();
@@ -150,8 +165,8 @@ public class LevelCompleteUI : MonoBehaviour
         Image panelImage = panelObj.AddComponent<Image>();
         panelImage.color = new Color(0.1f, 0.1f, 0.2f, 0.95f);
 
-        // Create component and assign panel
-        LevelCompleteUI ui = panelObj.AddComponent<LevelCompleteUI>();
+        // Create component on CONTROLLER (stays active) and assign panel reference
+        LevelCompleteUI ui = controllerObj.AddComponent<LevelCompleteUI>();
         ui.panel = panelObj;
 
         // Title text

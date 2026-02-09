@@ -756,6 +756,17 @@ namespace CombatMechanix.Models
             /// </summary>
             public long Timestamp { get; set; }
         }
+
+        /// <summary>
+        /// Server tells client to reposition player (e.g., after level transition)
+        /// </summary>
+        public class PlayerRepositionMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public Vector3Data Position { get; set; } = new();
+            public string Reason { get; set; } = string.Empty;
+            public long Timestamp { get; set; }
+        }
     }
 
     public class PlayerState

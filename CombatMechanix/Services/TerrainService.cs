@@ -72,6 +72,62 @@ namespace CombatMechanix.Services
         }
 
         /// <summary>
+        /// Check if a position is clear of terrain hills (walkable)
+        /// </summary>
+        public bool IsPositionClear(float x, float z, float maxAllowedHeight = 0.1f)
+        {
+            float groundHeight = GetGroundHeightAtPosition(x, z);
+            return groundHeight <= maxAllowedHeight;
+        }
+
+        /// <summary>
+        /// Find a valid spawn position that is clear of terrain
+        /// Tries the requested position first, then searches nearby
+        /// </summary>
+        public Vector3Data FindClearSpawnPosition(float preferredX, float preferredZ, float searchRadius = 50f, int maxAttempts = 50)
+        {
+            // Try preferred position first
+            if (IsPositionClear(preferredX, preferredZ))
+            {
+                return new Vector3Data { X = preferredX, Y = 0.5f, Z = preferredZ };
+            }
+
+            // Search outward in expanding rings for a clear position
+            var random = new Random();
+            for (int i = 0; i < maxAttempts; i++)
+            {
+                // Bias toward further distances to escape large hills
+                float minDist = (i / (float)maxAttempts) * searchRadius * 0.5f;
+                float angle = (float)(random.NextDouble() * Math.PI * 2);
+                float distance = minDist + (float)(random.NextDouble() * (searchRadius - minDist));
+                float testX = preferredX + (float)Math.Cos(angle) * distance;
+                float testZ = preferredZ + (float)Math.Sin(angle) * distance;
+
+                if (IsPositionClear(testX, testZ))
+                {
+                    return new Vector3Data { X = testX, Y = 0.5f, Z = testZ };
+                }
+            }
+
+            // Systematic grid search as fallback - covers a wide area
+            for (float gx = -60f; gx <= 60f; gx += 5f)
+            {
+                for (float gz = -60f; gz <= 60f; gz += 5f)
+                {
+                    if (IsPositionClear(gx, gz))
+                    {
+                        _logger.LogInformation($"Found clear spawn via grid search at ({gx}, {gz})");
+                        return new Vector3Data { X = gx, Y = 0.5f, Z = gz };
+                    }
+                }
+            }
+
+            // Last resort: log warning and return origin (should never happen with reasonable terrain)
+            _logger.LogWarning($"Could not find ANY clear spawn position! Terrain may cover entire play area.");
+            return new Vector3Data { X = 0f, Y = 0.5f, Z = 0f };
+        }
+
+        /// <summary>
         /// Load a hill set (add to active terrain)
         /// </summary>
         public bool LoadHillSet(string hillSetName)
@@ -190,10 +246,10 @@ namespace CombatMechanix.Services
             float normalizedHeight = (float)Math.Sqrt(1f - normalizedDistanceSquared);
             float fullEllipsoidHeight = normalizedHeight * (hill.Scale.Y / 2f);
 
-            // Apply the same 80% embedding as client (only show top 20% of sphere)
-            float visibleHeight = fullEllipsoidHeight - (hill.Scale.Y * 0.4f); // 80% of radius below ground
-
-            return Math.Max(0f, hill.Position.Y + visibleHeight);
+            // The sphere top is at position.Y + fullEllipsoidHeight
+            // position.Y is already set low (scale.Y * 0.1) to embed the sphere,
+            // so no additional offset is needed
+            return Math.Max(0f, hill.Position.Y + fullEllipsoidHeight);
         }
 
         /// <summary>
