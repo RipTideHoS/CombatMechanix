@@ -62,11 +62,26 @@ public class EnemyBase : MonoBehaviour
         float distance = delta.magnitude;
         if (distance > 0.001f)
         {
-            Vector3 moveDir = delta.normalized;
-            // Roll axis is perpendicular to movement direction and parallel to ground
-            Vector3 rollAxis = Vector3.Cross(Vector3.up, moveDir).normalized;
-            // Roll angle: 90 degrees per unit of distance (one cube face per unit)
-            float rollAngle = -distance * 90f;
+            // Pick a world axis (X or Z) based on dominant movement direction
+            // This keeps the roll axis aligned with a cube face normal
+            float absDx = Mathf.Abs(delta.x);
+            float absDz = Mathf.Abs(delta.z);
+
+            Vector3 rollAxis;
+            float rollAngle;
+
+            if (absDz >= absDx)
+            {
+                // Moving primarily in Z - roll around the X axis
+                rollAxis = Vector3.right;
+                rollAngle = Mathf.Sign(delta.z) * distance * 90f;
+            }
+            else
+            {
+                // Moving primarily in X - roll around the Z axis
+                rollAxis = Vector3.forward;
+                rollAngle = -Mathf.Sign(delta.x) * distance * 90f;
+            }
 
             _rollRotation = Quaternion.AngleAxis(rollAngle, rollAxis) * _rollRotation;
             transform.rotation = _rollRotation;
