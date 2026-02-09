@@ -21,14 +21,14 @@ namespace CombatMechanix.AI
             _config = config ?? new BehaviorConfig
             {
                 UpdateIntervalMs = 50, // Update every 50ms for smooth movement
-                MovementSpeed = 1.5f,   // Slow wandering speed
-                DetectionRange = 12.0f, // Detection range for players
+                MovementSpeed = 2.0f,   // Active wandering speed
+                DetectionRange = 15.0f, // Detection range for players
                 CustomParameters = new Dictionary<string, object>
                 {
-                    { "WanderRadius", 8.0f },      // How far to wander from spawn
-                    { "DirectionChangeInterval", 3.0f }, // Seconds between direction changes
-                    { "PauseChance", 0.3f },       // 30% chance to pause instead of move
-                    { "PauseDuration", 2.0f }      // How long to pause when stopping
+                    { "WanderRadius", 12.0f },     // How far to wander from spawn
+                    { "DirectionChangeInterval", 2.5f }, // Seconds between direction changes
+                    { "PauseChance", 0.15f },      // 15% chance to pause instead of move
+                    { "PauseDuration", 1.5f }      // How long to pause when stopping
                 }
             };
         }
@@ -152,15 +152,11 @@ namespace CombatMechanix.AI
         
         private async Task<bool> UpdateWanderBehavior(EnemyState enemy, WanderState state, AIWorldContext context, float deltaTime)
         {
-            // WANDERING DISABLED - Enemies will only stand still unless chasing
-            // This allows testing if enemies are truly following players or just wandering randomly
-            
-            /*
             var now = context.CurrentTime;
             var directionChangeInterval = (float)_config.CustomParameters["DirectionChangeInterval"];
             var pauseChance = (float)_config.CustomParameters["PauseChance"];
             var pauseDuration = (float)_config.CustomParameters["PauseDuration"];
-            
+
             // Check if still paused
             if (state.IsPaused && now < state.PauseEndTime)
             {
@@ -170,7 +166,7 @@ namespace CombatMechanix.AI
             {
                 state.IsPaused = false;
             }
-            
+
             // Check if it's time to change direction or choose new action
             if ((now - state.LastDirectionChange).TotalSeconds >= directionChangeInterval)
             {
@@ -182,25 +178,25 @@ namespace CombatMechanix.AI
                     state.LastDirectionChange = now;
                     return false;
                 }
-                
+
                 // Choose new random target within wander radius
                 var wanderRadius = (float)_config.CustomParameters["WanderRadius"];
                 var angle = _random.NextDouble() * 2 * Math.PI;
                 var distance = _random.NextDouble() * wanderRadius;
-                
+
                 state.CurrentTarget = new Vector3Data
                 {
                     X = state.SpawnPosition.X + (float)(Math.Cos(angle) * distance),
                     Y = state.SpawnPosition.Y,
                     Z = state.SpawnPosition.Z + (float)(Math.Sin(angle) * distance)
                 };
-                
+
                 state.LastDirectionChange = now;
             }
-            
+
             // Move towards current target
             var targetDistance = AIWorldContext.CalculateDistance(enemy.Position, state.CurrentTarget);
-            
+
             if (targetDistance > 0.5f) // If not close enough to target
             {
                 var direction = new Vector3Data
@@ -209,26 +205,26 @@ namespace CombatMechanix.AI
                     Y = 0,
                     Z = state.CurrentTarget.Z - enemy.Position.Z
                 };
-                
+
                 // Normalize and apply movement
                 var magnitude = (float)Math.Sqrt(direction.X * direction.X + direction.Z * direction.Z);
                 if (magnitude > 0)
                 {
                     direction.X /= magnitude;
                     direction.Z /= magnitude;
-                    
+
                     enemy.Position.X += direction.X * _config.MovementSpeed * deltaTime;
                     enemy.Position.Z += direction.Z * _config.MovementSpeed * deltaTime;
-                    
+
                     // Update rotation to face movement direction
                     enemy.Rotation = (float)Math.Atan2(direction.X, direction.Z) * 180f / (float)Math.PI;
-                    
+
                     enemy.LastUpdate = DateTime.UtcNow;
                     return true;
                 }
             }
-            */
-            
+
+            await Task.CompletedTask;
             return false;
         }
         
