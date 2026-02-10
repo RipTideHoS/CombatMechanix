@@ -62,6 +62,10 @@ public class EnemyNetworkManager : MonoBehaviour
     {
         foreach (var enemyState in spawnMessage.Enemies)
         {
+            // Skip dead enemies — don't create objects just to immediately deactivate them
+            if (!enemyState.IsAlive && !_networkEnemies.ContainsKey(enemyState.EnemyId))
+                continue;
+
             CreateOrUpdateNetworkEnemy(enemyState);
         }
         
@@ -154,8 +158,8 @@ public class EnemyNetworkManager : MonoBehaviour
     /// </summary>
     private void CreateNetworkEnemy(EnemyState enemyState)
     {
-        // Create the enemy GameObject
-        GameObject enemyObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        // Create the enemy GameObject with die shape based on level
+        GameObject enemyObj = EnemyShapeFactory.CreateEnemyShape(enemyState.Level);
         enemyObj.name = $"NetworkEnemy_{enemyState.EnemyName}_{enemyState.EnemyId}";
         
         // Position the enemy (rolling rotation is handled by EnemyBase.Update)

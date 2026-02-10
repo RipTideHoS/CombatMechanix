@@ -1202,8 +1202,9 @@ public class AutoSceneSetup : MonoBehaviour
 
         Debug.Log("Creating TestEnemy GameObject...");
         
-        // Create the enemy GameObject
-        GameObject enemyObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        // Create the enemy GameObject with die shape based on level
+        int testLevel = 8; // Change to test different shapes: 1=Sphere, 4=D4, 6=D6, 8=D8, 10=D10, 20=D20
+        GameObject enemyObj = EnemyShapeFactory.CreateEnemyShape(testLevel);
         enemyObj.name = "TestEnemy";
         
         // Add the EnemyBase component
@@ -1212,7 +1213,7 @@ public class AutoSceneSetup : MonoBehaviour
         // Configure enemy stats
         enemyBase.EnemyName = "Test Enemy";
         enemyBase.EnemyType = "Basic";
-        enemyBase.Level = 1;
+        enemyBase.Level = testLevel;
         enemyBase.BaseHealth = 100f;
         enemyBase.BaseDamage = 15f;
         
@@ -1251,11 +1252,11 @@ public class AutoSceneSetup : MonoBehaviour
         // Make sure it's on the proper ground height (accounting for hills)
         Vector3 pos = enemyObj.transform.position;
         float groundHeight = GetGroundHeightAtPosition(pos.x, pos.z);
-        pos.y = groundHeight + 0.5f; // Half cube height above ground surface
+        pos.y = groundHeight + EnemyShapeFactory.GetCentroidToBase(testLevel); // Centroid-to-base distance above ground
         enemyObj.transform.position = pos;
-        
-        // Ensure collision is enabled (cube primitive already has a BoxCollider)
-        BoxCollider enemyCollider = enemyObj.GetComponent<BoxCollider>();
+
+        // Ensure collision is enabled (tetrahedron has a convex MeshCollider)
+        Collider enemyCollider = enemyObj.GetComponent<Collider>();
         if (enemyCollider != null)
         {
             enemyCollider.isTrigger = false; // Solid collision
