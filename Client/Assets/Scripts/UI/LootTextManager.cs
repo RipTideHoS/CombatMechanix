@@ -231,6 +231,14 @@ public class LootTextManager : MonoBehaviour
     }
     
     /// <summary>
+    /// Show floating text with custom message and color (used for gold pickups, etc.)
+    /// </summary>
+    public void ShowCustomText(string text, Vector3 position, Color color)
+    {
+        ShowLootText(text, position, color);
+    }
+
+    /// <summary>
     /// Core method to display floating loot text
     /// </summary>
     private void ShowLootText(string text, Vector3 worldPosition, Color color)

@@ -33,6 +33,7 @@ public class LootDropManager : MonoBehaviour
     
     // Player reference for distance calculations
     private Transform _playerTransform;
+    public Transform PlayerTransform => _playerTransform;
     
     // Floating text manager reference
     private LootTextManager _lootTextManager;
@@ -167,10 +168,10 @@ public class LootDropManager : MonoBehaviour
             // The server handles inventory management, so if pickup succeeded, the item is already in inventory
             Debug.Log($"[LootDropManager] ✅ Server confirmed pickup: {response.Item.ItemName}");
             
-            // Show pickup success floating text
-            if (_lootTextManager != null && _playerTransform != null)
+            // Show gold award floating text (server-authoritative amount)
+            if (_lootTextManager != null && _playerTransform != null && response.GoldAwarded > 0)
             {
-                _lootTextManager.ShowItemPickupText(response.Item, _playerTransform.position);
+                _lootTextManager.ShowCustomText($"+{response.GoldAwarded} Gold", _playerTransform.position, new Color(0.8f, 0.6f, 0f));
             }
             
             // The inventory UI will be updated automatically via NetworkManager.OnInventoryUpdate events
@@ -199,7 +200,7 @@ public class LootDropManager : MonoBehaviour
                 }
                 else
                 {
-                    _lootTextManager.ShowTooFarAwayText(_playerTransform.position); // Generic error
+                    // Generic pickup failure - no floating text needed
                 }
             }
             
@@ -332,12 +333,6 @@ public class LootDropManager : MonoBehaviour
             if (distance > PickupRange)
             {
                 Debug.Log($"[LootDropManager] Loot {lootId} is too far away (distance: {distance:F1}m, max: {PickupRange}m)");
-                
-                // Show "Too far away" floating text
-                if (_lootTextManager != null)
-                {
-                    _lootTextManager.ShowTooFarAwayText(_playerTransform.position);
-                }
                 return;
             }
         }
@@ -353,6 +348,30 @@ public class LootDropManager : MonoBehaviour
         {
             Debug.LogError("[LootDropManager] Cannot send pickup request - NetworkManager or PlayerTransform not found");
         }
+    }
+
+    /// <summary>
+    /// Auto-pickup loot when player walks close (magnet pickup)
+    /// Awards random gold and sends pickup request to server
+    /// </summary>
+    public void AutoPickup(string lootId)
+    {
+        if (!_activeLootDrops.ContainsKey(lootId))
+        {
+            Debug.LogWarning($"[LootDropManager] AutoPickup: loot {lootId} not found");
+            return;
+        }
+
+        // Send pickup request to server (server awards gold authoritatively)
+        var networkManager = FindObjectOfType<NetworkManager>();
+        if (networkManager != null && _playerTransform != null)
+        {
+            _ = networkManager.SendLootPickupRequest(lootId, _playerTransform.position);
+            Debug.Log($"[LootDropManager] AutoPickup sent for loot: {lootId}");
+        }
+
+        // Remove the loot visual immediately
+        RemoveLootDrop(lootId);
     }
 
     /// <summary>

@@ -10,12 +10,20 @@ public class LootDropVisual : MonoBehaviour
     // Loot data
     private NetworkMessages.LootDropMessage _lootData;
     private LootDropManager _lootManager;
-    
+
     // Animation properties
     private Vector3 _basePosition;
     private float _bobTimer = 0f;
     private float _rotationSpeed = 45f; // Degrees per second
-    
+
+    // Magnet pickup properties
+    private float MagnetRange = 5f;
+    private float SlideSpeed = 10f;
+    private float ContactDistance = 1.5f;
+    private bool _isMagneting = false;
+    private bool _pickedUp = false;
+    private Transform _playerTransform;
+
     // Mouse interaction
     private bool _isHighlighted = false;
     private Renderer _renderer;
@@ -47,6 +55,7 @@ public class LootDropVisual : MonoBehaviour
         _lootData = lootData;
         _lootManager = lootManager;
         _basePosition = transform.position;
+        _playerTransform = lootManager.PlayerTransform;
         
         // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** Base position set to: {_basePosition}");
         // Debug.Log($"[LootDropVisual] *** LOOT DEBUG *** GameObject active state: {gameObject.activeInHierarchy}");
@@ -73,11 +82,41 @@ public class LootDropVisual : MonoBehaviour
 
     private void Update()
     {
-        // Bobbing animation
+        if (_pickedUp) return;
+
+        // Check magnet range
+        if (_playerTransform != null)
+        {
+            float distance = Vector3.Distance(transform.position, _playerTransform.position);
+
+            if (distance < MagnetRange)
+            {
+                _isMagneting = true;
+            }
+
+            if (_isMagneting)
+            {
+                // Slide toward player
+                transform.position = Vector3.MoveTowards(transform.position, _playerTransform.position, SlideSpeed * Time.deltaTime);
+
+                // Check contact
+                if (distance < ContactDistance)
+                {
+                    _pickedUp = true;
+                    _lootManager.AutoPickup(_lootData.LootId);
+                    return;
+                }
+
+                // Skip bob/rotate while magneting
+                return;
+            }
+        }
+
+        // Normal bobbing animation
         _bobTimer += Time.deltaTime * _lootManager.BobSpeed;
         float bobOffset = Mathf.Sin(_bobTimer) * _lootManager.BobAmount;
         transform.position = _basePosition + Vector3.up * bobOffset;
-        
+
         // Rotation animation
         transform.Rotate(Vector3.up, _rotationSpeed * Time.deltaTime);
     }

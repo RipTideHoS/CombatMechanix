@@ -319,6 +319,7 @@ public class NetworkMessages
         public bool Success { get; set; }
         public string Message { get; set; } = string.Empty; // Success message or error reason
         public InventoryItem Item { get; set; } = new(); // The item that was picked up (null if failed)
+        public int GoldAwarded { get; set; } // Gold earned from this pickup
     }
 
     // Phase 1: New projectile collision system messages

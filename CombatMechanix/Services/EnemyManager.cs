@@ -453,8 +453,8 @@ namespace CombatMechanix.Services
                 _aiManager?.RemoveEnemyAI(enemyId);
             }
 
-            // Calculate number of enemies based on level (3 base + 2 per level)
-            int enemyCount = 3 + (level * 2);
+            // Calculate number of enemies based on level (2 base + 1 per level)
+            int enemyCount = 2 + level;
             int baseHealth = 50 + (level * 25);
             float baseDamage = 10f + (level * 5f);
 

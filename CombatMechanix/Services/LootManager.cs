@@ -20,7 +20,7 @@ namespace CombatMechanix.Services
         // Loot generation settings
         private const float LootDropChance = 0.8f; // 80% chance to drop loot on enemy death
         private const string DefaultRarity = "Common"; // Default rarity for loot drops
-        private const float MaxPickupRange = 3f; // Maximum distance for loot pickup
+        private const float MaxPickupRange = 6f; // Maximum distance for loot pickup (accounts for client magnet range)
         private const int LootCleanupMinutes = 5; // Minutes before loot disappears
 
         public LootManager(
@@ -158,14 +158,42 @@ namespace CombatMechanix.Services
                 // Remove loot from active collection (server authoritative)
                 _activeLoot.TryRemove(lootId, out _);
 
-                // Send success response with the item data
-                await SendPickupResponse(playerId, lootId, true, "Item picked up successfully", lootDrop.Item);
+                // Award random gold (1-5)
+                int goldAwarded = _random.Next(1, 6);
+                using (var goldScope = _serviceProvider.CreateScope())
+                {
+                    var statsRepository = goldScope.ServiceProvider.GetRequiredService<IPlayerStatsRepository>();
+                    await statsRepository.AddGoldAsync(playerId, goldAwarded);
+
+                    // Send updated player stats (with new gold) to client
+                    var updatedStats = await statsRepository.GetByIdAsync(playerId);
+                    if (updatedStats != null)
+                    {
+                        await _connectionManager.SendToPlayer(playerId, "PlayerStatsUpdate",
+                            new NetworkMessages.PlayerStatsUpdateMessage
+                            {
+                                PlayerId = playerId,
+                                Level = updatedStats.Level,
+                                Experience = updatedStats.Experience,
+                                Health = updatedStats.Health,
+                                MaxHealth = updatedStats.MaxHealth,
+                                Strength = updatedStats.Strength,
+                                Defense = updatedStats.Defense,
+                                Speed = updatedStats.Speed,
+                                ExperienceToNextLevel = updatedStats.ExperienceToNextLevel,
+                                Gold = updatedStats.Gold
+                            });
+                    }
+                }
+
+                // Send success response with the item data and gold awarded
+                await SendPickupResponse(playerId, lootId, true, "Item picked up successfully", lootDrop.Item, goldAwarded);
 
                 // Send updated inventory to refresh client inventory panel
                 await SendUpdatedInventory(playerId);
 
-                _logger.LogInformation("Player {PlayerId} picked up loot: {ItemName} (ID: {LootId})", 
-                    playerId, lootDrop.Item.ItemName, lootId);
+                _logger.LogInformation("Player {PlayerId} picked up loot: {ItemName} (ID: {LootId}), awarded {Gold} gold",
+                    playerId, lootDrop.Item.ItemName, lootId, goldAwarded);
 
                 return true;
             }
@@ -180,7 +208,7 @@ namespace CombatMechanix.Services
         /// <summary>
         /// Send loot pickup response to the requesting player
         /// </summary>
-        private async Task SendPickupResponse(string playerId, string lootId, bool success, string message, InventoryItem? item)
+        private async Task SendPickupResponse(string playerId, string lootId, bool success, string message, InventoryItem? item, int goldAwarded = 0)
         {
             var response = new NetworkMessages.LootPickupResponseMessage
             {
@@ -188,7 +216,8 @@ namespace CombatMechanix.Services
                 LootId = lootId,
                 Success = success,
                 Message = message,
-                Item = item
+                Item = item,
+                GoldAwarded = goldAwarded
             };
 
             await _connectionManager.SendToPlayer(playerId, "LootPickupResponse", response);
