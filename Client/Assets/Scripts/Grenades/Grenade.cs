@@ -61,6 +61,13 @@ namespace CombatMechanix.Unity
 
         void Update()
         {
+            // Destroy if position became invalid (prevents CharacterController collision with invalid objects)
+            if (!IsValidVector(transform.position))
+            {
+                Destroy(gameObject);
+                return;
+            }
+
             if (!hasLanded)
             {
                 SimulatePhysics();
@@ -84,7 +91,15 @@ namespace CombatMechanix.Unity
             // Calculate initial velocity for arc trajectory
             CalculateThrowVelocity();
 
-            Debug.Log($"Initialized grenade {grenadeId} targeting {targetPos} with {explosionDelay}s delay");
+            // Validate the calculated velocity
+            if (!IsValidVector(velocity))
+            {
+                velocity = (TargetPosition - transform.position).normalized * throwForce;
+                if (!IsValidVector(velocity))
+                {
+                    velocity = Vector3.forward * throwForce;
+                }
+            }
         }
 
         private void CalculateThrowVelocity()
@@ -93,23 +108,30 @@ namespace CombatMechanix.Unity
             Vector3 horizontalDisplacement = new Vector3(displacement.x, 0, displacement.z);
 
             float horizontalDistance = horizontalDisplacement.magnitude;
-            float height = displacement.y;
 
             // Calculate velocity for ballistic trajectory
             float throwAngle = 45f * Mathf.Deg2Rad; // 45-degree throw angle
             float gravity = Mathf.Abs(Physics.gravity.y) * gravityMultiplier;
 
             float velocityMagnitude;
-            if (horizontalDistance > 0.1f)
+            float sinValue = Mathf.Sin(2 * throwAngle);
+            if (horizontalDistance > 0.1f && sinValue > 0.01f && gravity > 0.01f)
             {
-                velocityMagnitude = Mathf.Sqrt((horizontalDistance * gravity) / Mathf.Sin(2 * throwAngle));
+                float sqrtInput = (horizontalDistance * gravity) / sinValue;
+                velocityMagnitude = Mathf.Sqrt(Mathf.Max(0f, sqrtInput));
             }
             else
             {
                 velocityMagnitude = throwForce; // Fallback for very short throws
             }
 
-            Vector3 horizontalDirection = horizontalDisplacement.normalized;
+            // Guard against NaN/Infinity
+            if (float.IsNaN(velocityMagnitude) || float.IsInfinity(velocityMagnitude))
+            {
+                velocityMagnitude = throwForce;
+            }
+
+            Vector3 horizontalDirection = horizontalDistance > 0.01f ? horizontalDisplacement / horizontalDistance : Vector3.forward;
             Vector3 throwDirection = horizontalDirection * Mathf.Cos(throwAngle) + Vector3.up * Mathf.Sin(throwAngle);
 
             velocity = throwDirection * velocityMagnitude;
@@ -122,13 +144,32 @@ namespace CombatMechanix.Unity
             );
         }
 
+        private bool IsValidVector(Vector3 v)
+        {
+            return float.IsFinite(v.x) && float.IsFinite(v.y) && float.IsFinite(v.z);
+        }
+
         private void SimulatePhysics()
         {
             // Apply gravity
             velocity += Physics.gravity * gravityMultiplier * Time.deltaTime;
 
+            // Validate velocity
+            if (!IsValidVector(velocity))
+            {
+                Destroy(gameObject);
+                return;
+            }
+
             // Move grenade
             Vector3 newPosition = transform.position + velocity * Time.deltaTime;
+
+            // Validate new position
+            if (!IsValidVector(newPosition))
+            {
+                Destroy(gameObject);
+                return;
+            }
 
             // Check for ground collision
             if (CheckGroundCollision(newPosition))
@@ -141,7 +182,10 @@ namespace CombatMechanix.Unity
             transform.position = newPosition;
 
             // Rotate grenade for visual effect
-            transform.Rotate(velocity.normalized * 360f * Time.deltaTime, Space.World);
+            if (velocity.sqrMagnitude > 0.01f)
+            {
+                transform.Rotate(velocity.normalized * 360f * Time.deltaTime, Space.World);
+            }
         }
 
         private bool CheckGroundCollision(Vector3 position)
@@ -186,9 +230,17 @@ namespace CombatMechanix.Unity
                 audioSource.PlayOneShot(landingSound);
             }
 
-            // Switch to rigidbody physics for bouncing
-            rb.isKinematic = false;
-            rb.velocity = Vector3.zero;
+            // Switch to rigidbody physics for bouncing (only if position is valid)
+            if (IsValidVector(transform.position))
+            {
+                rb.isKinematic = false;
+                rb.velocity = Vector3.zero;
+            }
+            else
+            {
+                Destroy(gameObject);
+                return;
+            }
 
             // Trigger landed event
             OnLanded?.Invoke(GrenadeId, transform.position);

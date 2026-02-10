@@ -102,7 +102,7 @@ public class NetworkMessages
         public int Defense { get; set; }
         public int Speed { get; set; }
         public long ExperienceToNextLevel { get; set; }
-        public int Gold { get; set; } = 100;
+        public int Gold { get; set; } = 0;
     }
 
     public class ExperienceGainMessage

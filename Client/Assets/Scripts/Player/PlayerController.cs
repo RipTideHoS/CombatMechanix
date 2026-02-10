@@ -62,12 +62,15 @@ public class PlayerController : MonoBehaviour
         if (_characterController == null)
         {
             _characterController = gameObject.AddComponent<CharacterController>();
-            _characterController.radius = 0.5f;
-            _characterController.height = 2f;
-            _characterController.center = new Vector3(0, 0f, 0); // Center at transform origin
-            _characterController.skinWidth = 0.08f; // Prevents sticking to surfaces
-            _characterController.minMoveDistance = 0.001f; // Allows small movements
         }
+
+        // Configure and disable CharacterController - movement uses raycast ground detection instead
+        _characterController.radius = 0.5f;
+        _characterController.height = 2f;
+        _characterController.center = new Vector3(0, 0f, 0);
+        _characterController.skinWidth = 0.08f;
+        _characterController.minMoveDistance = 0.001f;
+        _characterController.enabled = false;
     }
 
     private void Start()
@@ -211,72 +214,47 @@ public class PlayerController : MonoBehaviour
 
     private void HandleMovement()
     {
-        // Check if grounded
-        _isGrounded = _characterController != null ? _characterController.isGrounded : true;
-
-        // Debug ground detection issues
-        if (!_isGrounded && _characterController != null)
+        // Early position sanity check
+        if (!float.IsFinite(transform.position.x) || !float.IsFinite(transform.position.y) || !float.IsFinite(transform.position.z))
         {
-            // Check if ground exists in scene
-            GameObject ground = GameObject.Find("Ground");
-            string groundInfo = ground != null ?
-                $"Ground exists at {ground.transform.position} with components: {string.Join(", ", ground.GetComponents<Component>().Select(c => c.GetType().Name))}" :
-                "No Ground found in scene!";
+            _verticalVelocity = 0f;
+            transform.position = new Vector3(0f, 1f, 0f);
+            return;
+        }
 
-            Debug.LogWarning($"⚠️ Player not grounded! Position: {transform.position}, Velocity: {_verticalVelocity}");
-            Debug.LogWarning($"⚠️ Ground check: {groundInfo}");
+        float dt = Mathf.Min(Time.deltaTime, 0.1f);
+
+        // Ground detection via raycast (CC height/2 = 1, so ground is at position.y - 1)
+        float groundHeight = 0f;
+        _isGrounded = false;
+        Vector3 rayOrigin = transform.position + Vector3.up * 0.5f;
+        if (Physics.Raycast(rayOrigin, Vector3.down, out RaycastHit groundHit, 5f))
+        {
+            groundHeight = groundHit.point.y + 1f; // +1 for CC half-height offset
+            // Grounded if within a small tolerance of ground
+            _isGrounded = transform.position.y <= groundHeight + 0.1f;
         }
 
         // Handle gravity
         if (_isGrounded && _verticalVelocity < 0)
         {
-            _verticalVelocity = -2f; // Small downward force to keep grounded
+            _verticalVelocity = -2f;
         }
         else
         {
-            _verticalVelocity += _gravity * Time.deltaTime; // Apply gravity
+            _verticalVelocity += _gravity * dt;
 
-            // CRITICAL: Immediate validation after gravity calculation
             if (!float.IsFinite(_verticalVelocity))
-            {
-                Debug.LogError($"🚨 CRITICAL: Invalid velocity after gravity calculation! _verticalVelocity={_verticalVelocity}, _gravity={_gravity}, Time.deltaTime={Time.deltaTime}");
-                _verticalVelocity = -2f; // Reset to small downward force
-                CreateEmergencyGroundIfNeeded();
-            }
+                _verticalVelocity = -2f;
 
-            // Emergency fix: Prevent infinite falling
-            if (_verticalVelocity < -50f) // Terminal velocity cap
-            {
+            if (_verticalVelocity < -50f)
                 _verticalVelocity = -50f;
-                Debug.LogWarning($"⚠️ EMERGENCY: Capped falling velocity at -50. Player position: {transform.position}");
-            }
-
-            // Emergency ground detection: If player falls below -100, teleport back up
-            if (transform.position.y < -100f)
-            {
-                Debug.LogError("🚨 EMERGENCY: Player fell below -100! Teleporting to ground level.");
-                transform.position = new Vector3(transform.position.x, 1f, transform.position.z);
-                _verticalVelocity = 0f;
-
-                // Create emergency ground if none exists
-                CreateEmergencyGroundIfNeeded();
-            }
-
-            // More aggressive emergency check for continuous falling
-            if (transform.position.y < -10f && _verticalVelocity < -10f)
-            {
-                Debug.LogError("🚨 EMERGENCY: Player falling too fast! Creating emergency ground.");
-                CreateEmergencyGroundIfNeeded();
-                transform.position = new Vector3(transform.position.x, 1f, transform.position.z);
-                _verticalVelocity = 0f;
-            }
         }
 
         // Calculate horizontal movement
         Vector3 horizontalMovement = Vector3.zero;
         if (_isMoving)
         {
-            // Use camera-relative movement direction directly (already calculated in HandleInput)
             horizontalMovement = _inputVector * MovementSpeed;
             CurrentVelocity = horizontalMovement;
         }
@@ -285,77 +263,35 @@ public class PlayerController : MonoBehaviour
             CurrentVelocity = Vector3.zero;
         }
 
-        // Combine horizontal movement with vertical velocity
-        Vector3 finalMovement = horizontalMovement;
-        finalMovement.y = _verticalVelocity;
+        // Calculate new position
+        Vector3 newPos = transform.position + horizontalMovement * dt;
+        newPos.y += _verticalVelocity * dt;
 
-        // CRITICAL: Validate movement before applying to prevent infinite/NaN values
-        if (!float.IsFinite(_verticalVelocity) || !float.IsFinite(finalMovement.y))
+        // Clamp to ground (don't go below terrain)
+        if (newPos.y < groundHeight && _verticalVelocity <= 0)
         {
-            Debug.LogError($"🚨 CRITICAL: Invalid velocity detected! _verticalVelocity={_verticalVelocity}, finalMovement.y={finalMovement.y}");
+            newPos.y = groundHeight;
+            _verticalVelocity = -2f;
+            _isGrounded = true;
+        }
+
+        // Emergency: if fallen below the world, reset
+        if (newPos.y < -10f)
+        {
+            newPos = new Vector3(newPos.x, 1f, newPos.z);
             _verticalVelocity = 0f;
-            finalMovement.y = 0f;
-            transform.position = new Vector3(transform.position.x, 1f, transform.position.z);
             CreateEmergencyGroundIfNeeded();
         }
 
-        // Cap movement to prevent extreme values
-        if (Mathf.Abs(finalMovement.y) > 100f)
+        // Validate final position
+        if (!float.IsFinite(newPos.x) || !float.IsFinite(newPos.y) || !float.IsFinite(newPos.z))
         {
-            Debug.LogError($"🚨 CRITICAL: Extreme vertical movement detected: {finalMovement.y}! Capping to -50.");
-            finalMovement.y = finalMovement.y > 0 ? 50f : -50f;
-            _verticalVelocity = finalMovement.y;
+            _verticalVelocity = 0f;
+            return; // Keep current position
         }
 
-        // Apply movement with collision detection
-        if (_characterController != null)
-        {
-            // CRITICAL: Final validation right before Move() to prevent Infinity/NaN
-            Vector3 moveVector = finalMovement * Time.deltaTime;
-            if (!float.IsFinite(moveVector.x) || !float.IsFinite(moveVector.y) || !float.IsFinite(moveVector.z) ||
-                !float.IsFinite(transform.position.x) || !float.IsFinite(transform.position.y) || !float.IsFinite(transform.position.z))
-            {
-                Debug.LogError($"🚨 CRITICAL: Invalid move vector or position detected! moveVector={moveVector}, position={transform.position}");
-                _verticalVelocity = 0f;
-                _characterController.enabled = false;
-                transform.position = new Vector3(
-                    float.IsFinite(transform.position.x) ? transform.position.x : 0f,
-                    1f,
-                    float.IsFinite(transform.position.z) ? transform.position.z : 0f
-                );
-                _characterController.enabled = true;
-                CreateEmergencyGroundIfNeeded();
-                return; // Skip this frame's movement
-            }
-
-            // Store pre-move position for recovery
-            Vector3 preMovePos = transform.position;
-            _characterController.Move(moveVector);
-
-            // IMMEDIATE position validation after move
-            if (!float.IsFinite(transform.position.x) || !float.IsFinite(transform.position.y) || !float.IsFinite(transform.position.z) ||
-                transform.position.y > 1000f || transform.position.y < -1000f)
-            {
-                Debug.LogError($"[PlayerController] Invalid position after Move! pos={transform.position}, reverting to safe position");
-                _characterController.enabled = false;
-                transform.position = new Vector3(
-                    float.IsFinite(preMovePos.x) ? preMovePos.x : 0f,
-                    1f,
-                    float.IsFinite(preMovePos.z) ? preMovePos.z : 0f
-                );
-                _characterController.enabled = true;
-                _verticalVelocity = 0f;
-                CreateEmergencyGroundIfNeeded();
-            }
-        }
-        else
-        {
-            // Fallback if no CharacterController (only horizontal movement)
-            if (_isMoving)
-            {
-                transform.Translate(horizontalMovement * Time.deltaTime, Space.World);
-            }
-        }
+        // Apply position directly (bypasses CharacterController.Move entirely)
+        SetPositionDirect(newPos);
 
         // Store position history for reconciliation
         _positionHistory.Enqueue(transform.position);
@@ -880,22 +816,10 @@ public class PlayerController : MonoBehaviour
         // Validate position to prevent Infinity/NaN from corrupting the transform
         if (!float.IsFinite(position.x) || !float.IsFinite(position.y) || !float.IsFinite(position.z))
         {
-            Debug.LogError($"[PlayerController] SetPosition rejected invalid position: {position}");
             return;
         }
 
-        if (_characterController != null)
-        {
-            _characterController.enabled = false;
-            transform.position = position;
-            _characterController.enabled = true;
-        }
-        else
-        {
-            transform.position = position;
-        }
-
-        // Reset vertical velocity so gravity doesn't accumulate from the old position
+        transform.position = position;
         _verticalVelocity = 0f;
     }
 
@@ -1016,5 +940,13 @@ public class PlayerController : MonoBehaviour
             Debug.Log("   Expected animation: Basic Melee Swipe");
         }
         Debug.Log("=== END TEST ===");
+    }
+
+    /// <summary>
+    /// Set position directly (CharacterController stays disabled)
+    /// </summary>
+    private void SetPositionDirect(Vector3 pos)
+    {
+        transform.position = pos;
     }
 }

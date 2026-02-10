@@ -15,7 +15,7 @@ public class ClientPlayerStats : MonoBehaviour
     public int Defense = 10;
     public int Speed = 10;
     public long ExperienceToNextLevel = 100;
-    public int Gold = 100;
+    public int Gold = 0;
 
     [Header("Display Settings")]
     public bool ShowDebugStats = true;
@@ -31,64 +31,12 @@ public class ClientPlayerStats : MonoBehaviour
     private void Awake()
     {
         Debug.Log("[CLIENT] ClientPlayerStats Awake() called");
-    }
-
-    private void Start()
-    {
-        Debug.Log("[CLIENT] ClientPlayerStats Start() called");
-        // Delay the subscription to ensure NetworkManager is ready
-        StartCoroutine(InitializeWithDelay());
-    }
-    
-    private System.Collections.IEnumerator InitializeWithDelay()
-    {
-        Debug.Log("[CLIENT] InitializeWithDelay started");
-        
-        // Wait a few frames to ensure all components are initialized
-        yield return new WaitForEndOfFrame();
-        yield return new WaitForEndOfFrame();
-        
-        Debug.Log("[CLIENT] Looking for NetworkManager...");
-        
-        // Find NetworkManager and subscribe to events
-        var networkManager = FindObjectOfType<NetworkManager>();
-        Debug.Log($"[CLIENT] NetworkManager found: {networkManager != null}");
-        
-        if (networkManager != null)
-        {
-            Debug.Log("[CLIENT] NetworkManager found, subscribing to events");
-            
-            NetworkManager.OnPlayerStatsUpdate += HandlePlayerStatsUpdate;
-            NetworkManager.OnLevelUp += HandleLevelUp;
-            NetworkManager.OnHealthChange += HandleHealthChange;
-            NetworkManager.OnExperienceGain += HandleExperienceGain;
-
-            Debug.Log("[CLIENT] ClientPlayerStats initialized and subscribed to network events");
-            Debug.Log($"[CLIENT] Local Player ID: {GameManager.Instance?.LocalPlayerId}");
-        }
-        else
-        {
-            Debug.LogError("[CLIENT] NetworkManager not found! ClientPlayerStats events not subscribed");
-            
-            // Try a different approach - wait longer and retry
-            yield return new WaitForSeconds(1f);
-            Debug.Log("[CLIENT] Retrying NetworkManager search after 1 second...");
-            
-            networkManager = FindObjectOfType<NetworkManager>();
-            if (networkManager != null)
-            {
-                Debug.Log("[CLIENT] NetworkManager found on retry!");
-                NetworkManager.OnPlayerStatsUpdate += HandlePlayerStatsUpdate;
-                NetworkManager.OnLevelUp += HandleLevelUp;
-                NetworkManager.OnHealthChange += HandleHealthChange;
-                NetworkManager.OnExperienceGain += HandleExperienceGain;
-                Debug.Log("[CLIENT] Successfully subscribed on retry");
-            }
-            else
-            {
-                Debug.LogError("[CLIENT] NetworkManager still not found after retry!");
-            }
-        }
+        // Subscribe immediately in Awake so we never miss early messages (e.g. LoginResponse stats)
+        NetworkManager.OnPlayerStatsUpdate += HandlePlayerStatsUpdate;
+        NetworkManager.OnLevelUp += HandleLevelUp;
+        NetworkManager.OnHealthChange += HandleHealthChange;
+        NetworkManager.OnExperienceGain += HandleExperienceGain;
+        Debug.Log("[CLIENT] ClientPlayerStats subscribed to network events in Awake");
     }
 
     private void OnDestroy()

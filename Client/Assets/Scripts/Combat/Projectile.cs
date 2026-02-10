@@ -65,7 +65,15 @@ public class Projectile : MonoBehaviour
     private void Update()
     {
         if (_hasHit) return;
-        
+
+        // Destroy if position or direction became invalid
+        if (!float.IsFinite(transform.position.x) || !float.IsFinite(transform.position.y) || !float.IsFinite(transform.position.z) ||
+            !float.IsFinite(_direction.x) || !float.IsFinite(_direction.y) || !float.IsFinite(_direction.z))
+        {
+            Destroy(gameObject);
+            return;
+        }
+
         // Move projectile
         Vector3 movement = _direction * Speed * Time.deltaTime;
         transform.Translate(movement, Space.World);

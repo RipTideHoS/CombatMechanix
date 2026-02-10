@@ -141,20 +141,6 @@ namespace CombatMechanix.Services
                     return false;
                 }
 
-                // Server-side inventory management - add item to database
-                bool inventoryAddSuccess;
-                using (var scope = _serviceProvider.CreateScope())
-                {
-                    var inventoryRepository = scope.ServiceProvider.GetRequiredService<IPlayerInventoryRepository>();
-                    inventoryAddSuccess = await inventoryRepository.AddItemToInventoryAsync(playerId, lootDrop.Item);
-                }
-
-                if (!inventoryAddSuccess)
-                {
-                    await SendPickupResponse(playerId, lootId, false, "Inventory is full", null);
-                    return false;
-                }
-                
                 // Remove loot from active collection (server authoritative)
                 _activeLoot.TryRemove(lootId, out _);
 
@@ -186,14 +172,11 @@ namespace CombatMechanix.Services
                     }
                 }
 
-                // Send success response with the item data and gold awarded
-                await SendPickupResponse(playerId, lootId, true, "Item picked up successfully", lootDrop.Item, goldAwarded);
+                // Send success response with gold awarded (no inventory item)
+                await SendPickupResponse(playerId, lootId, true, "Gold picked up", null, goldAwarded);
 
-                // Send updated inventory to refresh client inventory panel
-                await SendUpdatedInventory(playerId);
-
-                _logger.LogInformation("Player {PlayerId} picked up loot: {ItemName} (ID: {LootId}), awarded {Gold} gold",
-                    playerId, lootDrop.Item.ItemName, lootId, goldAwarded);
+                _logger.LogInformation("Player {PlayerId} picked up loot (ID: {LootId}), awarded {Gold} gold",
+                    playerId, lootId, goldAwarded);
 
                 return true;
             }

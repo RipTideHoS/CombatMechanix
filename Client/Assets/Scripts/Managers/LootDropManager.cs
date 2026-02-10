@@ -162,21 +162,17 @@ public class LootDropManager : MonoBehaviour
     {
         Debug.Log($"[LootDropManager] Pickup response: {response.Message}");
 
-        if (response.Success && response.Item != null)
+        if (response.Success)
         {
-            // Server confirmed the pickup and automatically updated the inventory
-            // The server handles inventory management, so if pickup succeeded, the item is already in inventory
-            Debug.Log($"[LootDropManager] ✅ Server confirmed pickup: {response.Item.ItemName}");
-            
+            // Server confirmed the pickup - gold awarded
+            Debug.Log($"[LootDropManager] Server confirmed pickup, gold awarded: {response.GoldAwarded}");
+
             // Show gold award floating text (server-authoritative amount)
             if (_lootTextManager != null && _playerTransform != null && response.GoldAwarded > 0)
             {
                 _lootTextManager.ShowCustomText($"+{response.GoldAwarded} Gold", _playerTransform.position, new Color(0.8f, 0.6f, 0f));
             }
-            
-            // The inventory UI will be updated automatically via NetworkManager.OnInventoryUpdate events
-            Debug.Log($"[LootDropManager] Inventory will be updated via network events");
-            
+
             // Always remove the loot visual since server confirmed pickup
             RemoveLootDrop(response.LootId);
         }

@@ -27,7 +27,7 @@ public class VendorUI : MonoBehaviour
     private List<VendorSlot> _vendorSlots = new List<VendorSlot>();
     private List<InventoryItem> _playerInventory = new List<InventoryItem>();
     private ItemIconManager _iconManager;
-    private int _playerGold = 100; // Default starting gold
+    private int _playerGold = 0;
     private Text _itemDetailsText;
     private bool _isInitialized = false;
     

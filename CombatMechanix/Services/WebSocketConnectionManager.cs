@@ -561,8 +561,8 @@ namespace CombatMechanix.Services
                     ProjectileId = projectileId,
                     LaunchPosition = launchPos,
                     TargetPosition = spreadTargetPos,
-                    SpeedMultiplier = 1.0f + (Random.Shared.NextSingle() - 0.5f) * 0.2f, // ±10% speed variation
-                    AccuracyMultiplier = 1.0f + (Random.Shared.NextSingle() - 0.5f) * 0.3f  // ±15% accuracy variation
+                    SpeedMultiplier = 1.0f,
+                    AccuracyMultiplier = 1.0f
                 });
             }
 
@@ -588,7 +588,7 @@ namespace CombatMechanix.Services
             switch (pattern)
             {
                 case "Cone":
-                    spreadDirection = CalculateConeSpread(direction, spreadAngle);
+                    spreadDirection = CalculateConeSpread(direction, spreadAngle, projectileIndex, totalProjectiles);
                     break;
                 case "Horizontal":
                     spreadDirection = CalculateHorizontalSpread(direction, spreadAngle, projectileIndex, totalProjectiles);
@@ -608,24 +608,29 @@ namespace CombatMechanix.Services
         }
 
         /// <summary>
-        /// Calculate cone spread (shotgun pattern)
+        /// Calculate cone spread (shotgun pattern) - fixed cross/plus pattern
+        /// Pellet 0: center, Pellets 1-N: evenly spaced around the cone edge
         /// </summary>
-        private Vector3 CalculateConeSpread(Vector3 baseDirection, float spreadAngle)
+        private Vector3 CalculateConeSpread(Vector3 baseDirection, float spreadAngle, int projectileIndex, int totalProjectiles)
         {
-            var random = Random.Shared;
-            var angle = random.NextSingle() * spreadAngle * (Math.PI / 180); // Convert to radians
-            var azimuth = random.NextSingle() * 2 * Math.PI; // Random rotation around horizontal axis only
+            // First pellet goes straight center
+            if (projectileIndex == 0)
+                return baseDirection;
 
-            // Force horizontal spread only - no vertical component
+            // Remaining pellets are evenly spaced around the cone edge
+            var edgeCount = totalProjectiles - 1;
+            var azimuth = (projectileIndex - 1) * (2 * Math.PI / edgeCount);
+            var angle = spreadAngle * (Math.PI / 180); // Full spread angle in radians
+
             // Create a horizontal right vector (perpendicular to direction in XZ plane)
             var horizontalDirection = Vector3.Normalize(new Vector3(baseDirection.X, 0, baseDirection.Z));
             var right = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, horizontalDirection));
 
-            // Apply spread only in horizontal plane (no Y component)
+            // Apply spread only in horizontal plane
             var spreadX = (float)(Math.Sin(angle) * Math.Cos(azimuth));
             var spreadZ = (float)Math.Cos(angle);
 
-            // Combine base direction with horizontal spread only
+            // Combine base direction with horizontal spread
             var spreadDirection = horizontalDirection * spreadZ + right * spreadX;
 
             // Preserve original Y direction (flat trajectory)
@@ -1138,7 +1143,8 @@ namespace CombatMechanix.Services
                                     Strength = updatedStats.Strength,
                                     Defense = updatedStats.Defense,
                                     Speed = updatedStats.Speed,
-                                    ExperienceToNextLevel = updatedStats.ExperienceToNextLevel
+                                    ExperienceToNextLevel = updatedStats.ExperienceToNextLevel,
+                                    Gold = updatedStats.Gold
                                 });
 
                                 // Check if player leveled up (using pre-update level from database)
@@ -1322,7 +1328,8 @@ namespace CombatMechanix.Services
                     Strength = playerStats.Strength,
                     Defense = playerStats.Defense,
                     Speed = playerStats.Speed,
-                    ExperienceToNextLevel = playerStats.ExperienceToNextLevel
+                    ExperienceToNextLevel = playerStats.ExperienceToNextLevel,
+                    Gold = playerStats.Gold
                 });
 
                 // Notify all players about the new player
@@ -1434,7 +1441,8 @@ namespace CombatMechanix.Services
                             Strength = updatedStats.Strength,
                             Defense = updatedStats.Defense,
                             Speed = updatedStats.Speed,
-                            ExperienceToNextLevel = updatedStats.ExperienceToNextLevel
+                            ExperienceToNextLevel = updatedStats.ExperienceToNextLevel,
+                            Gold = updatedStats.Gold
                         });
 
                         // Check if player leveled up
@@ -1850,7 +1858,8 @@ namespace CombatMechanix.Services
                         Strength = result.PlayerStats.Strength,
                         Defense = result.PlayerStats.Defense,
                         Speed = result.PlayerStats.Speed,
-                        ExperienceToNextLevel = result.PlayerStats.ExperienceToNextLevel
+                        ExperienceToNextLevel = result.PlayerStats.ExperienceToNextLevel,
+                        Gold = result.PlayerStats.Gold
                     });
 
                     // Notify all players about the reconnected player
