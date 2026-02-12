@@ -44,8 +44,9 @@ public class EnemyNetworkManager : MonoBehaviour
         NetworkManager.OnEnemyUpdate += HandleEnemyUpdate;
         NetworkManager.OnEnemyDamage += HandleEnemyDamage;
         NetworkManager.OnEnemyDeath += HandleEnemyDeath;
+        NetworkManager.OnLevelComplete += HandleLevelCleanup;
     }
-    
+
     private void OnDestroy()
     {
         // Unsubscribe from events (static events)
@@ -53,6 +54,7 @@ public class EnemyNetworkManager : MonoBehaviour
         NetworkManager.OnEnemyUpdate -= HandleEnemyUpdate;
         NetworkManager.OnEnemyDamage -= HandleEnemyDamage;
         NetworkManager.OnEnemyDeath -= HandleEnemyDeath;
+        NetworkManager.OnLevelComplete -= HandleLevelCleanup;
     }
     
     /// <summary>
@@ -306,6 +308,69 @@ public class EnemyNetworkManager : MonoBehaviour
         return enemy;
     }
     
+    /// <summary>
+    /// Handle level completion by cleaning up dead enemies and stale combat objects
+    /// </summary>
+    private void HandleLevelCleanup(LevelCompleteMessage message)
+    {
+        Debug.Log($"[EnemyNetworkManager] Level {message.completedLevel} complete - performing cleanup");
+
+        int destroyed = 0;
+        var toRemove = new List<string>();
+
+        // Destroy all inactive (dead) enemy GameObjects and remove from dictionary
+        foreach (var kvp in _networkEnemies)
+        {
+            if (kvp.Value == null || kvp.Value.gameObject == null || !kvp.Value.gameObject.activeInHierarchy)
+            {
+                if (kvp.Value != null && kvp.Value.gameObject != null)
+                    Destroy(kvp.Value.gameObject);
+                toRemove.Add(kvp.Key);
+                destroyed++;
+            }
+        }
+
+        foreach (var id in toRemove)
+            _networkEnemies.Remove(id);
+
+        // Clean up stale dynamic combat objects (projectiles, grenades, effects)
+        CleanupCombatObjects();
+
+        Debug.Log($"[EnemyNetworkManager] Cleanup complete: destroyed {destroyed} dead enemies, {_networkEnemies.Count} remaining");
+    }
+
+    /// <summary>
+    /// Destroy leftover dynamic combat objects (projectiles, grenades, swipe effects)
+    /// </summary>
+    private void CleanupCombatObjects()
+    {
+        int cleaned = 0;
+
+        // Projectiles
+        foreach (var obj in FindObjectsOfType<Projectile>())
+        {
+            Destroy(obj.gameObject);
+            cleaned++;
+        }
+
+        // Grenades
+        foreach (var obj in FindObjectsOfType<CombatMechanix.Unity.Grenade>())
+        {
+            Destroy(obj.gameObject);
+            cleaned++;
+        }
+
+        // Melee swipe effects
+        foreach (var obj in FindObjectsOfType<MeleeSwipeEffect>())
+        {
+            Destroy(obj.gameObject);
+            cleaned++;
+        }
+
+        if (cleaned > 0)
+            Debug.Log($"[EnemyNetworkManager] Cleaned up {cleaned} combat objects");
+    }
+
     /// <summary>
     /// Clear all network enemies (for disconnection/cleanup)
     /// </summary>

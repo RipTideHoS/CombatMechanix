@@ -296,6 +296,18 @@ namespace CombatMechanix.Services
             return _activeLoot.TryRemove(lootId, out _);
         }
 
+        /// <summary>
+        /// Clear all active loot drops (used during level transitions)
+        /// </summary>
+        public int ClearAllActiveLoot()
+        {
+            int count = _activeLoot.Count;
+            _activeLoot.Clear();
+            if (count > 0)
+                _logger.LogInformation("Cleared {Count} active loot drops for level transition", count);
+            return count;
+        }
+
         public void Dispose()
         {
             _cleanupTimer?.Dispose();

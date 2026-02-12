@@ -335,7 +335,35 @@ namespace CombatMechanix.Services
 
                 await _connectionManager.BroadcastToAll("LevelComplete", levelCompleteMessage);
                 _logger.LogInformation($"📢 Sent LevelComplete message to all clients. Waiting for player to continue...");
+
+                // Clean up dead enemies, stale AI, and uncollected loot immediately
+                PerformLevelCleanup();
             }
+        }
+
+        /// <summary>
+        /// Remove all dead enemies, their AI, and uncollected loot after a level completes
+        /// </summary>
+        private void PerformLevelCleanup()
+        {
+            // Remove dead enemies from dictionary and their AI
+            var deadEnemyIds = _enemies.Values
+                .Where(e => !e.IsAlive)
+                .Select(e => e.EnemyId)
+                .ToList();
+
+            foreach (var enemyId in deadEnemyIds)
+            {
+                _enemies.TryRemove(enemyId, out _);
+                _aiManager?.RemoveEnemyAI(enemyId);
+            }
+
+            // Clear uncollected loot from previous level
+            int lootCleared = _lootManager?.ClearAllActiveLoot() ?? 0;
+
+            _logger.LogInformation(
+                "Level cleanup: removed {EnemyCount} dead enemies, {LootCount} loot drops, {Remaining} enemies remaining",
+                deadEnemyIds.Count, lootCleared, _enemies.Count);
         }
 
         /// <summary>
