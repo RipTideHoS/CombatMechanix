@@ -207,6 +207,7 @@ public class CombatSystem : MonoBehaviour
         // Create projectile similar to how loot system creates objects
         GameObject projectile = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         projectile.name = "Projectile_Dynamic";
+        projectile.layer = 2; // Ignore Raycast - prevents ground detection raycast from hitting projectiles
         projectile.transform.position = spawnPos;
         
         Debug.Log($"[CombatSystem] Base sphere created at: {projectile.transform.position}");
@@ -546,6 +547,7 @@ public class CombatSystem : MonoBehaviour
         // Create grenade similar to projectiles
         GameObject grenade = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         grenade.name = $"Grenade_Dynamic_{grenadeType}";
+        grenade.layer = 2; // Ignore Raycast - prevents ground detection raycast from hitting grenades
         grenade.transform.position = spawnPos;
 
         Debug.Log($"[CombatSystem] Base sphere created at: {grenade.transform.position}");
