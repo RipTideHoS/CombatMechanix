@@ -195,6 +195,10 @@ public class AutoSceneSetup : MonoBehaviour
         if (SetupEnemyNetworkManager)
             SetupEnemyNetworkManagerComponent();
 
+        // 8.5. Setup Enemy Attack Effect Manager
+        if (SetupEnemyNetworkManager)
+            SetupEnemyAttackEffectManager();
+
         // 9. Create basic UI system (after GameManager exists)
         CreateBasicUI();
 
@@ -1298,6 +1302,31 @@ public class AutoSceneSetup : MonoBehaviour
         }
         
         Debug.Log("EnemyNetworkManager setup complete - ready to receive enemy data from server");
+    }
+
+    private void SetupEnemyAttackEffectManager()
+    {
+        if (FindObjectOfType<EnemyAttackEffectManager>() != null)
+        {
+            Debug.Log("EnemyAttackEffectManager already exists in scene");
+            return;
+        }
+
+        Debug.Log("Setting up EnemyAttackEffectManager...");
+
+        GameObject gameManagerObj = GameObject.Find("GameManager");
+        if (gameManagerObj != null)
+        {
+            gameManagerObj.AddComponent<EnemyAttackEffectManager>();
+            Debug.Log("EnemyAttackEffectManager added to GameManager GameObject");
+        }
+        else
+        {
+            GameObject obj = new GameObject("EnemyAttackEffectManager");
+            obj.AddComponent<EnemyAttackEffectManager>();
+            DontDestroyOnLoad(obj);
+            Debug.Log("EnemyAttackEffectManager created as standalone GameObject");
+        }
     }
 
     // Helper method to create a basic UI Canvas if needed

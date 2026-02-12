@@ -83,6 +83,43 @@ namespace CombatMechanix.Services
         {
             _logger.LogInformation("Initializing default enemies...");
 
+            // DEBUG: Spawn one enemy per die shape for visual testing
+            if (_debugAllShapes)
+            {
+                var shapeLevels = new[] { 1, 4, 6, 8, 10, 20 };
+                var shapeNames = new[] { "Sphere", "D4", "D6", "D8", "D10", "D20" };
+                var random = new Random();
+
+                for (int i = 0; i < shapeLevels.Length; i++)
+                {
+                    float prefX = (float)(random.NextDouble() * 40 - 20);
+                    float prefZ = (float)(random.NextDouble() * 40 - 20);
+                    var spawnPos = _terrainService?.FindClearSpawnPosition(prefX, prefZ) ?? new Vector3Data(prefX, 0.5f, prefZ);
+
+                    var enemy = new EnemyState
+                    {
+                        EnemyId = $"enemy_test_{i + 1:D3}",
+                        EnemyName = $"{shapeNames[i]} Enemy",
+                        EnemyType = "Basic",
+                        Position = spawnPos,
+                        Rotation = 0f,
+                        Health = 200,
+                        MaxHealth = 200,
+                        Level = shapeLevels[i],
+                        Damage = 15f,
+                        IsAlive = true,
+                        LastUpdate = DateTime.UtcNow
+                    };
+
+                    _enemies.TryAdd(enemy.EnemyId, enemy);
+                    _aiManager?.InitializeEnemyAI(enemy, "RandomWander");
+                    _logger.LogInformation($"🔧 DEBUG: Spawned {shapeNames[i]} enemy (Lvl {shapeLevels[i]}) at ({spawnPos.X:F1}, {spawnPos.Y:F1}, {spawnPos.Z:F1})");
+                }
+
+                _logger.LogInformation("🔧 DEBUG: All die shapes spawned for testing");
+                return;
+            }
+
             // Find terrain-clear positions for initial enemies
             var spawnPos1 = _terrainService?.FindClearSpawnPosition(5f, 5f) ?? new Vector3Data(5f, 0.5f, 5f);
 
@@ -469,6 +506,9 @@ namespace CombatMechanix.Services
         /// <summary>
         /// Spawn enemies appropriate for the current level
         /// </summary>
+        // DEBUG: Set to true to spawn one enemy of each die shape on level 1 for visual testing
+        private bool _debugAllShapes = true;
+
         private async Task SpawnEnemiesForLevel(int level)
         {
             _logger.LogInformation($"🎮 Spawning enemies for level {level}");
@@ -481,16 +521,31 @@ namespace CombatMechanix.Services
                 _aiManager?.RemoveEnemyAI(enemyId);
             }
 
-            // Calculate number of enemies based on level (2 base + 1 per level)
-            int enemyCount = 2 + level;
+            // DEBUG: On level 1, spawn one enemy per die shape for visual testing
+            int[] enemyLevels;
+            if (_debugAllShapes && level == 1)
+            {
+                enemyLevels = new[] { 1, 4, 6, 8, 10, 20 }; // Sphere, D4, D6, D8, D10, D20
+                _logger.LogInformation("🔧 DEBUG: Spawning all die shapes for testing");
+            }
+            else
+            {
+                int enemyCount = 2 + level;
+                enemyLevels = new int[enemyCount];
+                for (int j = 0; j < enemyCount; j++)
+                    enemyLevels[j] = level;
+            }
+
             int baseHealth = 50 + (level * 25);
             float baseDamage = 10f + (level * 5f);
 
             var newEnemies = new List<EnemyState>();
             var random = new Random();
 
-            for (int i = 0; i < enemyCount; i++)
+            for (int i = 0; i < enemyLevels.Length; i++)
             {
+                int enemyLevel = enemyLevels[i];
+
                 // Randomize preferred position within play area
                 float preferredX = (float)(random.NextDouble() * 60 - 30); // -30 to 30
                 float preferredZ = (float)(random.NextDouble() * 60 - 30); // -30 to 30
@@ -509,13 +564,13 @@ namespace CombatMechanix.Services
                 var enemy = new EnemyState
                 {
                     EnemyId = $"enemy_lvl{level}_{i + 1:D3}",
-                    EnemyName = $"Level {level} Enemy {i + 1}",
+                    EnemyName = $"Lvl{enemyLevel} Enemy {i + 1}",
                     EnemyType = level % 3 == 0 ? "Elite" : "Basic",
                     Position = spawnPos,
                     Rotation = (float)(random.NextDouble() * 360),
                     Health = baseHealth + random.Next(-20, 20),
                     MaxHealth = baseHealth + random.Next(-20, 20),
-                    Level = level,
+                    Level = enemyLevel,
                     Damage = baseDamage + (float)(random.NextDouble() * 5),
                     IsAlive = true,
                     LastUpdate = DateTime.UtcNow
@@ -528,7 +583,7 @@ namespace CombatMechanix.Services
                 _aiManager?.InitializeEnemyAI(enemy, "RandomWander");
                 newEnemies.Add(enemy);
 
-                _logger.LogInformation($"🎮 Spawned {enemy.EnemyName} (HP: {enemy.Health}) at ({spawnPos.X:F1}, {spawnPos.Y:F1}, {spawnPos.Z:F1})");
+                _logger.LogInformation($"🎮 Spawned {enemy.EnemyName} (Lvl {enemyLevel}, HP: {enemy.Health}) at ({spawnPos.X:F1}, {spawnPos.Y:F1}, {spawnPos.Z:F1})");
             }
 
             // Broadcast new enemies to all clients

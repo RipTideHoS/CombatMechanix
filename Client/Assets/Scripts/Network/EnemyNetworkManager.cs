@@ -373,6 +373,11 @@ public class EnemyNetworkManager : MonoBehaviour
             cleaned++;
         }
 
+        // Enemy attack effects
+        var attackEffectManager = FindObjectOfType<EnemyAttackEffectManager>();
+        if (attackEffectManager != null)
+            attackEffectManager.CleanupAllEffects();
+
         if (cleaned > 0)
             Debug.Log($"[EnemyNetworkManager] Cleaned up {cleaned} combat objects");
     }
