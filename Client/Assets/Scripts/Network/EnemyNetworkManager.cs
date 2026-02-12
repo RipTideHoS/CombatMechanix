@@ -165,7 +165,10 @@ public class EnemyNetworkManager : MonoBehaviour
         enemyObj.name = $"NetworkEnemy_{enemyState.EnemyName}_{enemyState.EnemyId}";
         
         // Position the enemy (rolling rotation is handled by EnemyBase.Update)
+        // Server sends Y=0.5 for all shapes; adjust for actual centroid-to-base distance
         Vector3 position = enemyState.Position.ToVector3();
+        float centroidOffset = EnemyShapeFactory.GetCentroidToBase(enemyState.Level) - 0.5f;
+        position.y += centroidOffset;
         enemyObj.transform.position = position;
         
         // Add EnemyBase component
@@ -222,7 +225,10 @@ public class EnemyNetworkManager : MonoBehaviour
     private void UpdateNetworkEnemyState(EnemyBase enemy, EnemyState enemyState)
     {
         // Update position (rolling rotation is handled by EnemyBase.Update)
+        // Server sends Y=0.5 for all shapes; adjust for actual centroid-to-base distance
         Vector3 newPosition = enemyState.Position.ToVector3();
+        float centroidOffset = EnemyShapeFactory.GetCentroidToBase(enemyState.Level) - 0.5f;
+        newPosition.y += centroidOffset;
         enemy.transform.position = newPosition;
         
         // Update health (this will trigger UI updates and visual effects)

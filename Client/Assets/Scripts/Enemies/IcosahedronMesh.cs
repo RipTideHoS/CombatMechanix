@@ -31,9 +31,10 @@ public static class IcosahedronMesh
         obj.AddComponent<MeshFilter>().mesh = mesh;
         obj.AddComponent<MeshRenderer>();
 
-        var collider = obj.AddComponent<MeshCollider>();
-        collider.sharedMesh = mesh;
-        collider.convex = true;
+        // Use SphereCollider instead of MeshCollider for reliable projectile hit detection.
+        var collider = obj.AddComponent<SphereCollider>();
+        collider.center = mesh.bounds.center;
+        collider.radius = Mathf.Max(mesh.bounds.extents.x, mesh.bounds.extents.y, mesh.bounds.extents.z) * 1.15f;
 
         return obj;
     }
