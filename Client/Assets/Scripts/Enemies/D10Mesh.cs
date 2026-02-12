@@ -4,35 +4,37 @@ using UnityEngine;
 /// <summary>
 /// Generates a pentagonal trapezohedron (D10 die shape) mesh procedurally.
 /// 12 vertices (2 apex + two staggered rings of 5), 10 kite faces (20 triangles).
+/// Proportions match a real tabletop D10: tall, pointed apexes with a narrow equatorial band.
 /// One kite face sits flat on the ground. Centered at centroid.
 /// </summary>
 public static class D10Mesh
 {
+    // Shape proportions based on real pentagonal trapezohedron geometry.
+    // Ring height offset ~= tan(6°) * radius ≈ 0.105 * radius, per reference:
+    // https://aqandrew.com/blog/10-sided-die-react/
+    private const float RingRadius = 0.55f;
+    private const float ApexHeight = 0.65f;
+    private const float RingHeight = 0.058f;
+
     public static readonly float CentroidToBase;
 
     static D10Mesh()
     {
-        // Computed after mesh generation — set by CreateMesh on first call
-        // We pre-compute here using the same geometry
         float angleStep = 2f * Mathf.PI / 5f;
         float halfStagger = angleStep / 2f;
-        float ringRadius = 0.5f;
-        float apexHeight = 0.85f;
-        float ringHeight = 0.25f;
 
         // Bottom apex
-        Vector3 bottomApex = new Vector3(0, -apexHeight, 0);
-        // First vertex of bottom ring
+        Vector3 bottomApex = new Vector3(0, -ApexHeight, 0);
+        // First two vertices of bottom ring
         float angle0 = 0f;
-        Vector3 br0 = new Vector3(ringRadius * Mathf.Cos(angle0), -ringHeight, ringRadius * Mathf.Sin(angle0));
+        Vector3 br0 = new Vector3(RingRadius * Mathf.Cos(angle0), -RingHeight, RingRadius * Mathf.Sin(angle0));
         float angle1 = angleStep;
-        Vector3 br1 = new Vector3(ringRadius * Mathf.Cos(angle1), -ringHeight, ringRadius * Mathf.Sin(angle1));
+        Vector3 br1 = new Vector3(RingRadius * Mathf.Cos(angle1), -RingHeight, RingRadius * Mathf.Sin(angle1));
         // Adjacent top ring vertex
         float topAngle = halfStagger;
-        Vector3 tr0 = new Vector3(ringRadius * Mathf.Cos(topAngle), ringHeight, ringRadius * Mathf.Sin(topAngle));
+        Vector3 tr0 = new Vector3(RingRadius * Mathf.Cos(topAngle), RingHeight, RingRadius * Mathf.Sin(topAngle));
 
         // One bottom kite face: bottomApex, br0, tr0, br1
-        // The face plane — use first 3 points to get normal
         Vector3 faceCenter = (bottomApex + br0 + tr0 + br1) / 4f;
         Vector3 normal = Vector3.Cross(br0 - bottomApex, tr0 - bottomApex).normalized;
         if (Vector3.Dot(normal, faceCenter) < 0) normal = -normal;
@@ -50,9 +52,11 @@ public static class D10Mesh
         obj.AddComponent<MeshFilter>().mesh = mesh;
         obj.AddComponent<MeshRenderer>();
 
-        var collider = obj.AddComponent<MeshCollider>();
-        collider.sharedMesh = mesh;
-        collider.convex = true;
+        // Use SphereCollider instead of MeshCollider for reliable projectile hit detection.
+        // The faceted trapezohedron mesh has thin kite faces that fast projectiles can slip through.
+        var collider = obj.AddComponent<SphereCollider>();
+        collider.center = mesh.bounds.center;
+        collider.radius = Mathf.Max(mesh.bounds.extents.x, mesh.bounds.extents.y, mesh.bounds.extents.z) * 1.15f;
 
         return obj;
     }
@@ -61,13 +65,10 @@ public static class D10Mesh
     {
         float angleStep = 2f * Mathf.PI / 5f;
         float halfStagger = angleStep / 2f;
-        float ringRadius = 0.5f;
-        float apexHeight = 0.85f;
-        float ringHeight = 0.25f;
 
         // Build the 12 base vertices
-        Vector3 topApex = new Vector3(0, apexHeight, 0);
-        Vector3 bottomApex = new Vector3(0, -apexHeight, 0);
+        Vector3 topApex = new Vector3(0, ApexHeight, 0);
+        Vector3 bottomApex = new Vector3(0, -ApexHeight, 0);
 
         Vector3[] topRing = new Vector3[5];
         Vector3[] bottomRing = new Vector3[5];
@@ -75,10 +76,10 @@ public static class D10Mesh
         for (int i = 0; i < 5; i++)
         {
             float topAngle = i * angleStep + halfStagger;
-            topRing[i] = new Vector3(ringRadius * Mathf.Cos(topAngle), ringHeight, ringRadius * Mathf.Sin(topAngle));
+            topRing[i] = new Vector3(RingRadius * Mathf.Cos(topAngle), RingHeight, RingRadius * Mathf.Sin(topAngle));
 
             float bottomAngle = i * angleStep;
-            bottomRing[i] = new Vector3(ringRadius * Mathf.Cos(bottomAngle), -ringHeight, ringRadius * Mathf.Sin(bottomAngle));
+            bottomRing[i] = new Vector3(RingRadius * Mathf.Cos(bottomAngle), -RingHeight, RingRadius * Mathf.Sin(bottomAngle));
         }
 
         // 10 kite faces: 5 top kites + 5 bottom kites
