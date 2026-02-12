@@ -103,6 +103,38 @@ public class NetworkMessages
         public int Speed { get; set; }
         public long ExperienceToNextLevel { get; set; }
         public int Gold { get; set; } = 0;
+        public SkillTreeData Skills { get; set; }
+    }
+
+    [System.Serializable]
+    public class SkillTreeData
+    {
+        public int SkillPoints { get; set; }
+        public int Strength { get; set; }
+        public int RangedSkill { get; set; }
+        public int MagicPower { get; set; }
+        public int Health { get; set; }
+        public int MovementSpeed { get; set; }
+        public int AttackSpeed { get; set; }
+        public int Intelligence { get; set; }
+    }
+
+    [System.Serializable]
+    public class SkillAllocationRequestMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public string SkillName { get; set; } = string.Empty;
+        public int Points { get; set; } = 1;
+        public bool Deallocate { get; set; } = false;
+    }
+
+    [System.Serializable]
+    public class SkillAllocationResponseMessage
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public SkillTreeData Skills { get; set; }
     }
 
     public class ExperienceGainMessage

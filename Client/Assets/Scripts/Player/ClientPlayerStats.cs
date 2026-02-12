@@ -17,6 +17,16 @@ public class ClientPlayerStats : MonoBehaviour
     public long ExperienceToNextLevel = 100;
     public int Gold = 0;
 
+    [Header("Skill Tree")]
+    public int SkillPoints = 0;
+    public int SkillStrength = 0;
+    public int SkillRangedSkill = 0;
+    public int SkillMagicPower = 0;
+    public int SkillHealth = 0;
+    public int SkillMovementSpeed = 0;
+    public int SkillAttackSpeed = 0;
+    public int SkillIntelligence = 0;
+
     [Header("Display Settings")]
     public bool ShowDebugStats = true;
 
@@ -27,6 +37,8 @@ public class ClientPlayerStats : MonoBehaviour
     public static event Action<long, string> OnExperienceGained; // (experience, source)
     public static event Action<int> OnGoldChanged; // (newGold)
     public static event Action OnPlayerDeath; // New death event
+    public static event Action<NetworkMessages.SkillTreeData> OnSkillsUpdated;
+    public static event Action<NetworkMessages.SkillAllocationResponseMessage> OnSkillAllocationResponse;
 
     private void Awake()
     {
@@ -66,6 +78,20 @@ public class ClientPlayerStats : MonoBehaviour
         ExperienceToNextLevel = statsUpdate.ExperienceToNextLevel;
         Gold = statsUpdate.Gold;
         
+        // Update skill tree data if present
+        if (statsUpdate.Skills != null)
+        {
+            SkillPoints = statsUpdate.Skills.SkillPoints;
+            SkillStrength = statsUpdate.Skills.Strength;
+            SkillRangedSkill = statsUpdate.Skills.RangedSkill;
+            SkillMagicPower = statsUpdate.Skills.MagicPower;
+            SkillHealth = statsUpdate.Skills.Health;
+            SkillMovementSpeed = statsUpdate.Skills.MovementSpeed;
+            SkillAttackSpeed = statsUpdate.Skills.AttackSpeed;
+            SkillIntelligence = statsUpdate.Skills.Intelligence;
+            OnSkillsUpdated?.Invoke(statsUpdate.Skills);
+        }
+
         // Fire gold changed event if gold actually changed
         if (Gold != previousGold)
         {

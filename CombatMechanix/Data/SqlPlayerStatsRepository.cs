@@ -29,6 +29,9 @@ namespace CombatMechanix.Data
         // Gold management methods
         Task UpdatePlayerGoldAsync(string playerId, int newGold);
         Task AddGoldAsync(string playerId, int goldAmount);
+
+        // Skill tree methods
+        Task UpdateSkillAllocationAsync(string playerId, PlayerStats updatedStats);
     }
 
     public class SqlPlayerStatsRepository : IPlayerStatsRepository
@@ -55,43 +58,94 @@ namespace CombatMechanix.Data
             {
                 using var connection = new SqlConnection(_connectionString);
                 await connection.OpenAsync();
-                
+
                 // Check if NextLevelExp column exists
                 const string checkColumnSql = @"
-                    SELECT COUNT(*) 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    SELECT COUNT(*)
+                    FROM INFORMATION_SCHEMA.COLUMNS
                     WHERE TABLE_NAME = 'Players' AND COLUMN_NAME = 'NextLevelExp'";
-                
+
                 using var checkCommand = new SqlCommand(checkColumnSql, connection);
                 var columnExists = Convert.ToInt32(await checkCommand.ExecuteScalarAsync()) > 0;
-                
+
                 if (!columnExists)
                 {
                     _logger.LogInformation("Adding NextLevelExp column to Players table");
-                    
+
                     // Add the column
                     const string addColumnSql = @"
-                        ALTER TABLE Players 
+                        ALTER TABLE Players
                         ADD NextLevelExp BIGINT NOT NULL DEFAULT 0";
-                    
+
                     using var addCommand = new SqlCommand(addColumnSql, connection);
                     await addCommand.ExecuteNonQueryAsync();
-                    
+
                     // Update existing records with calculated NextLevelExp values
                     const string updateSql = @"
-                        UPDATE Players 
+                        UPDATE Players
                         SET NextLevelExp = (Level * Level * 100) - Experience
                         WHERE NextLevelExp = 0";
-                    
+
                     using var updateCommand = new SqlCommand(updateSql, connection);
                     var updatedRows = await updateCommand.ExecuteNonQueryAsync();
-                    
+
                     _logger.LogInformation("Added NextLevelExp column and updated {UpdatedRows} player records", updatedRows);
                 }
+
+                // Skill tree columns migration
+                await EnsureSkillTreeSchemaAsync(connection);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error ensuring database schema");
+            }
+        }
+
+        private async Task EnsureSkillTreeSchemaAsync(SqlConnection connection)
+        {
+            try
+            {
+                const string checkSql = @"
+                    SELECT COUNT(*)
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = 'Players' AND COLUMN_NAME = 'SkillPoints'";
+
+                using var checkCmd = new SqlCommand(checkSql, connection);
+                var exists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync()) > 0;
+
+                if (!exists)
+                {
+                    _logger.LogInformation("Adding skill tree columns to Players table");
+
+                    const string alterSql = @"
+                        ALTER TABLE Players ADD
+                            SkillPoints INT NOT NULL DEFAULT 0,
+                            SkillStrength INT NOT NULL DEFAULT 0,
+                            SkillRangedSkill INT NOT NULL DEFAULT 0,
+                            SkillMagicPower INT NOT NULL DEFAULT 0,
+                            SkillHealth INT NOT NULL DEFAULT 0,
+                            SkillMovementSpeed INT NOT NULL DEFAULT 0,
+                            SkillAttackSpeed INT NOT NULL DEFAULT 0,
+                            SkillIntelligence INT NOT NULL DEFAULT 0";
+
+                    using var alterCmd = new SqlCommand(alterSql, connection);
+                    await alterCmd.ExecuteNonQueryAsync();
+
+                    // Grant retroactive skill points: (Level - 1) * 5 for existing players above level 1
+                    const string retroSql = @"
+                        UPDATE Players
+                        SET SkillPoints = (Level - 1) * 5
+                        WHERE Level > 1";
+
+                    using var retroCmd = new SqlCommand(retroSql, connection);
+                    var updated = await retroCmd.ExecuteNonQueryAsync();
+
+                    _logger.LogInformation("Added skill tree columns and granted retroactive points to {Count} players", updated);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error ensuring skill tree schema");
             }
         }
 
@@ -104,10 +158,14 @@ namespace CombatMechanix.Data
 
                 const string sql = @"
                     SELECT PlayerId, PlayerName, LoginName, PasswordHash, PasswordSalt, SessionToken, SessionExpiry,
-                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, 
-                           ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth, 
+                           FailedLoginAttempts, LastLoginAttempt, Level, Experience,
+                           ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth,
                            Defense, AttackDamage, MovementSpeed, ISNULL(Gold, 100) as Gold, PositionX, PositionY, PositionZ,
-                           LastLogin, CreatedAt, LastSave
+                           LastLogin, CreatedAt, LastSave,
+                           ISNULL(SkillPoints, 0) as SkillPoints, ISNULL(SkillStrength, 0) as SkillStrength,
+                           ISNULL(SkillRangedSkill, 0) as SkillRangedSkill, ISNULL(SkillMagicPower, 0) as SkillMagicPower,
+                           ISNULL(SkillHealth, 0) as SkillHealth, ISNULL(SkillMovementSpeed, 0) as SkillMovementSpeed,
+                           ISNULL(SkillAttackSpeed, 0) as SkillAttackSpeed, ISNULL(SkillIntelligence, 0) as SkillIntelligence
                     FROM Players 
                     WHERE PlayerId = @PlayerId";
 
@@ -143,12 +201,16 @@ namespace CombatMechanix.Data
                 await connection.OpenAsync();
 
                 const string sql = @"
-                    INSERT INTO Players (PlayerId, PlayerName, Email, LoginName, PasswordHash, PasswordSalt, Level, Experience, NextLevelExp, Health, MaxHealth, 
+                    INSERT INTO Players (PlayerId, PlayerName, Email, LoginName, PasswordHash, PasswordSalt, Level, Experience, NextLevelExp, Health, MaxHealth,
                                        Defense, AttackDamage, MovementSpeed, PositionX, PositionY, PositionZ,
-                                       LastLogin, CreatedAt, LastSave, FailedLoginAttempts)
-                    VALUES (@PlayerId, @PlayerName, @Email, @LoginName, @PasswordHash, @PasswordSalt, @Level, @Experience, @NextLevelExp, @Health, @MaxHealth, 
+                                       LastLogin, CreatedAt, LastSave, FailedLoginAttempts,
+                                       SkillPoints, SkillStrength, SkillRangedSkill, SkillMagicPower,
+                                       SkillHealth, SkillMovementSpeed, SkillAttackSpeed, SkillIntelligence)
+                    VALUES (@PlayerId, @PlayerName, @Email, @LoginName, @PasswordHash, @PasswordSalt, @Level, @Experience, @NextLevelExp, @Health, @MaxHealth,
                             @Defense, @AttackDamage, @MovementSpeed, @PositionX, @PositionY, @PositionZ,
-                            @LastLogin, @CreatedAt, @LastSave, @FailedLoginAttempts)";
+                            @LastLogin, @CreatedAt, @LastSave, @FailedLoginAttempts,
+                            @SkillPoints, @SkillStrength, @SkillRangedSkill, @SkillMagicPower,
+                            @SkillHealth, @SkillMovementSpeed, @SkillAttackSpeed, @SkillIntelligence)";
 
                 using var command = new SqlCommand(sql, connection);
                 AddPlayerStatsParameters(command, playerStats);
@@ -173,12 +235,16 @@ namespace CombatMechanix.Data
                 await connection.OpenAsync();
 
                 const string sql = @"
-                    UPDATE Players 
+                    UPDATE Players
                     SET PlayerName = @PlayerName, Level = @Level, Experience = @Experience, NextLevelExp = @NextLevelExp,
-                        Health = @Health, MaxHealth = @MaxHealth, Defense = @Defense, 
+                        Health = @Health, MaxHealth = @MaxHealth, Defense = @Defense,
                         AttackDamage = @AttackDamage, MovementSpeed = @MovementSpeed, Gold = @Gold,
-                        PositionX = @PositionX, PositionY = @PositionY, PositionZ = @PositionZ, 
-                        LastLogin = @LastLogin, LastSave = @LastSave
+                        PositionX = @PositionX, PositionY = @PositionY, PositionZ = @PositionZ,
+                        LastLogin = @LastLogin, LastSave = @LastSave,
+                        SkillPoints = @SkillPoints, SkillStrength = @SkillStrength,
+                        SkillRangedSkill = @SkillRangedSkill, SkillMagicPower = @SkillMagicPower,
+                        SkillHealth = @SkillHealth, SkillMovementSpeed = @SkillMovementSpeed,
+                        SkillAttackSpeed = @SkillAttackSpeed, SkillIntelligence = @SkillIntelligence
                     WHERE PlayerId = @PlayerId";
 
                 using var command = new SqlCommand(sql, connection);
@@ -232,10 +298,14 @@ namespace CombatMechanix.Data
 
                 const string sql = @"
                     SELECT TOP (@Count) PlayerId, PlayerName, LoginName, PasswordHash, PasswordSalt, SessionToken, SessionExpiry,
-                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth, 
+                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth,
                            Defense, AttackDamage, MovementSpeed, ISNULL(Gold, 100) as Gold, PositionX, PositionY, PositionZ,
-                           LastLogin, CreatedAt, LastSave
-                    FROM Players 
+                           LastLogin, CreatedAt, LastSave,
+                           ISNULL(SkillPoints, 0) as SkillPoints, ISNULL(SkillStrength, 0) as SkillStrength,
+                           ISNULL(SkillRangedSkill, 0) as SkillRangedSkill, ISNULL(SkillMagicPower, 0) as SkillMagicPower,
+                           ISNULL(SkillHealth, 0) as SkillHealth, ISNULL(SkillMovementSpeed, 0) as SkillMovementSpeed,
+                           ISNULL(SkillAttackSpeed, 0) as SkillAttackSpeed, ISNULL(SkillIntelligence, 0) as SkillIntelligence
+                    FROM Players
                     ORDER BY Level DESC, Experience DESC";
 
                 using var command = new SqlCommand(sql, connection);
@@ -319,6 +389,14 @@ namespace CombatMechanix.Data
             command.Parameters.Add("@LastLogin", SqlDbType.DateTime2).Value = playerStats.LastLogin;
             command.Parameters.Add("@CreatedAt", SqlDbType.DateTime2).Value = playerStats.CreatedAt;
             command.Parameters.Add("@LastSave", SqlDbType.DateTime2).Value = DateTime.UtcNow; // Map UpdatedAt to LastSave
+            command.Parameters.Add("@SkillPoints", SqlDbType.Int).Value = playerStats.SkillPoints;
+            command.Parameters.Add("@SkillStrength", SqlDbType.Int).Value = playerStats.SkillStrength;
+            command.Parameters.Add("@SkillRangedSkill", SqlDbType.Int).Value = playerStats.SkillRangedSkill;
+            command.Parameters.Add("@SkillMagicPower", SqlDbType.Int).Value = playerStats.SkillMagicPower;
+            command.Parameters.Add("@SkillHealth", SqlDbType.Int).Value = playerStats.SkillHealth;
+            command.Parameters.Add("@SkillMovementSpeed", SqlDbType.Int).Value = playerStats.SkillMovementSpeed;
+            command.Parameters.Add("@SkillAttackSpeed", SqlDbType.Int).Value = playerStats.SkillAttackSpeed;
+            command.Parameters.Add("@SkillIntelligence", SqlDbType.Int).Value = playerStats.SkillIntelligence;
         }
 
         private static PlayerStats MapFromDataReader(SqlDataReader reader)
@@ -352,7 +430,15 @@ namespace CombatMechanix.Data
                 LastPosition = lastPosition,
                 LastLogin = Convert.ToDateTime(reader["LastLogin"]),
                 CreatedAt = Convert.ToDateTime(reader["CreatedAt"]),
-                UpdatedAt = Convert.ToDateTime(reader["LastSave"]) // Map LastSave to UpdatedAt
+                UpdatedAt = Convert.ToDateTime(reader["LastSave"]), // Map LastSave to UpdatedAt
+                SkillPoints = reader["SkillPoints"] != DBNull.Value ? Convert.ToInt32(reader["SkillPoints"]) : 0,
+                SkillStrength = reader["SkillStrength"] != DBNull.Value ? Convert.ToInt32(reader["SkillStrength"]) : 0,
+                SkillRangedSkill = reader["SkillRangedSkill"] != DBNull.Value ? Convert.ToInt32(reader["SkillRangedSkill"]) : 0,
+                SkillMagicPower = reader["SkillMagicPower"] != DBNull.Value ? Convert.ToInt32(reader["SkillMagicPower"]) : 0,
+                SkillHealth = reader["SkillHealth"] != DBNull.Value ? Convert.ToInt32(reader["SkillHealth"]) : 0,
+                SkillMovementSpeed = reader["SkillMovementSpeed"] != DBNull.Value ? Convert.ToInt32(reader["SkillMovementSpeed"]) : 0,
+                SkillAttackSpeed = reader["SkillAttackSpeed"] != DBNull.Value ? Convert.ToInt32(reader["SkillAttackSpeed"]) : 0,
+                SkillIntelligence = reader["SkillIntelligence"] != DBNull.Value ? Convert.ToInt32(reader["SkillIntelligence"]) : 0
             };
         }
 
@@ -365,10 +451,14 @@ namespace CombatMechanix.Data
 
                 const string sql = @"
                     SELECT PlayerId, PlayerName, LoginName, PasswordHash, PasswordSalt, SessionToken, SessionExpiry,
-                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth, 
+                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth,
                            Defense, AttackDamage, MovementSpeed, ISNULL(Gold, 100) as Gold, PositionX, PositionY, PositionZ,
-                           LastLogin, CreatedAt, LastSave
-                    FROM Players 
+                           LastLogin, CreatedAt, LastSave,
+                           ISNULL(SkillPoints, 0) as SkillPoints, ISNULL(SkillStrength, 0) as SkillStrength,
+                           ISNULL(SkillRangedSkill, 0) as SkillRangedSkill, ISNULL(SkillMagicPower, 0) as SkillMagicPower,
+                           ISNULL(SkillHealth, 0) as SkillHealth, ISNULL(SkillMovementSpeed, 0) as SkillMovementSpeed,
+                           ISNULL(SkillAttackSpeed, 0) as SkillAttackSpeed, ISNULL(SkillIntelligence, 0) as SkillIntelligence
+                    FROM Players
                     WHERE LoginName = @LoginName";
 
                 using var command = new SqlCommand(sql, connection);
@@ -398,10 +488,14 @@ namespace CombatMechanix.Data
 
                 const string sql = @"
                     SELECT PlayerId, PlayerName, LoginName, PasswordHash, PasswordSalt, SessionToken, SessionExpiry,
-                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth, 
+                           FailedLoginAttempts, LastLoginAttempt, Level, Experience, ISNULL(NextLevelExp, 0) as NextLevelExp, Health, MaxHealth,
                            Defense, AttackDamage, MovementSpeed, ISNULL(Gold, 100) as Gold, PositionX, PositionY, PositionZ,
-                           LastLogin, CreatedAt, LastSave
-                    FROM Players 
+                           LastLogin, CreatedAt, LastSave,
+                           ISNULL(SkillPoints, 0) as SkillPoints, ISNULL(SkillStrength, 0) as SkillStrength,
+                           ISNULL(SkillRangedSkill, 0) as SkillRangedSkill, ISNULL(SkillMagicPower, 0) as SkillMagicPower,
+                           ISNULL(SkillHealth, 0) as SkillHealth, ISNULL(SkillMovementSpeed, 0) as SkillMovementSpeed,
+                           ISNULL(SkillAttackSpeed, 0) as SkillAttackSpeed, ISNULL(SkillIntelligence, 0) as SkillIntelligence
+                    FROM Players
                     WHERE SessionToken = @SessionToken";
 
                 using var command = new SqlCommand(sql, connection);
@@ -657,6 +751,49 @@ namespace CombatMechanix.Data
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding gold to player {PlayerId}", playerId);
+                throw;
+            }
+        }
+
+        public async Task UpdateSkillAllocationAsync(string playerId, PlayerStats updatedStats)
+        {
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+
+                const string sql = @"
+                    UPDATE Players
+                    SET SkillPoints = @SkillPoints,
+                        SkillStrength = @SkillStrength, SkillRangedSkill = @SkillRangedSkill,
+                        SkillMagicPower = @SkillMagicPower, SkillHealth = @SkillHealth,
+                        SkillMovementSpeed = @SkillMovementSpeed, SkillAttackSpeed = @SkillAttackSpeed,
+                        SkillIntelligence = @SkillIntelligence, LastSave = @LastSave
+                    WHERE PlayerId = @PlayerId";
+
+                using var command = new SqlCommand(sql, connection);
+                command.Parameters.Add("@PlayerId", SqlDbType.NVarChar, 50).Value = playerId;
+                command.Parameters.Add("@SkillPoints", SqlDbType.Int).Value = updatedStats.SkillPoints;
+                command.Parameters.Add("@SkillStrength", SqlDbType.Int).Value = updatedStats.SkillStrength;
+                command.Parameters.Add("@SkillRangedSkill", SqlDbType.Int).Value = updatedStats.SkillRangedSkill;
+                command.Parameters.Add("@SkillMagicPower", SqlDbType.Int).Value = updatedStats.SkillMagicPower;
+                command.Parameters.Add("@SkillHealth", SqlDbType.Int).Value = updatedStats.SkillHealth;
+                command.Parameters.Add("@SkillMovementSpeed", SqlDbType.Int).Value = updatedStats.SkillMovementSpeed;
+                command.Parameters.Add("@SkillAttackSpeed", SqlDbType.Int).Value = updatedStats.SkillAttackSpeed;
+                command.Parameters.Add("@SkillIntelligence", SqlDbType.Int).Value = updatedStats.SkillIntelligence;
+                command.Parameters.Add("@LastSave", SqlDbType.DateTime2).Value = DateTime.UtcNow;
+
+                var rowsAffected = await command.ExecuteNonQueryAsync();
+                if (rowsAffected == 0)
+                {
+                    throw new InvalidOperationException($"Player {playerId} not found for skill allocation update");
+                }
+
+                _logger.LogDebug("Updated skill allocation for player {PlayerId}", playerId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating skill allocation for {PlayerId}", playerId);
                 throw;
             }
         }

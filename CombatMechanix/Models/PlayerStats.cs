@@ -34,6 +34,16 @@ namespace CombatMechanix.Models
         
         // Currency
         public int Gold { get; set; } = 100;
+
+        // Skill Tree
+        public int SkillPoints { get; set; } = 0;
+        public int SkillStrength { get; set; } = 0;
+        public int SkillRangedSkill { get; set; } = 0;
+        public int SkillMagicPower { get; set; } = 0;
+        public int SkillHealth { get; set; } = 0;
+        public int SkillMovementSpeed { get; set; } = 0;
+        public int SkillAttackSpeed { get; set; } = 0;
+        public int SkillIntelligence { get; set; } = 0;
         
         // Session Information
         public Vector3Data? LastPosition { get; set; }
@@ -41,6 +51,9 @@ namespace CombatMechanix.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
         
+        // Effective max health including skill bonus (not persisted, computed)
+        public int EffectiveMaxHealth => MaxHealth + (SkillHealth * 10);
+
         // Calculate required experience for next level
         public long ExperienceToNextLevel => CalculateExperienceForLevel(Level + 1) - Experience;
         
@@ -69,12 +82,14 @@ namespace CombatMechanix.Models
             // Update NextLevelExp for the new level
             NextLevelExp = CalculateExperienceForLevel(Level + 1) - Experience;
             
-            // Increase stats on level up
-            MaxHealth += 10;
-            Health = MaxHealth; // Full heal on level up
-            Strength += 2;
-            Defense += 2;
-            Speed += 1;
+            // Reduced auto-stats on level up (skill points replace the rest)
+            MaxHealth += 5;
+            Health = EffectiveMaxHealth; // Full heal on level up (includes skill bonus)
+            Strength += 1;
+            Defense += 1;
+
+            // Grant 5 skill points per level
+            SkillPoints += 5;
             
             UpdatedAt = DateTime.UtcNow;
             

@@ -251,6 +251,9 @@ namespace CombatMechanix.Services
                     case "LootPickupRequest":
                         await HandleLootPickupRequest(connection, wrapper.Data);
                         break;
+                    case "SkillAllocationRequest":
+                        await HandleSkillAllocationRequest(connection, wrapper.Data);
+                        break;
                     default:
                         _logger.LogWarning($"Unknown message type: {wrapper.Type}");
                         break;
@@ -1132,20 +1135,11 @@ namespace CombatMechanix.Services
                                 player.Defense = updatedStats.Defense;
                                 player.Speed = updatedStats.Speed;
 
+                                // Copy skill data to in-memory state
+                                CopySkillsToPlayerState(player, updatedStats);
+
                                 // Send updated stats to player
-                                await SendToConnection(connection.ConnectionId, "PlayerStatsUpdate", new NetworkMessages.PlayerStatsUpdateMessage
-                                {
-                                    PlayerId = player.PlayerId,
-                                    Level = updatedStats.Level,
-                                    Experience = updatedStats.Experience,
-                                    Health = updatedStats.Health,
-                                    MaxHealth = updatedStats.MaxHealth,
-                                    Strength = updatedStats.Strength,
-                                    Defense = updatedStats.Defense,
-                                    Speed = updatedStats.Speed,
-                                    ExperienceToNextLevel = updatedStats.ExperienceToNextLevel,
-                                    Gold = updatedStats.Gold
-                                });
+                                await SendToConnection(connection.ConnectionId, "PlayerStatsUpdate", BuildStatsMessage(player.PlayerId, updatedStats));
 
                                 // Check if player leveled up (using pre-update level from database)
                                 _logger.LogInformation($"DEBUG: Level check - PreUpdateLevel: {preUpdateLevel}, PostUpdateLevel: {updatedStats.Level}");
@@ -1157,18 +1151,7 @@ namespace CombatMechanix.Services
                                         PlayerId = player.PlayerId,
                                         NewLevel = updatedStats.Level,
                                         StatPointsGained = (updatedStats.Level - preUpdateLevel) * 5, // 5 points per level
-                                        NewStats = new NetworkMessages.PlayerStatsUpdateMessage
-                                        {
-                                            PlayerId = player.PlayerId,
-                                            Level = updatedStats.Level,
-                                            Experience = updatedStats.Experience,
-                                            Health = updatedStats.Health,
-                                            MaxHealth = updatedStats.MaxHealth,
-                                            Strength = updatedStats.Strength,
-                                            Defense = updatedStats.Defense,
-                                            Speed = updatedStats.Speed,
-                                            ExperienceToNextLevel = updatedStats.ExperienceToNextLevel
-                                        }
+                                        NewStats = BuildStatsMessage(player.PlayerId, updatedStats)
                                     });
 
                                     // Notify all players about the level up
@@ -1293,7 +1276,15 @@ namespace CombatMechanix.Services
                     Speed = playerStats.Speed,
                     Gold = playerStats.Gold,
                     IsOnline = true,
-                    LastUpdate = DateTime.UtcNow
+                    LastUpdate = DateTime.UtcNow,
+                    SkillPoints = playerStats.SkillPoints,
+                    SkillStrength = playerStats.SkillStrength,
+                    SkillRangedSkill = playerStats.SkillRangedSkill,
+                    SkillMagicPower = playerStats.SkillMagicPower,
+                    SkillHealth = playerStats.SkillHealth,
+                    SkillMovementSpeed = playerStats.SkillMovementSpeed,
+                    SkillAttackSpeed = playerStats.SkillAttackSpeed,
+                    SkillIntelligence = playerStats.SkillIntelligence
                 };
 
                 // Populate equipment stats from database
@@ -1301,11 +1292,11 @@ namespace CombatMechanix.Services
 
                 _players.TryAdd(connection.ConnectionId, player);
                 connection.PlayerId = authData.PlayerId;  // Use actual player ID from authentication data
-                
+
                 // Set connection.LastPosition for AI system access
                 connection.LastPosition = player.Position;
                 connection.PlayerName = player.PlayerName;
-                
+
                 _logger.LogInformation($"Login Success: Connection {connection.ConnectionId} mapped to Player {player.PlayerId} ({player.PlayerName})");
 
                 // Send authentication success response
@@ -1317,20 +1308,11 @@ namespace CombatMechanix.Services
                     Message = "Authentication successful"
                 });
 
+                // Copy skill data to in-memory state
+                CopySkillsToPlayerState(player, playerStats);
+
                 // Send player stats to the authenticated player
-                await SendToConnection(connection.ConnectionId, "PlayerStatsUpdate", new NetworkMessages.PlayerStatsUpdateMessage
-                {
-                    PlayerId = player.PlayerId,
-                    Level = playerStats.Level,
-                    Experience = playerStats.Experience,
-                    Health = playerStats.Health,
-                    MaxHealth = playerStats.MaxHealth,
-                    Strength = playerStats.Strength,
-                    Defense = playerStats.Defense,
-                    Speed = playerStats.Speed,
-                    ExperienceToNextLevel = playerStats.ExperienceToNextLevel,
-                    Gold = playerStats.Gold
-                });
+                await SendToConnection(connection.ConnectionId, "PlayerStatsUpdate", BuildStatsMessage(player.PlayerId, playerStats));
 
                 // Notify all players about the new player
                 await BroadcastToAll("PlayerJoined", new NetworkMessages.PlayerJoinNotification
@@ -1429,21 +1411,10 @@ namespace CombatMechanix.Services
                         player.Strength = updatedStats.Strength;
                         player.Defense = updatedStats.Defense;
                         player.Speed = updatedStats.Speed;
+                        CopySkillsToPlayerState(player, updatedStats);
 
                         // Send updated stats to player
-                        await SendToConnection(connection.ConnectionId, "PlayerStatsUpdate", new NetworkMessages.PlayerStatsUpdateMessage
-                        {
-                            PlayerId = player.PlayerId,
-                            Level = updatedStats.Level,
-                            Experience = updatedStats.Experience,
-                            Health = updatedStats.Health,
-                            MaxHealth = updatedStats.MaxHealth,
-                            Strength = updatedStats.Strength,
-                            Defense = updatedStats.Defense,
-                            Speed = updatedStats.Speed,
-                            ExperienceToNextLevel = updatedStats.ExperienceToNextLevel,
-                            Gold = updatedStats.Gold
-                        });
+                        await SendToConnection(connection.ConnectionId, "PlayerStatsUpdate", BuildStatsMessage(player.PlayerId, updatedStats));
 
                         // Check if player leveled up
                         if (updatedStats.Level > oldLevel)
@@ -1453,18 +1424,7 @@ namespace CombatMechanix.Services
                                 PlayerId = player.PlayerId,
                                 NewLevel = updatedStats.Level,
                                 StatPointsGained = (updatedStats.Level - oldLevel) * 5, // 5 points per level
-                                NewStats = new NetworkMessages.PlayerStatsUpdateMessage
-                                {
-                                    PlayerId = player.PlayerId,
-                                    Level = updatedStats.Level,
-                                    Experience = updatedStats.Experience,
-                                    Health = updatedStats.Health,
-                                    MaxHealth = updatedStats.MaxHealth,
-                                    Strength = updatedStats.Strength,
-                                    Defense = updatedStats.Defense,
-                                    Speed = updatedStats.Speed,
-                                    ExperienceToNextLevel = updatedStats.ExperienceToNextLevel
-                                }
+                                NewStats = BuildStatsMessage(player.PlayerId, updatedStats)
                             });
 
                             // Notify all players about the level up
@@ -1560,13 +1520,14 @@ namespace CombatMechanix.Services
                     return;
                 }
 
-                // Respawn player with full health
-                await playerStatsRepository.UpdatePlayerHealthAsync(respawnData.PlayerId, player.MaxHealth);
+                // Respawn player with full health (use EffectiveMaxHealth to include skill bonus)
+                var effectiveMaxHealth = player.EffectiveMaxHealth;
+                await playerStatsRepository.UpdatePlayerHealthAsync(respawnData.PlayerId, effectiveMaxHealth);
 
                 // Update in-memory player state
                 if (_players.TryGetValue(connection.ConnectionId, out var playerState))
                 {
-                    playerState.Health = player.MaxHealth;
+                    playerState.Health = effectiveMaxHealth;
                 }
 
                 // Send successful respawn response
@@ -1574,19 +1535,19 @@ namespace CombatMechanix.Services
                 {
                     Success = true,
                     PlayerId = respawnData.PlayerId,
-                    NewHealth = player.MaxHealth
+                    NewHealth = effectiveMaxHealth
                 });
 
                 // Send health change notification to update UI
                 await SendToConnection(connection.ConnectionId, "HealthChange", new NetworkMessages.HealthChangeMessage
                 {
                     PlayerId = respawnData.PlayerId,
-                    NewHealth = player.MaxHealth,
-                    HealthChange = player.MaxHealth - 0, // Full heal from 0
+                    NewHealth = effectiveMaxHealth,
+                    HealthChange = effectiveMaxHealth - 0, // Full heal from 0
                     Source = "Respawn"
                 });
 
-                _logger.LogInformation($"Player {respawnData.PlayerId} respawned successfully with {player.MaxHealth} health");
+                _logger.LogInformation($"Player {respawnData.PlayerId} respawned successfully with {effectiveMaxHealth} health");
             }
             catch (Exception ex)
             {
@@ -1597,6 +1558,127 @@ namespace CombatMechanix.Services
                     Success = false,
                     PlayerId = respawnData.PlayerId,
                     ErrorMessage = "Server error during respawn"
+                });
+            }
+        }
+
+        private static NetworkMessages.PlayerStatsUpdateMessage BuildStatsMessage(string playerId, PlayerStats stats)
+        {
+            return new NetworkMessages.PlayerStatsUpdateMessage
+            {
+                PlayerId = playerId,
+                Level = stats.Level,
+                Experience = stats.Experience,
+                Health = stats.Health,
+                MaxHealth = stats.EffectiveMaxHealth,
+                Strength = stats.Strength,
+                Defense = stats.Defense,
+                Speed = stats.Speed,
+                ExperienceToNextLevel = stats.ExperienceToNextLevel,
+                Gold = stats.Gold,
+                Skills = BuildSkillTreeData(stats)
+            };
+        }
+
+        private static NetworkMessages.SkillTreeData BuildSkillTreeData(PlayerStats stats)
+        {
+            return new NetworkMessages.SkillTreeData
+            {
+                SkillPoints = stats.SkillPoints,
+                Strength = stats.SkillStrength,
+                RangedSkill = stats.SkillRangedSkill,
+                MagicPower = stats.SkillMagicPower,
+                Health = stats.SkillHealth,
+                MovementSpeed = stats.SkillMovementSpeed,
+                AttackSpeed = stats.SkillAttackSpeed,
+                Intelligence = stats.SkillIntelligence
+            };
+        }
+
+        private static NetworkMessages.SkillTreeData BuildSkillTreeDataFromState(PlayerState state)
+        {
+            return new NetworkMessages.SkillTreeData
+            {
+                SkillPoints = state.SkillPoints,
+                Strength = state.SkillStrength,
+                RangedSkill = state.SkillRangedSkill,
+                MagicPower = state.SkillMagicPower,
+                Health = state.SkillHealth,
+                MovementSpeed = state.SkillMovementSpeed,
+                AttackSpeed = state.SkillAttackSpeed,
+                Intelligence = state.SkillIntelligence
+            };
+        }
+
+        private static void CopySkillsToPlayerState(PlayerState state, PlayerStats stats)
+        {
+            state.SkillPoints = stats.SkillPoints;
+            state.SkillStrength = stats.SkillStrength;
+            state.SkillRangedSkill = stats.SkillRangedSkill;
+            state.SkillMagicPower = stats.SkillMagicPower;
+            state.SkillHealth = stats.SkillHealth;
+            state.SkillMovementSpeed = stats.SkillMovementSpeed;
+            state.SkillAttackSpeed = stats.SkillAttackSpeed;
+            state.SkillIntelligence = stats.SkillIntelligence;
+        }
+
+        private async Task HandleSkillAllocationRequest(WebSocketConnection connection, object? data)
+        {
+            if (data == null) return;
+
+            var request = JsonSerializer.Deserialize<NetworkMessages.SkillAllocationRequestMessage>(data.ToString()!);
+            if (request == null) return;
+
+            var playerId = connection.PlayerId;
+            if (string.IsNullOrEmpty(playerId))
+            {
+                _logger.LogWarning($"Skill allocation attempted by unauthenticated connection: {connection.ConnectionId}");
+                return;
+            }
+
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var playerStatsService = scope.ServiceProvider.GetRequiredService<IPlayerStatsService>();
+
+                SkillAllocationResult result;
+                if (request.Deallocate)
+                {
+                    result = await playerStatsService.DeallocateSkillPointAsync(playerId, request.SkillName, request.Points);
+                }
+                else
+                {
+                    result = await playerStatsService.AllocateSkillPointAsync(playerId, request.SkillName, request.Points);
+                }
+
+                // Send allocation response
+                await SendToConnection(connection.ConnectionId, "SkillAllocationResponse", new NetworkMessages.SkillAllocationResponseMessage
+                {
+                    PlayerId = playerId,
+                    Success = result.Success,
+                    Message = result.Message,
+                    Skills = result.UpdatedStats != null ? BuildSkillTreeData(result.UpdatedStats) : null
+                });
+
+                // If successful, update in-memory cache and send full stats update
+                if (result.Success && result.UpdatedStats != null)
+                {
+                    if (_players.TryGetValue(connection.ConnectionId, out var playerState))
+                    {
+                        CopySkillsToPlayerState(playerState, result.UpdatedStats);
+                    }
+
+                    await SendToConnection(connection.ConnectionId, "PlayerStatsUpdate", BuildStatsMessage(playerId, result.UpdatedStats));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error handling skill allocation for {playerId}");
+                await SendToConnection(connection.ConnectionId, "SkillAllocationResponse", new NetworkMessages.SkillAllocationResponseMessage
+                {
+                    PlayerId = playerId,
+                    Success = false,
+                    Message = "Server error"
                 });
             }
         }
@@ -1636,7 +1718,15 @@ namespace CombatMechanix.Services
                         Speed = result.PlayerStats.Speed,
                         Gold = result.PlayerStats.Gold,
                         IsOnline = true,
-                        LastUpdate = DateTime.UtcNow
+                        LastUpdate = DateTime.UtcNow,
+                        SkillPoints = result.PlayerStats.SkillPoints,
+                        SkillStrength = result.PlayerStats.SkillStrength,
+                        SkillRangedSkill = result.PlayerStats.SkillRangedSkill,
+                        SkillMagicPower = result.PlayerStats.SkillMagicPower,
+                        SkillHealth = result.PlayerStats.SkillHealth,
+                        SkillMovementSpeed = result.PlayerStats.SkillMovementSpeed,
+                        SkillAttackSpeed = result.PlayerStats.SkillAttackSpeed,
+                        SkillIntelligence = result.PlayerStats.SkillIntelligence
                     };
 
                     // Populate equipment stats from database
@@ -1695,19 +1785,7 @@ namespace CombatMechanix.Services
                         PlayerId = result.PlayerId ?? string.Empty,
                         PlayerName = result.PlayerName ?? string.Empty,
                         SessionToken = result.SessionToken,
-                        PlayerStats = new NetworkMessages.PlayerStatsUpdateMessage
-                        {
-                            PlayerId = result.PlayerId ?? string.Empty,
-                            Level = result.PlayerStats.Level,
-                            Experience = result.PlayerStats.Experience,
-                            Health = result.PlayerStats.Health,
-                            MaxHealth = result.PlayerStats.MaxHealth,
-                            Strength = result.PlayerStats.Strength,
-                            Defense = result.PlayerStats.Defense,
-                            Speed = result.PlayerStats.Speed,
-                            ExperienceToNextLevel = result.PlayerStats.ExperienceToNextLevel,
-                            Gold = result.PlayerStats.Gold
-                        }
+                        PlayerStats = BuildStatsMessage(result.PlayerId ?? string.Empty, result.PlayerStats)
                     });
 
                     // Notify all players about the new player
@@ -1747,7 +1825,16 @@ namespace CombatMechanix.Services
                         // Initialize with starting grenades for testing
                         FragGrenades = 3,
                         SmokeGrenades = 3,
-                        FlashGrenades = 3
+                        FlashGrenades = 3,
+                        // Skill tree
+                        SkillPoints = result.PlayerStats.SkillPoints,
+                        SkillStrength = result.PlayerStats.SkillStrength,
+                        SkillRangedSkill = result.PlayerStats.SkillRangedSkill,
+                        SkillMagicPower = result.PlayerStats.SkillMagicPower,
+                        SkillHealth = result.PlayerStats.SkillHealth,
+                        SkillMovementSpeed = result.PlayerStats.SkillMovementSpeed,
+                        SkillAttackSpeed = result.PlayerStats.SkillAttackSpeed,
+                        SkillIntelligence = result.PlayerStats.SkillIntelligence
                     };
 
                     // CRITICAL FIX: Populate equipment stats before caching to avoid overwriting
@@ -1825,7 +1912,15 @@ namespace CombatMechanix.Services
                         Speed = result.PlayerStats.Speed,
                         Gold = result.PlayerStats.Gold,
                         IsOnline = true,
-                        LastUpdate = DateTime.UtcNow
+                        LastUpdate = DateTime.UtcNow,
+                        SkillPoints = result.PlayerStats.SkillPoints,
+                        SkillStrength = result.PlayerStats.SkillStrength,
+                        SkillRangedSkill = result.PlayerStats.SkillRangedSkill,
+                        SkillMagicPower = result.PlayerStats.SkillMagicPower,
+                        SkillHealth = result.PlayerStats.SkillHealth,
+                        SkillMovementSpeed = result.PlayerStats.SkillMovementSpeed,
+                        SkillAttackSpeed = result.PlayerStats.SkillAttackSpeed,
+                        SkillIntelligence = result.PlayerStats.SkillIntelligence
                     };
 
                     // Populate equipment stats from database
@@ -1847,20 +1942,11 @@ namespace CombatMechanix.Services
                         Message = "Session validated successfully"
                     });
 
+                    // Copy skill data to in-memory state
+                    CopySkillsToPlayerState(player, result.PlayerStats);
+
                     // Send player stats
-                    await SendToConnection(connection.ConnectionId, "PlayerStatsUpdate", new NetworkMessages.PlayerStatsUpdateMessage
-                    {
-                        PlayerId = result.PlayerId ?? string.Empty,
-                        Level = result.PlayerStats.Level,
-                        Experience = result.PlayerStats.Experience,
-                        Health = result.PlayerStats.Health,
-                        MaxHealth = result.PlayerStats.MaxHealth,
-                        Strength = result.PlayerStats.Strength,
-                        Defense = result.PlayerStats.Defense,
-                        Speed = result.PlayerStats.Speed,
-                        ExperienceToNextLevel = result.PlayerStats.ExperienceToNextLevel,
-                        Gold = result.PlayerStats.Gold
-                    });
+                    await SendToConnection(connection.ConnectionId, "PlayerStatsUpdate", BuildStatsMessage(result.PlayerId ?? string.Empty, result.PlayerStats));
 
                     // Notify all players about the reconnected player
                     await BroadcastToAll("PlayerJoined", new NetworkMessages.PlayerJoinNotification
@@ -2375,13 +2461,14 @@ namespace CombatMechanix.Services
 
             foreach (var player in _players.Values)
             {
-                if (player.Health < player.MaxHealth)
+                var effectiveMax = player.TotalMaxHealth;
+                if (player.Health < effectiveMax)
                 {
                     int oldHealth = player.Health;
-                    player.Health = player.MaxHealth;
+                    player.Health = effectiveMax;
 
                     // Persist to database
-                    await playerStatsRepository.UpdatePlayerHealthAsync(player.PlayerId, player.MaxHealth);
+                    await playerStatsRepository.UpdatePlayerHealthAsync(player.PlayerId, effectiveMax);
 
                     // Send health change notification to the player
                     var connectionId = _connections.FirstOrDefault(c => c.Value.PlayerId == player.PlayerId).Key;
@@ -2390,13 +2477,13 @@ namespace CombatMechanix.Services
                         await SendToConnection(connectionId, "HealthChange", new NetworkMessages.HealthChangeMessage
                         {
                             PlayerId = player.PlayerId,
-                            NewHealth = player.MaxHealth,
-                            HealthChange = player.MaxHealth - oldHealth,
+                            NewHealth = effectiveMax,
+                            HealthChange = effectiveMax - oldHealth,
                             Source = "LevelComplete"
                         });
                     }
 
-                    _logger.LogInformation($"Restored player {player.PlayerId} health to max: {oldHealth} -> {player.MaxHealth}");
+                    _logger.LogInformation($"Restored player {player.PlayerId} health to max: {oldHealth} -> {effectiveMax}");
                 }
             }
         }

@@ -3,6 +3,13 @@ using CombatMechanix.Models;
 
 namespace CombatMechanix.Services
 {
+    public class SkillAllocationResult
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public PlayerStats? UpdatedStats { get; set; }
+    }
+
     public interface IPlayerStatsService
     {
         Task<PlayerStats> GetPlayerStatsAsync(string playerId);
@@ -12,6 +19,8 @@ namespace CombatMechanix.Services
         Task<bool> UpdateHealthAsync(string playerId, int newHealth);
         Task<bool> UpdatePositionAsync(string playerId, Vector3Data position);
         Task<List<PlayerStats>> GetTopPlayersByLevelAsync(int count = 10);
+        Task<SkillAllocationResult> AllocateSkillPointAsync(string playerId, string skillName, int points);
+        Task<SkillAllocationResult> DeallocateSkillPointAsync(string playerId, string skillName, int points);
     }
 
     public class PlayerStatsService : IPlayerStatsService
@@ -186,6 +195,101 @@ namespace CombatMechanix.Services
                 _logger.LogError(ex, "Error getting top players by level");
                 throw;
             }
+        }
+
+        private static readonly HashSet<string> ValidSkillNames = new()
+        {
+            "Strength", "RangedSkill", "MagicPower", "Health",
+            "MovementSpeed", "AttackSpeed", "Intelligence"
+        };
+
+        public async Task<SkillAllocationResult> AllocateSkillPointAsync(string playerId, string skillName, int points)
+        {
+            if (points <= 0)
+                return new SkillAllocationResult { Success = false, Message = "Points must be positive" };
+
+            if (!ValidSkillNames.Contains(skillName))
+                return new SkillAllocationResult { Success = false, Message = $"Invalid skill name: {skillName}" };
+
+            try
+            {
+                var player = await GetPlayerStatsAsync(playerId);
+                if (player.SkillPoints < points)
+                    return new SkillAllocationResult { Success = false, Message = $"Not enough skill points ({player.SkillPoints} available, {points} requested)" };
+
+                player.SkillPoints -= points;
+                ApplySkillPoints(player, skillName, points);
+
+                await _repository.UpdateSkillAllocationAsync(playerId, player);
+                _logger.LogInformation($"Player {playerId} allocated {points} points to {skillName}");
+
+                return new SkillAllocationResult { Success = true, Message = $"Allocated {points} to {skillName}", UpdatedStats = player };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error allocating skill points for {playerId}");
+                return new SkillAllocationResult { Success = false, Message = "Server error during allocation" };
+            }
+        }
+
+        public async Task<SkillAllocationResult> DeallocateSkillPointAsync(string playerId, string skillName, int points)
+        {
+            if (points <= 0)
+                return new SkillAllocationResult { Success = false, Message = "Points must be positive" };
+
+            if (!ValidSkillNames.Contains(skillName))
+                return new SkillAllocationResult { Success = false, Message = $"Invalid skill name: {skillName}" };
+
+            try
+            {
+                var player = await GetPlayerStatsAsync(playerId);
+                int currentValue = GetSkillValue(player, skillName);
+
+                if (currentValue < points)
+                    return new SkillAllocationResult { Success = false, Message = $"Cannot remove {points} from {skillName} (only {currentValue} allocated)" };
+
+                player.SkillPoints += points;
+                ApplySkillPoints(player, skillName, -points);
+
+                await _repository.UpdateSkillAllocationAsync(playerId, player);
+                _logger.LogInformation($"Player {playerId} deallocated {points} points from {skillName}");
+
+                return new SkillAllocationResult { Success = true, Message = $"Removed {points} from {skillName}", UpdatedStats = player };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error deallocating skill points for {playerId}");
+                return new SkillAllocationResult { Success = false, Message = "Server error during deallocation" };
+            }
+        }
+
+        private static void ApplySkillPoints(PlayerStats player, string skillName, int delta)
+        {
+            switch (skillName)
+            {
+                case "Strength": player.SkillStrength += delta; break;
+                case "RangedSkill": player.SkillRangedSkill += delta; break;
+                case "MagicPower": player.SkillMagicPower += delta; break;
+                case "Health": player.SkillHealth += delta; break;
+                case "MovementSpeed": player.SkillMovementSpeed += delta; break;
+                case "AttackSpeed": player.SkillAttackSpeed += delta; break;
+                case "Intelligence": player.SkillIntelligence += delta; break;
+            }
+        }
+
+        private static int GetSkillValue(PlayerStats player, string skillName)
+        {
+            return skillName switch
+            {
+                "Strength" => player.SkillStrength,
+                "RangedSkill" => player.SkillRangedSkill,
+                "MagicPower" => player.SkillMagicPower,
+                "Health" => player.SkillHealth,
+                "MovementSpeed" => player.SkillMovementSpeed,
+                "AttackSpeed" => player.SkillAttackSpeed,
+                "Intelligence" => player.SkillIntelligence,
+                _ => 0
+            };
         }
     }
 }

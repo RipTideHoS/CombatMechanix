@@ -221,6 +221,9 @@ public class AutoSceneSetup : MonoBehaviour
         // 13. Setup Player Stats Panel (under inventory)
         SetupPlayerStatsPanel();
 
+        // 14. Setup Skill Tree UI
+        SetupSkillTreeUI();
+
         Debug.Log("=== Auto Scene Setup Complete ===");
         Debug.Log("Objects created successfully! Check the Hierarchy for new GameObjects.");
         Debug.Log("Press Play to test the WebSocket connection!");
@@ -229,6 +232,21 @@ public class AutoSceneSetup : MonoBehaviour
         LogHierarchyState();
     }
     
+    private void SetupSkillTreeUI()
+    {
+        Debug.Log("Setting up Skill Tree UI...");
+
+        if (FindObjectOfType<SkillTreeUI>() != null)
+        {
+            Debug.Log("SkillTreeUI already exists in scene");
+            return;
+        }
+
+        var skillTreeObj = new GameObject("SkillTreeUI");
+        skillTreeObj.AddComponent<SkillTreeUI>();
+        Debug.Log("SkillTreeUI component added - toggle with K key");
+    }
+
     private void LogHierarchyState()
     {
         Debug.Log("=== Current Scene Hierarchy ===");

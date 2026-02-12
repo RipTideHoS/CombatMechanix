@@ -93,6 +93,9 @@ public class NetworkManager : MonoBehaviour
     public static event Action<LevelCompleteMessage> OnLevelComplete;
     public static event Action<PlayerRepositionMessage> OnPlayerReposition;
 
+    // Skill tree events
+    public static event Action<NetworkMessages.SkillAllocationResponseMessage> OnSkillAllocationResponse;
+
     private ClientWebSocket _webSocket;
     private CancellationTokenSource _cancellationTokenSource;
     private bool _isConnecting = false;
@@ -587,6 +590,15 @@ public class NetworkManager : MonoBehaviour
                     }
                     break;
 
+                case "SkillAllocationResponse":
+                    var skillAllocMsg = JsonConvert.DeserializeObject<NetworkMessages.SkillAllocationResponseMessage>(wrapper.Data.ToString());
+                    if (skillAllocMsg != null)
+                    {
+                        Debug.Log($"[NetworkManager] SkillAllocationResponse: Success={skillAllocMsg.Success}, Message={skillAllocMsg.Message}");
+                        QueueMainThreadAction(() => OnSkillAllocationResponse?.Invoke(skillAllocMsg));
+                    }
+                    break;
+
                 default:
                     Debug.LogWarning($"Unknown message type: {wrapper.Type}");
                     break;
@@ -833,6 +845,31 @@ public class NetworkManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Failed to send grenade throw: {ex.Message}");
+        }
+    }
+
+    public async Task SendSkillAllocationRequest(string skillName, int points, bool deallocate)
+    {
+        if (!IsConnected || string.IsNullOrEmpty(ConnectionId)) return;
+
+        try
+        {
+            string actualPlayerId = GameManager.Instance?.LocalPlayerId ?? ConnectionId;
+
+            var request = new NetworkMessages.SkillAllocationRequestMessage
+            {
+                PlayerId = actualPlayerId,
+                SkillName = skillName,
+                Points = points,
+                Deallocate = deallocate
+            };
+
+            await SendMessage("SkillAllocationRequest", request);
+            Debug.Log($"[NetworkManager] Sent skill allocation request: {(deallocate ? "Remove" : "Add")} {points} to {skillName}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Failed to send skill allocation request: {ex.Message}");
         }
     }
 

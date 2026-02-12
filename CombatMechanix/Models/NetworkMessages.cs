@@ -99,6 +99,35 @@ namespace CombatMechanix.Models
             public int Speed { get; set; }
             public long ExperienceToNextLevel { get; set; }
             public int Gold { get; set; } = 100;
+            public SkillTreeData? Skills { get; set; }
+        }
+
+        public class SkillTreeData
+        {
+            public int SkillPoints { get; set; }
+            public int Strength { get; set; }
+            public int RangedSkill { get; set; }
+            public int MagicPower { get; set; }
+            public int Health { get; set; }
+            public int MovementSpeed { get; set; }
+            public int AttackSpeed { get; set; }
+            public int Intelligence { get; set; }
+        }
+
+        public class SkillAllocationRequestMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public string SkillName { get; set; } = string.Empty;
+            public int Points { get; set; } = 1;
+            public bool Deallocate { get; set; } = false;
+        }
+
+        public class SkillAllocationResponseMessage
+        {
+            public string PlayerId { get; set; } = string.Empty;
+            public bool Success { get; set; }
+            public string Message { get; set; } = string.Empty;
+            public SkillTreeData? Skills { get; set; }
         }
 
         public class ExperienceGainMessage
@@ -797,19 +826,35 @@ namespace CombatMechanix.Models
         public int FragGrenades { get; set; } = 3;
         public int SmokeGrenades { get; set; } = 3;
         public int FlashGrenades { get; set; } = 3;
-        
+
         // Combat timing tracking
         public DateTime LastAttackTime { get; set; } = DateTime.MinValue;
-        
+
+        // Skill tree allocations
+        public int SkillPoints { get; set; } = 0;
+        public int SkillStrength { get; set; } = 0;
+        public int SkillRangedSkill { get; set; } = 0;
+        public int SkillMagicPower { get; set; } = 0;
+        public int SkillHealth { get; set; } = 0;
+        public int SkillMovementSpeed { get; set; } = 0;
+        public int SkillAttackSpeed { get; set; } = 0;
+        public int SkillIntelligence { get; set; } = 0;
+
         // Computed total values for easy access during combat
         [JsonIgnore]
-        public int TotalAttackPower => Strength + EquipmentAttackPower;
-        
-        [JsonIgnore] 
-        public int TotalDefensePower => Defense + EquipmentDefensePower;
-        
+        public int TotalAttackPower => Strength + EquipmentAttackPower + SkillStrength;
+
         [JsonIgnore]
-        public decimal TotalAttackSpeed => EquipmentAttackSpeed; // For now, only equipment affects attack speed
+        public int TotalDefensePower => Defense + EquipmentDefensePower;
+
+        [JsonIgnore]
+        public int TotalMaxHealth => MaxHealth + (SkillHealth * 10);
+
+        [JsonIgnore]
+        public float TotalMovementSpeed => Speed + (SkillMovementSpeed * 0.5f);
+
+        [JsonIgnore]
+        public decimal TotalAttackSpeed => EquipmentAttackSpeed + (SkillAttackSpeed * 0.05m);
     }
 
     public class EnemyState
